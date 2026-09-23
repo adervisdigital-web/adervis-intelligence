@@ -1,4 +1,5 @@
 node_modules/
 tests/screenshots/
+supabase/.temp/
 .DS_Store
 Thumbs.db
