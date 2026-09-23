@@ -1,0 +1,17 @@
+{
+  "name": "adervis-intelligence-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Проверки общей базы: база данных, сборка запроса к модели, интерфейс",
+  "scripts": {
+    "test": "node db.test.mjs && node prompt.test.mjs && node ui.test.mjs",
+    "test:db": "node db.test.mjs",
+    "test:prompt": "node prompt.test.mjs",
+    "test:ui": "node ui.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0",
+    "playwright-core": "^1.55.0"
+  }
+}

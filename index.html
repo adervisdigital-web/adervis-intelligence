@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; base-uri 'none'; form-action 'none'">
+<title>ADERVIS Intelligence</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<script src="theme.js"></script>
+</head>
+<body>
+
+<div class="gate" id="gate" hidden>
+  <form class="card gatecard" id="gateform">
+    <div class="brandmark">A</div>
+    <b>ADERVIS INTELLIGENCE</b>
+    <p class="muted">Общая база знаний компании. Вход для сотрудников ADERVIS.</p>
+    <label for="gate-email">Почта</label>
+    <input id="gate-email" name="email" type="email" required autocomplete="username">
+    <label for="gate-pass">Пароль</label>
+    <input id="gate-pass" name="password" type="password" required autocomplete="current-password">
+    <p class="gateerror" id="gateerror" role="alert"></p>
+    <button class="primary" id="gatebtn">Войти</button>
+  </form>
+</div>
+
+<div class="app" id="shell" hidden>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brandmark">A</div>
+      <div><b>ADERVIS</b><small>INTELLIGENCE</small></div>
+    </div>
+    <div class="workspace"><div><strong>ADERVIS Digital</strong><span>Одна компания · единая база</span></div></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="bottom">
+      <div class="user"><div class="avatar" id="avatar"></div><div><b id="myname"></b><br><small id="myemail"></small></div></div>
+      <p><button data-action="signout">Выйти</button></p>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <button class="iconbtn mobile" id="menu" aria-label="Меню">☰</button>
+      <div class="crumb">ADERVIS / <b id="crumb">Обзор</b></div>
+      <div class="top-actions">
+        <button class="search" id="search">⌕ Поиск<span class="kbd"> &nbsp; Ctrl K</span></button>
+        <button class="iconbtn" id="refresh" aria-label="Обновить данные">⟳</button>
+        <button class="iconbtn" id="theme" aria-label="Тема">◐</button>
+        <button class="primary lime" id="create">+ Создать</button>
+      </div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<dialog id="modal"></dialog>
+<input type="file" id="importfile" accept=".json" hidden>
+<div id="alerts" aria-live="polite"></div>
+
+<script src="vendor/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
