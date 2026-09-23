@@ -291,10 +291,33 @@ check('задание в форме не потеряно', (await page.inputVal
 await page.evaluate(() => { window.__aiFail = null; });
 await page.screenshot({ path: path.join(OUT, 'intel-ai.png') });
 
-// --- 11. выход
+// --- 11. выход и «запомнить меня»
 await page.click('[data-action=signout]');
 await page.waitForSelector('#gate:not([hidden])');
 check('выход возвращает на экран входа', await page.isHidden('#shell'));
+check('почта подставлена после выхода', (await page.inputValue('#gate-email')) === 'artem@adervis.ru');
+check('пароль не сохраняется на странице', (await page.inputValue('#gate-pass')) === '');
+check('пароля нет в хранилище браузера',
+  await page.evaluate(() => !Object.keys(localStorage).some(k => (localStorage.getItem(k) || '').includes('secret'))));
+check('курсор сразу в поле пароля', await page.evaluate(() => document.activeElement.id === 'gate-pass'));
+
+await page.click('#showpass');
+check('пароль можно показать', (await page.getAttribute('#gate-pass', 'type')) === 'text');
+await page.click('#showpass');
+check('и снова скрыть', (await page.getAttribute('#gate-pass', 'type')) === 'password');
+
+// вход без галочки — почту забываем
+await page.uncheck('#remember');
+await login();
+await page.waitForSelector('#shell:not([hidden])');
+await page.click('[data-action=signout]');
+await page.waitForSelector('#gate:not([hidden])');
+check('без галочки почта не запоминается', (await page.inputValue('#gate-email')) === '');
+await page.check('#remember');
+await login();
+await page.waitForSelector('#shell:not([hidden])');
+await page.click('[data-action=signout]');
+await page.waitForSelector('#gate:not([hidden])');
 
 // --- 12. телефон
 const m = await ctx.newPage();

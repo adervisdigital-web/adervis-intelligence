@@ -21,8 +21,13 @@
     <input id="gate-email" name="email" type="email" required autocomplete="username">
     <label for="gate-pass">Пароль</label>
     <input id="gate-pass" name="password" type="password" required autocomplete="current-password">
+    <div class="gaterow">
+      <label class="task"><input type="checkbox" id="remember" checked> Запомнить меня</label>
+      <button type="button" class="link" id="showpass">Показать</button>
+    </div>
     <p class="gateerror" id="gateerror" role="alert"></p>
     <button class="primary" id="gatebtn">Войти</button>
+    <p class="muted gatehint">Вход сохраняется на этом устройстве: пароль спросят снова только после кнопки «Выйти».</p>
   </form>
 </div>
 

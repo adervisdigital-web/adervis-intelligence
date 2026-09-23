@@ -933,11 +933,31 @@ document.addEventListener('visibilitychange', async () => {
 
 // ----------------------------------------------------------------- запуск
 
+// Почту храним на устройстве, пароль — нет: его место в менеджере паролей
+// браузера, а не в данных страницы.
+const EMAIL_KEY = 'adervis.email';
+const REMEMBER_KEY = 'adervis.remember';
+const rememberedEmail = () => { try { return localStorage.getItem(EMAIL_KEY) || ''; } catch (e) { return ''; } };
+
 function showGate(message = '') {
   $('#shell').hidden = true;
   $('#gate').hidden = false;
   $('#gateerror').textContent = message;
+
+  const saved = rememberedEmail();
+  $('#gate-email').value = saved;
+  $('#gate-pass').value = '';
+  try { $('#remember').checked = localStorage.getItem(REMEMBER_KEY) !== '0'; } catch (e) { /* хранилище недоступно */ }
+  (saved ? $('#gate-pass') : $('#gate-email')).focus();
 }
+
+$('#showpass').onclick = () => {
+  const field = $('#gate-pass');
+  const shown = field.type === 'text';
+  field.type = shown ? 'password' : 'text';
+  $('#showpass').textContent = shown ? 'Показать' : 'Скрыть';
+  field.focus();
+};
 
 async function enter() {
   const allowed = await api.isMember().catch(() => false);
@@ -965,6 +985,15 @@ $('#gateform').onsubmit = async e => {
   try {
     await api.signIn(form.get('email'), form.get('password'));
     me = await api.user();
+    try {
+      if ($('#remember').checked) {
+        localStorage.setItem(EMAIL_KEY, me.email);
+        localStorage.removeItem(REMEMBER_KEY);
+      } else {
+        localStorage.removeItem(EMAIL_KEY);
+        localStorage.setItem(REMEMBER_KEY, '0');
+      }
+    } catch (e) { /* хранилище недоступно — не беда */ }
     await enter();
   } catch (err) {
     const msg = err?.message || '';

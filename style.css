@@ -37,3 +37,9 @@ button.tag:hover{border-color:#9278ff}
 .ai-wrap .formactions{margin-top:16px}
 .card label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px}
 .card .formgrid select{width:100%}
+.gaterow{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px}
+.gaterow .task{margin:0;font-size:13px;color:var(--ink)}
+.gaterow .task input{width:16px;height:16px;margin-right:8px;accent-color:#9278ff}
+.link{background:none;border:0;color:#6550ea;padding:0;font-size:13px;cursor:pointer}
+.link:hover{text-decoration:underline}
+.gatehint{font-size:12px;margin:14px 0 0;text-align:center}
