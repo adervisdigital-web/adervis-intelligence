@@ -1,5 +1,6 @@
 import {
-  sanitizeOptions, buildPrompt, parseReply, usableFacts, providerRequest, providerText, MAX_DRAFTS
+  sanitizeOptions, buildPrompt, parseReply, usableFacts, providerRequest, providerText,
+  modelAttempts, RETRY_STATUS, MAX_DRAFTS
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -72,6 +73,14 @@ check('свой адрес сервиса поддерживается без л
 check('разбор ответа Gemini', providerText('gemini', { candidates: [{ content: { parts: [{ text: 'ответ' }] } }] }) === 'ответ');
 check('разбор ответа OpenAI-совместимого', providerText('openai', { choices: [{ message: { content: 'ответ' } }] }) === 'ответ');
 check('неожиданный ответ не роняет функцию', providerText('gemini', { error: 'что-то не так' }) === '');
+
+// --- поведение при перегрузке модели
+check('перегрузку и лимит пробуем ещё раз', RETRY_STATUS.includes(503) && RETRY_STATUS.includes(429));
+check('на отказ по существу вторую попытку не делаем', !RETRY_STATUS.includes(400) && !RETRY_STATUS.includes(403));
+check('план попыток: две основной моделью, затем запасная',
+  modelAttempts('gemini-3.5-flash', 'gemini-3.5-flash-lite').join() === 'gemini-3.5-flash,gemini-3.5-flash,gemini-3.5-flash-lite');
+check('без запасной модели — две попытки', modelAttempts('модель', '').join() === 'модель,модель');
+check('запасная, совпадающая с основной, не дублируется', modelAttempts('одна', 'одна').join() === 'одна,одна');
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

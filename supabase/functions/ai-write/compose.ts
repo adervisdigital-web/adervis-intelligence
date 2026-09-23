@@ -10,6 +10,16 @@ export const MAX_DRAFTS = 7;
 //            шлюзы с оплатой в рублях и прочие.
 export type Provider = 'gemini' | 'openai';
 
+// На бесплатном уровне модель иногда отвечает «перегружено». Это временно,
+// поэтому пробуем ещё раз, а затем — запасную модель полегче.
+export const RETRY_STATUS = [429, 503];
+
+export function modelAttempts(model: string, fallback: string): string[] {
+  const attempts = [model, model];
+  if (fallback && fallback !== model) attempts.push(fallback);
+  return attempts;
+}
+
 export function providerRequest(provider: Provider, model: string, key: string, baseUrl: string, prompt: string) {
   if (provider === 'gemini') {
     const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';

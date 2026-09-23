@@ -151,7 +151,7 @@ let ai = {
     goal: 'Подготовить разные посты для Threads. Россия, digital-аудитория. Цель: интерес к CRM и заявки на услуги студии. Без выдуманных историй.',
     author: 'Артём Никитин', channel: 'Threads', product: 'CRM', count: 3
   },
-  drafts: [], gaps: [], saved: [], left: null, error: '', busy: false
+  drafts: [], gaps: [], saved: [], left: null, model: '', error: '', busy: false
 };
 
 const sections = [
@@ -359,7 +359,7 @@ function render() {
             <button data-action="brief">Скопировать бриф</button>
           </div>
           ${ai.error ? `<div class="notice error">${E(ai.error)}</div>`
-            : ai.left !== null ? `<p class="muted">Осталось запросов сегодня: ${ai.left}</p>` : ''}
+            : ai.left !== null ? `<p class="muted">Осталось запросов сегодня: ${ai.left}${ai.model ? ` · модель: ${E(ai.model)}` : ''}</p>` : ''}
         </div>
         <div class="card"><h2>Что уходит в модель</h2>
           <p>Проверенных публичных записей: <b>${usable}</b> из ${db.knowledge.length}.</p>
@@ -695,6 +695,7 @@ async function write() {
     ai.drafts = res.drafts || [];
     ai.gaps = res.gaps || [];
     ai.left = res.left ?? null;
+    ai.model = res.model || '';
     ai.saved = [];
     toast(`Готово: вариантов ${ai.drafts.length}, использовано фактов ${res.factsUsed}`);
   } catch (e) {

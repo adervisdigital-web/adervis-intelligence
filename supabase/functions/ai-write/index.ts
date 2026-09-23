@@ -10,7 +10,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import {
   buildPrompt, parseReply, sanitizeOptions, usableFacts, providerRequest, providerText,
-  DAILY_LIMIT, TRUSTED_STATUS, type Provider
+  modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
 } from './compose.ts';
 
 // В новых проектах Supabase ключи называются иначе, чем в старых,
@@ -23,7 +23,9 @@ const SECRET_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SU
 // По умолчанию — Gemini: у него есть бесплатный уровень без привязки карты.
 const PROVIDER = (Deno.env.get('AI_PROVIDER') || 'gemini') as Provider;
 const MODEL = Deno.env.get('AI_MODEL') || Deno.env.get('GEMINI_MODEL')
-  || (PROVIDER === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat');
+  || (PROVIDER === 'gemini' ? 'gemini-3.5-flash' : 'deepseek-chat');
+const FALLBACK_MODEL = Deno.env.get('AI_FALLBACK_MODEL')
+  || (PROVIDER === 'gemini' ? 'gemini-3.5-flash-lite' : '');
 const AI_KEY = Deno.env.get('AI_API_KEY') || Deno.env.get('GEMINI_API_KEY');
 const AI_BASE_URL = Deno.env.get('AI_BASE_URL') || '';
 
@@ -88,20 +90,33 @@ Deno.serve(async (req) => {
     const facts = usableFacts(rows ?? []);
     const prompt = buildPrompt(facts, options);
 
-    const request = providerRequest(PROVIDER, MODEL, AI_KEY, AI_BASE_URL, prompt);
-    const resp = await fetch(request.url, {
-      method: 'POST',
-      headers: request.headers,
-      body: JSON.stringify(request.body)
-    });
+    let payload = null;
+    let usedModel = '';
+    let lastStatus = 0;
 
-    if (!resp.ok) {
-      const detail = await resp.text();
-      console.error('ai-write:', PROVIDER, MODEL, resp.status, detail.slice(0, 500));
-      return json({ error: `AI-сервис ответил ошибкой ${resp.status}. Попробуйте ещё раз.` }, 502);
+    for (const [i, model] of modelAttempts(MODEL, FALLBACK_MODEL).entries()) {
+      const request = providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt);
+      const resp = await fetch(request.url, {
+        method: 'POST',
+        headers: request.headers,
+        body: JSON.stringify(request.body)
+      });
+      if (resp.ok) { payload = await resp.json(); usedModel = model; break; }
+
+      lastStatus = resp.status;
+      console.error('ai-write:', PROVIDER, model, resp.status, (await resp.text()).slice(0, 400));
+      if (!RETRY_STATUS.includes(resp.status)) break;
+      if (i === 0) await new Promise(r => setTimeout(r, 1500));
     }
 
-    const payload = await resp.json();
+    if (!payload) {
+      return json({
+        error: RETRY_STATUS.includes(lastStatus)
+          ? 'Модель сейчас перегружена. Попробуйте ещё раз через минуту.'
+          : `AI-сервис ответил ошибкой ${lastStatus}. Попробуйте ещё раз.`
+      }, 502);
+    }
+
     const text = providerText(PROVIDER, payload);
     if (!text) {
       console.error('ai-write: пустой ответ', JSON.stringify(payload).slice(0, 500));
@@ -112,7 +127,7 @@ Deno.serve(async (req) => {
 
     await admin.from('ai_usage').insert({
       actor: user.email,
-      model: `${PROVIDER}/${MODEL}`,
+      model: `${PROVIDER}/${usedModel}`,
       drafts: drafts.length,
       chars: drafts.reduce((n, d) => n + d.body.length, 0)
     });
@@ -120,6 +135,7 @@ Deno.serve(async (req) => {
     return json({
       drafts,
       gaps,
+      model: usedModel,
       factsUsed: facts.length,
       left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1)
     });
