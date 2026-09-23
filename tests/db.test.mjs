@@ -16,6 +16,8 @@ const db = new PGlite();
 // по умолчанию здесь не выдаются: доступ должна выдать сама миграция.
 await db.exec(`
   create role anon; create role authenticated;
+  -- в Supabase служебная роль обходит построчную защиту
+  create role service_role bypassrls;
   create schema auth;
   create or replace function auth.jwt() returns jsonb language sql stable as $$
     select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
@@ -103,6 +105,15 @@ check('участник не может подделать свой счётчи
   (await fail('authenticated', 'artem@adervis.ru', `insert into public.ai_usage(actor,model) values ('artem@adervis.ru','подделка')`)) !== null);
 check('участник не может стереть счётчик',
   (await fail('authenticated', 'artem@adervis.ru', 'delete from public.ai_usage')) !== null);
+
+// --- служебная роль: ею работает серверная функция
+check('служебная роль ведёт учёт расходов на ИИ',
+  (await fail('service_role', '', `insert into public.ai_usage(actor, model, drafts, chars) values ('kto@adervis.ru','gemini',1,100)`)) === null);
+check('служебная роль читает счётчик',
+  (await as('service_role', '', 'select count(*)::int c from public.ai_usage')).rows[0].c > 0);
+check('служебная роль может пополнять базу знаний',
+  (await fail('service_role', '', `insert into public.knowledge(id,title,body,category,source,access,status)
+    values ('svc1','Через служебный ключ','Текст','Компания','Ручной ввод','Публичное','Подтверждено')`)) === null);
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);
