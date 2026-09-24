@@ -45,6 +45,8 @@ const fake = (seedData) => {
       { id: 'fonts', title: 'Шрифты', kind: 'fonts', sort: 40, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { items: [{ family: 'Unbounded', role: 'Заголовки', weights: '500, 700', sample: 'ADERVIS' },
           { family: 'TT Fors', role: 'Текст', weights: 'Regular', sample: 'Визуал для бизнеса', file: 'brand/tt-fors-regular.ttf' }] } },
+      { id: 'patterns', title: 'Паттерны', kind: 'gallery', sort: 85, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { items: [{ file: 'brand/gallery/pattern-1.jpg', caption: 'Паттерн 1' }, { file: 'brand/gallery/pattern-2.jpg', caption: 'Паттерн 2' }] } },
       { id: 'voice', title: 'Как мы говорим', kind: 'text', sort: 90, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { body: 'Пишем живо и просто.\n— Без канцелярита\n— Без выдуманных цифр' } }
     ],
@@ -115,6 +117,7 @@ const fake = (seedData) => {
     async fileUrl(path) {
       // Для шрифтов подменяем ссылку на настоящий файл с того же адреса:
       // так проверяется и загрузка, и то, что правила безопасности не мешают.
+      if (path.startsWith('brand/gallery/')) { (window.__SHOTS__ ||= []).push(path); return 'brand/icon.svg'; }
       if (path.startsWith('brand/')) { window.__FONT_ASKED__ = path; return 'fonts/golostext-400-latin.woff2'; }
       return 'data:text/plain,' + encodeURIComponent(path);
     },
@@ -310,12 +313,21 @@ const fontAdded = await page.waitForFunction(
 check('шрифт из хранилища подключается к странице', fontAdded);
 await page.screenshot({ path: path.join(OUT, 'intel-brand.png'), fullPage: true });
 
+// галереи материалов
+await page.waitForFunction(() => document.querySelectorAll('.gallery img[src]').length === 2);
+check('картинки галереи подставлены из хранилища',
+  await page.$$eval('.gallery img', imgs => imgs.every(i => i.complete && i.naturalWidth > 0)));
+check('за картинками ходили по временным ссылкам',
+  (await page.evaluate(() => window.__SHOTS__.length)) === 2);
+check('подписи под картинками на месте',
+  (await page.$$eval('.gallery figcaption', f => f.map(x => x.textContent))).join() === 'Паттерн 1,Паттерн 2');
+
 // брендбук слайдами
 await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
 const slideCount = await page.$$eval('.slide', s => s.length);
-// обложка + знак + 3 темы + финал
-check('слайды собраны по темам', slideCount === 6, String(slideCount));
+// обложка + знак + 4 темы (цвета, шрифты, галерея, текст) + финал
+check('слайды собраны по темам', slideCount === 7, String(slideCount));
 check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
 const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
 check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));

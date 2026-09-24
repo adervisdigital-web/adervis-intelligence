@@ -259,6 +259,23 @@ function fileList(recordId) {
   </div>`).join('')}</div>`;
 }
 
+// Картинки брендбука лежат в закрытом хранилище, ссылки временные — подставляем
+// их после отрисовки. Один раз запрошенную ссылку держим до перезагрузки.
+const shotUrls = new Map();
+async function loadShots() {
+  for (const node of document.querySelectorAll('[data-shot]')) {
+    const path = node.dataset.shot;
+    const img = node.tagName === 'IMG' ? node : node.querySelector('img');
+    if (!img || img.getAttribute('src')) continue;
+    try {
+      if (!shotUrls.has(path)) shotUrls.set(path, await api.fileUrl(path));
+      img.src = shotUrls.get(path);
+    } catch (e) {
+      node.classList.add('shotmissing');
+    }
+  }
+}
+
 // Картинки показываем превью: ссылки на закрытое хранилище временные,
 // поэтому запрашиваем их уже после отрисовки списка.
 async function loadThumbs(recordId) {
@@ -374,6 +391,11 @@ function brandSlides() {
       }));
     } else if (b.kind === 'fonts') {
       slides.push({ kind: 'fonts', title: b.title, items: Array.isArray(b.data?.items) ? b.data.items : [] });
+    } else if (b.kind === 'gallery') {
+      const items = Array.isArray(b.data?.items) ? b.data.items : [];
+      chunked(items, 6).forEach((part, i, all) => slides.push({
+        kind: 'gallery', title: b.title, items: part, part: all.length > 1 ? `${i + 1}/${all.length}` : ''
+      }));
     } else {
       const { intro, bullets } = splitBody(b.data?.body);
       chunked(bullets, 6).forEach((part, i, all) => slides.push({
@@ -415,6 +437,11 @@ function slideHtml(sl, i, total) {
     return head(sl.title) + `<div class="slidebody">${sl.items.map(f => `<div class="sfont">
       <div class="sfontsample" style="font-family:${FONT_STACK[f.family] || 'inherit'}">${E(f.sample)}</div>
       <div class="sfontmeta">${E(f.family)} · ${E(f.role)} · ${E(f.weights)}</div></div>`).join('')}</div>` + foot;
+  }
+  if (sl.kind === 'gallery') {
+    return head(sl.title) + `<div class="slidebody"><div class="sgallery cols-${Math.min(3, sl.items.length)}">
+      ${sl.items.map(g => `<figure data-shot="${E(g.file)}"><img alt="${E(g.caption || '')}">
+        <figcaption>${E(g.caption || '')}</figcaption></figure>`).join('')}</div></div>` + foot;
   }
   if (sl.kind === 'end') {
     return `<div class="slidecover">
@@ -469,6 +496,9 @@ function brandBlock(b) {
     body = items.map(f => `<div class="fontsample">
       <div class="sampletext" style="font-family:${FONT_STACK[f.family] || 'inherit'}">${E(f.sample)}</div>
       <small class="muted">${E(f.family)} · ${E(f.role)} · начертания ${E(f.weights)}</small></div>`).join('');
+  } else if (b.kind === 'gallery') {
+    body = `<div class="gallery">${items.map(g => `<figure data-shot="${E(g.file)}">
+      <img alt="${E(g.caption || '')}"><figcaption>${E(g.caption || '')}</figcaption></figure>`).join('')}</div>`;
   } else {
     body = `<div class="brandtext">${brandText(b.data?.body)}</div>`;
   }
@@ -538,7 +568,7 @@ function render() {
       || '<div class="empty">Записи не найдены.</div>'}</div>`;
   }
 
-  if (page === 'brand') loadBrandFonts();
+  if (page === 'brand') { loadBrandFonts(); setTimeout(loadShots, 0); }
   if (page === 'brand' && deck.on) s = renderDeck();
 
   if (page === 'brand' && !deck.on) {
@@ -994,6 +1024,7 @@ function parseBrand(kind, raw) {
       }
       return { name: parts[0] || 'Без названия', hex: parts[1], usage: parts[2] || '' };
     }
+    if (kind === 'gallery') return { file: parts[0] || '', caption: parts[1] || '' };
     return { family: parts[0] || '', role: parts[1] || '', weights: parts[2] || '', sample: parts[3] || '', file: parts[4] || '' };
   });
   if (!items.length) throw new Error('не осталось ни одной строки');
@@ -1006,9 +1037,11 @@ function editBrand(id) {
   const items = Array.isArray(b.data?.items) ? b.data.items : [];
   const raw = b.kind === 'colors' ? items.map(c => `${c.name} | ${c.hex} | ${c.usage || ''}`).join('\n')
     : b.kind === 'fonts' ? items.map(f => `${f.family} | ${f.role} | ${f.weights} | ${f.sample} | ${f.file || ''}`).join('\n')
+    : b.kind === 'gallery' ? items.map(g => `${g.file} | ${g.caption || ''}`).join('\n')
     : (b.data?.body || '');
   const hint = b.kind === 'colors' ? 'Одна строка — один цвет: <b>Название | #f6bd3a | где применяется</b>'
     : b.kind === 'fonts' ? 'Одна строка — один шрифт: <b>Семейство | роль | начертания | образец текста | файл в хранилище</b>. Последнее поле необязательное: если файл указан, образец набирается настоящим шрифтом.'
+    : b.kind === 'gallery' ? 'Одна строка — одна картинка: <b>путь в хранилище | подпись</b>. Например: brand/gallery/pattern-1.jpg | Паттерн 1'
     : 'Обычный текст. Строки, начинающиеся с «— », покажем списком.';
 
   modal(`<h2>${E(b.title)}</h2><form id="bf">
