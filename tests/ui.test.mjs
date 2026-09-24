@@ -206,6 +206,21 @@ const nodes = await page.$$eval('.link-node', ns => ns.map(n => ({
   state: [...n.classList].find(c => ['ok', 'warn', 'empty'].includes(c))
 })));
 check('в цепочке пять звеньев', nodes.length === 5, JSON.stringify(nodes.map(n => n.title)));
+check('схема нарисована узлами и стрелками',
+  (await page.$$('.chainmap .cnode')).length === 5 && (await page.$$('.chainmap .carrow')).length === 4);
+check('у схемы есть петля обратной связи', (await page.$$('.chainmap .cloop')).length === 2);
+const mapFits = await page.$$eval('.chainmap', maps => maps.every(svg => {
+  const vb = svg.viewBox.baseVal;
+  return [...svg.querySelectorAll('text, rect')].every(el => {
+    const b = el.getBBox();
+    return b.x >= -1 && b.x + b.width <= vb.width + 1 && b.y + b.height <= vb.height + 1;
+  });
+}));
+check('схема умещается в свои границы', mapFits);
+await page.click('.chainmap .cnode[data-page=content] rect');
+await page.waitForFunction(() => document.querySelector('#crumb').textContent === 'Контент-студия');
+check('узел схемы ведёт в раздел', true);
+await nav('chain');
 check('порядок звеньев верный',
   nodes.map(n => n.title).join(' → ') === 'Знания → ИИ → Контент → Каналы → Результат');
 check('знания считают записи из базы', nodes[0].value === '24', nodes[0].value);
@@ -280,6 +295,42 @@ await page.click('#confirmdel');
 await page.waitForFunction(() => !document.querySelector('#modal').open);
 const s5 = await state();
 check('публикация и её замеры удалены', !s5.content.some(p => p.id === postId) && s5.metrics.length === 0);
+
+// --- 5б. графики на настоящих замерах
+await page.evaluate(() => {
+  const s = window.__STATE__;
+  const posts = s.content.slice(0, 3);
+  const days = ['2026-09-10', '2026-09-12', '2026-09-15'];
+  let n = 0;
+  posts.forEach((p, pi) => days.forEach((d, di) => {
+    s.metrics.push({ id: 'chart' + (++n), post: p.id, date: d, views: 400 * (pi + 1) + di * 350,
+      replies: di * 3, leads: pi + di, _at: new Date().toISOString(), _by: 'artem@adervis.ru' });
+  }));
+});
+await page.click('#refresh');
+await nav('analytics');
+await page.waitForSelector('.chart');
+check('линии нарисованы по каждой публикации', (await page.$$('.chart .serie')).length === 3);
+check('у каждой линии подпись рядом с концом', (await page.$$('.chart .serielabel')).length === 3);
+check('есть столбцы по лидам', (await page.$$('.chart rect')).length > 0);
+check('подписи набраны цветом текста, а не цветом линии',
+  await page.$$eval('.chart .serielabel', t => t.every(x => {
+    const c = getComputedStyle(x).fill;
+    return c !== 'rgb(217, 119, 6)' && c !== 'rgb(2, 132, 199)';
+  })));
+const fits = await page.$$eval('.chart', charts => charts.every(svg => {
+  const vb = svg.viewBox.baseVal;
+  return [...svg.querySelectorAll('text, rect, circle')].every(el => {
+    const b = el.getBBox();
+    return b.x > -60 && b.y > -8 && b.x + b.width <= vb.width + 1 && b.y + b.height <= vb.height + 1;
+  });
+}));
+check('ничего не вылезает за границы графика', fits);
+check('у точек есть всплывающая подсказка',
+  (await page.$$eval('.chart .serie circle title', t => t.length)) > 0);
+await page.screenshot({ path: path.join(OUT, 'intel-charts.png'), fullPage: true });
+await nav('home');
+check('на главной появилась искра', (await page.$$('.metric .spark')).length === 1);
 
 // --- 6. задачи
 await nav('tasks');

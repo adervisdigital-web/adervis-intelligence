@@ -555,6 +555,114 @@ function brandBlock(b) {
     <p class="muted brandmeta">Обновил: ${E(memberName(b._by))}, ${ago(b._at)}</p></div>`;
 }
 
+// ------------------------------------------------------------------ графики
+//
+// Рисуем сами, без сторонних библиотек: данных мало, а лишняя зависимость
+// в закрытом приложении ни к чему. Палитра проверена на различимость,
+// в том числе при дальтонизме: худшая соседняя пара расходится с запасом.
+// Цифры и подписи набраны цветом текста — цвет несёт только сама линия.
+const CHART_COLORS = ['#d97706', '#0284c7', '#7c3aed', '#dc2626'];
+const num = n => Number(n || 0).toLocaleString('ru');
+
+function niceMax(v) {
+  if (v <= 5) return 5;
+  const step = Math.pow(10, Math.floor(Math.log10(v)));
+  return Math.ceil(v / step) * step;
+}
+
+// Линии: как менялись просмотры от замера к замеру.
+function lineChart(series) {
+  if (!series.length) return '';
+  // Справа оставлено место под подписи линий: они читаются лучше легенды,
+  // но обязаны помещаться, иначе съезжают за край.
+  const W = 760, H = 280, L = 52, R = 172, T = 18, B = 34;
+  const short = s => s.length > 18 ? s.slice(0, 17).trimEnd() + '…' : s;
+  const dates = [...new Set(series.flatMap(s => s.points.map(p => p.x)))].sort();
+  const max = niceMax(Math.max(...series.flatMap(s => s.points.map(p => p.y)), 1));
+  const px = i => L + (dates.length < 2 ? (W - L - R) / 2 : i * (W - L - R) / (dates.length - 1));
+  const py = v => H - B - (v / max) * (H - B - T);
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
+    const y = py(max * f);
+    return `<line class="gridline" x1="${L}" y1="${y}" x2="${W - R}" y2="${y}"/>
+      <text class="axis" x="${L - 10}" y="${y + 4}" text-anchor="end">${num(Math.round(max * f))}</text>`;
+  }).join('');
+
+  const lines = series.map((s, i) => {
+    const color = CHART_COLORS[i % CHART_COLORS.length];
+    const pts = s.points.map(p => ({ x: px(dates.indexOf(p.x)), y: py(p.y), raw: p }));
+    const d = pts.map((p, n) => `${n ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const last = pts[pts.length - 1];
+    return `<g class="serie">
+      <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      ${pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4.5" fill="${color}" stroke="var(--panel)" stroke-width="2">
+        <title>${E(s.name)} · ${E(p.raw.x)} · ${num(p.raw.y)}</title></circle>`).join('')}
+      <circle cx="${(W - R + 14).toFixed(1)}" cy="${last.y.toFixed(1)}" r="4" fill="${color}"/>
+      <text class="serielabel" x="${(W - R + 24).toFixed(1)}" y="${(last.y + 4).toFixed(1)}">${E(short(s.name))}</text>
+    </g>`;
+  }).join('');
+
+  const xLabels = dates.map((d, i) => `<text class="axis" x="${px(i).toFixed(1)}" y="${H - 10}" text-anchor="middle">${E(d.slice(5))}</text>`).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Просмотры по замерам">
+    ${grid}<line class="axisline" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/>${xLabels}${lines}</svg>`;
+}
+
+// Столбцы: сколько лидов принесла каждая публикация.
+function barChart(rows) {
+  if (!rows.length) return '';
+  const W = 760, barH = 26, gap = 12, L = 210, R = 56, T = 8;
+  const H = T + rows.length * (barH + gap);
+  const max = niceMax(Math.max(...rows.map(r => r.value), 1));
+  const width = v => Math.max(2, (v / max) * (W - L - R));
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Лиды по публикациям">
+    ${rows.map((r, i) => {
+      const y = T + i * (barH + gap);
+      const w = width(r.value);
+      return `<g><text class="axis rowlabel" x="${L - 12}" y="${y + barH / 2 + 4}" text-anchor="end">${E(r.name.slice(0, 26))}</text>
+        <rect x="${L}" y="${y}" width="${w.toFixed(1)}" height="${barH}" rx="4" fill="${CHART_COLORS[0]}">
+          <title>${E(r.name)} · ${num(r.value)}</title></rect>
+        <text class="value" x="${(L + w + 10).toFixed(1)}" y="${y + barH / 2 + 4}">${num(r.value)}</text></g>`;
+    }).join('')}</svg>`;
+}
+
+// Искра: короткая линия рядом с числом, без осей и подписей.
+function sparkline(values, w = 132, h = 34) {
+  if (values.length < 2) return '';
+  const max = Math.max(...values, 1), min = Math.min(...values, 0);
+  const span = max - min || 1;
+  const pts = values.map((v, i) => [2 + i * (w - 4) / (values.length - 1), h - 3 - ((v - min) / span) * (h - 8)]);
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <path d="${pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')}"
+      fill="none" stroke="${CHART_COLORS[0]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${pts[pts.length - 1][0].toFixed(1)}" cy="${pts[pts.length - 1][1].toFixed(1)}" r="3" fill="${CHART_COLORS[0]}"/></svg>`;
+}
+
+// Данные для графиков: из замеров, ничего не досочиняем.
+function chartData() {
+  const byPost = new Map();
+  for (const m of [...db.metrics].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (!byPost.has(m.post)) byPost.set(m.post, []);
+    byPost.get(m.post).push(m);
+  }
+  const named = [...byPost.entries()].map(([id, list]) => ({
+    name: db.content.find(p => p.id === id)?.title || 'Публикация удалена',
+    list
+  }));
+  const series = named
+    .filter(s => s.list.length > 1)
+    .sort((a, b) => b.list.length - a.list.length)
+    .slice(0, 4)
+    .map(s => ({ name: s.name, points: s.list.map(m => ({ x: m.date, y: m.views })) }));
+  const leads = named
+    .map(s => ({ name: s.name, value: s.list[s.list.length - 1].leads }))
+    .filter(r => r.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+  const byDate = new Map();
+  for (const m of db.metrics) byDate.set(m.date, (byDate.get(m.date) || 0) + m.views);
+  const spark = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(e => e[1]);
+  return { series, leads, spark, posts: named.length };
+}
+
 // Нейроцепочка: знания → контент → ИИ → каналы → результат.
 // Числа берутся из базы, ничего не придумывается: пустое звено так и
 // показывается пустым, а разрывы цепочки перечисляются отдельно.
@@ -626,6 +734,43 @@ function chainLink(n, id, title, value, unit, rows, state) {
   </button>`;
 }
 
+// Схема цепочки: узлы, стрелки и петля обратной связи. На узком экране
+// схема прячется — там работают карточки ниже.
+function chainMap(s) {
+  const nodes = [
+    { id: 'knowledge', t: 'Знания', v: s.knowledge.total, u: 'записей', on: s.knowledge.forAi > 0 },
+    { id: 'assistant', t: 'ИИ', v: s.ai.requests, u: 'запросов', on: s.ai.requests > 0 },
+    { id: 'content', t: 'Контент', v: s.content.total, u: 'материалов', on: s.content.total > 0 },
+    { id: 'calendar', t: 'Каналы', v: s.channels.list.length, u: 'каналов', on: s.content.dated > 0 },
+    { id: 'analytics', t: 'Результат', v: s.result.leads || 0, u: 'лидов', on: s.result.posts > 0 }
+  ];
+  const W = 1000, H = 250, nw = 168, nh = 96, top = 22, step = 208;
+  const x = i => i * step;
+  const midY = top + nh / 2;
+
+  const boxes = nodes.map((n, i) => `<g class="cnode ${n.on ? 'on' : 'off'}" data-page="${n.id}" role="button" tabindex="0"
+      aria-label="${E(n.t)}: ${n.v} ${E(n.u)}">
+      <rect x="${x(i)}" y="${top}" width="${nw}" height="${nh}" rx="16"/>
+      <text class="cnum" x="${x(i) + 20}" y="${top + 46}">${num(n.v)}</text>
+      <text class="cunit" x="${x(i) + 20}" y="${top + 66}">${E(n.u)}</text>
+      <text class="ctitle" x="${x(i) + 20}" y="${top + 86}">${E(n.t)}</text>
+    </g>`).join('');
+
+  const arrows = nodes.slice(0, -1).map((n, i) => {
+    const from = x(i) + nw + 8, to = x(i + 1) - 8;
+    return `<g class="carrow ${n.on ? 'on' : 'off'}"><line x1="${from}" y1="${midY}" x2="${to - 7}" y2="${midY}"/>
+      <path d="M${to - 9} ${midY - 5} L${to} ${midY} L${to - 9} ${midY + 5}"/></g>`;
+  }).join('');
+
+  const loopY = top + nh + 56;
+  return `<svg class="chainmap" id="chainmap" viewBox="0 0 ${W} ${H}" role="group" aria-label="Схема работы">
+    ${arrows}${boxes}
+    <path class="cloop" d="M${x(4) + nw / 2} ${top + nh + 6} C ${x(4)} ${loopY + 34}, ${x(0) + nw} ${loopY + 34}, ${x(0) + nw / 2 + 2} ${top + nh + 12}"/>
+    <path class="cloop head" d="M${x(0) + nw / 2 - 4} ${top + nh + 20} L${x(0) + nw / 2 + 2} ${top + nh + 8} L${x(0) + nw / 2 + 9} ${top + nh + 19}"/>
+    <text class="cloopname" x="${W / 2}" y="${loopY + 44}" text-anchor="middle">что сработало — возвращается в знания и в следующие тексты</text>
+  </svg>`;
+}
+
 function renderChain() {
   const s = chainStats();
   const gaps = chainGaps(s);
@@ -658,8 +803,8 @@ function renderChain() {
   ];
 
   return heading('Нейроцепочка', 'Как знания компании превращаются в результат. Числа живые, звенья кликабельны.')
-    + `<div class="chain">${links.join('<span class="chainarrow" aria-hidden="true">→</span>')}</div>
-      <div class="chainloop"><span>Обратная связь: что сработало — возвращается в знания и в следующие тексты</span></div>
+    + `<div class="card mapcard">${chainMap(s)}</div>
+      <div class="chain">${links.join('<span class="chainarrow" aria-hidden="true">→</span>')}</div>
       <div class="head"><h2>Где цепочка рвётся</h2><small class="muted">${gaps.length ? 'Найдено мест: ' + gaps.length : 'Разрывов нет'}</small></div>
       ${gaps.length
         ? `<div class="grid three">${gaps.map(([to, title, why]) => `<button class="card gapcard" data-page="${to}">
@@ -699,12 +844,22 @@ function render() {
       ['Задачи', db.tasks.filter(x => x.done).length + ' / ' + db.tasks.length, 'Подготовка к росту'],
       ['Лиды', t.posts ? t.leads : '—', t.posts ? `Просмотры: ${t.views.toLocaleString('ru')} · публикаций: ${t.posts}` : 'Нет загруженных данных']
     ];
+    const spark = sparkline(chartData().spark);
     s = `<div class="hero"><div class="eyebrow">Знания → контент → результат</div>
       <h1>Рабочий центр ADERVIS</h1>
       <p>Все знания компании и маркетинговая работа в одном месте. Студия, CRM и Stock — с отдельными задачами и общим опытом.</p>
       <button data-page="knowledge">Открыть базу знаний ↗</button> <button data-page="cases">Кейсы</button> <button data-page="competitors">Конкурентная карта</button></div>
-      <div class="grid metrics">${cards.map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small></div>`).join('')}</div>
-      <div class="grid layout-2">
+      <div class="grid metrics">${cards.map(([a, b, c], i) => `<div class="card metric"><div class="eyebrow">${a}</div>
+        <div class="value">${b}</div><small>${c}</small>${i === 3 ? spark : ''}</div>`).join('')}</div>
+      ${(() => {
+        const top = chainGaps(chainStats()).slice(0, 3);
+        if (!top.length) return '';
+        return `<div class="head" style="margin:20px 0 12px"><h2 style="margin:0">Что мешает прямо сейчас</h2>
+            <button data-page="chain">Вся цепочка →</button></div>
+          <div class="grid three">${top.map(([to, title, why]) => `<button class="card gapcard" data-page="${to}">
+            <b>${E(title)}</b><p class="muted">${E(why)}</p><span class="gaplink">Перейти →</span></button>`).join('')}</div>`;
+      })()}
+      <div class="grid layout-2" style="margin-top:16px">
         <div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Последние изменения</h2><button data-page="settings">Весь журнал →</button></div>${feed(6)}</div>
         <div class="card"><h2>Подготовить к работе</h2>${tasksList(false)}</div>
       </div>
@@ -854,6 +1009,25 @@ function render() {
   if (page === 'analytics') {
     s = heading('Измерять реальные результаты', 'Ручные замеры. Новая строка — отдельный снимок, а не добавка к предыдущему.',
       `<button class="primary" data-action="newmetric">+ Результат</button>`)
+      + (() => {
+        const c = chartData();
+        if (!db.metrics.length) return '';
+        const blocks = [];
+        if (c.series.length) {
+          blocks.push(`<div class="card chartcard"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Просмотры от замера к замеру</h2>
+            <small class="muted">${c.series.length === 1 ? 'одна публикация' : 'публикаций: ' + c.series.length}</small></div>
+            <p class="muted chartnote">Каждая линия — одна публикация. Сравнивайте на одинаковом возрасте: например, через 48 часов после выхода.</p>
+            ${lineChart(c.series)}</div>`);
+        } else {
+          blocks.push(`<div class="card chartcard"><h2>Динамики пока нет</h2>
+            <p class="muted">Линии появятся, когда у публикации будет хотя бы два замера в разные дни.</p></div>`);
+        }
+        if (c.leads.length) {
+          blocks.push(`<div class="card chartcard"><h2>Лиды по публикациям</h2>
+            <p class="muted chartnote">По последнему замеру каждой публикации.</p>${barChart(c.leads)}</div>`);
+        }
+        return `<div class="grid" style="margin-bottom:16px">${blocks.join('')}</div>`;
+      })()
       + (db.metrics.length
         ? `<div class="card tablewrap"><table class="table"><thead><tr><th>Публикация</th><th>Дата</th><th>Просмотры</th><th>Ответы</th><th>Лиды</th><th></th></tr></thead><tbody>
           ${db.metrics.map(m => `<tr><td>${E(db.content.find(p => p.id === m.post)?.title || 'Не найдена')}</td>
@@ -912,6 +1086,16 @@ function render() {
 
   $('#view').innerHTML = s;
   if (page === 'brand' && deck.on) bindDeckSwipe();
+  // Узлы схемы — часть рисунка, поэтому обработчик отдельный.
+  const map = $('#chainmap');
+  if (map) {
+    const jump = e => {
+      const node = e.target.closest('[data-page]');
+      if (node && (e.type === 'click' || e.key === 'Enter')) go(node.dataset.page);
+    };
+    map.onclick = jump;
+    map.onkeydown = jump;
+  }
 
   const f = $('#filter');
   if (f) f.oninput = e => {

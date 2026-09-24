@@ -301,3 +301,39 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .empty:before{content:'';display:block;width:44px;height:44px;margin:0 auto 12px;opacity:.3;
   background:url(brand/icon.svg) no-repeat center/contain}
 
+
+/* --- графики --- */
+.chartcard{margin-bottom:0}
+.chartnote{font-size:12px;margin:0 0 10px}
+.chart{width:100%;height:auto;display:block;overflow:visible}
+.chart .gridline{stroke:var(--line);stroke-width:1}
+.chart .axisline{stroke:var(--line);stroke-width:1}
+.chart .axis{fill:var(--muted);font-size:11px;font-family:var(--font-ui)}
+.chart .rowlabel{font-size:12px}
+.chart .value{fill:var(--ink);font-size:12px;font-family:var(--font-ui);font-weight:600}
+.chart .serielabel{fill:var(--ink);font-size:12px;font-family:var(--font-ui)}
+.chart .serie circle{transition:r .12s}
+.chart .serie:hover circle{r:6}
+.chart rect{transition:opacity .12s}
+.chart rect:hover{opacity:.82}
+.spark{display:block;margin-top:10px;width:132px;height:34px}
+@media(max-width:720px){.chart .serielabel,.chart .rowlabel{font-size:14px}}
+
+/* --- схема нейроцепочки --- */
+.mapcard{padding:10px 14px 4px;margin-bottom:14px}
+.chainmap{width:100%;height:auto;display:block;overflow:visible}
+.cnode rect{fill:var(--bg);stroke:var(--line);stroke-width:1.5;transition:.15s}
+.cnode.on rect{stroke:var(--gold)}
+.cnode:hover rect{stroke:var(--gold);fill:var(--gold-bg)}
+.cnode{cursor:pointer}
+.cnode:focus-visible rect{stroke:var(--gold);stroke-width:2.5}
+.cnum{fill:var(--ink);font-family:var(--font-display);font-size:30px;font-weight:700}
+.cnode.off .cnum{fill:var(--muted)}
+.cunit{fill:var(--muted);font-size:12px;font-family:var(--font-ui)}
+.ctitle{fill:var(--ink);font-size:14px;font-family:var(--font-display)}
+.carrow line,.carrow path{stroke:var(--line);stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.carrow.on line,.carrow.on path{stroke:var(--gold)}
+.cloop{stroke:var(--line);stroke-width:1.5;fill:none;stroke-dasharray:6 6;stroke-linecap:round}
+.cloop.head{stroke:var(--gold);stroke-dasharray:none;stroke-width:2;stroke-linejoin:round}
+.cloopname{fill:var(--muted);font-size:12px;font-family:var(--font-ui)}
+@media(max-width:860px){.mapcard{display:none}}
