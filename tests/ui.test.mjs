@@ -36,6 +36,14 @@ const fake = (seedData) => {
     tasks: seedData.tasks.map(o => ({ ...o, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' })),
     metrics: [],
     files: [],
+    brand: [
+      { id: 'colors-base', title: 'Базовые цвета', kind: 'colors', sort: 20, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { items: [{ name: 'Фон', hex: '#141414', usage: 'основной фон' }, { name: 'Золото', hex: '#f6bd3a', usage: 'акцент' }] } },
+      { id: 'fonts', title: 'Шрифты', kind: 'fonts', sort: 40, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { items: [{ family: 'Unbounded', role: 'Заголовки', weights: '500, 700', sample: 'ADERVIS' }] } },
+      { id: 'voice', title: 'Как мы говорим', kind: 'text', sort: 90, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { body: 'Пишем живо и просто.\n— Без канцелярита\n— Без выдуманных цифр' } }
+    ],
     members: [{ email: 'artem@adervis.ru', name: 'Артём' }, { email: 'alex@adervis.ru', name: 'Александр' }],
     activity: []
   };
@@ -271,6 +279,31 @@ check('в бриф не попали внутренние записи', !brief.
 check('в бриф не попали непроверенные записи', !brief.includes('Цифры на сайте'));
 check('в брифе есть публичные факты', brief.includes('Позиционирование сайта'));
 await page.keyboard.press('Escape');
+
+// --- 9б. брендбук
+await nav('brand');
+check('брендбук показывает логотипы', (await page.$$('.logoframe img')).length === 3);
+check('цвета показаны образцами', (await page.$$('.swatch')).length === 2);
+check('у образца виден код цвета', (await page.textContent('.swatch')).includes('#141414'));
+check('образец шрифта набран фирменным шрифтом',
+  (await page.$eval('.sampletext', e => getComputedStyle(e).fontFamily)).includes('Unbounded'));
+check('фирменный шрифт действительно загрузился',
+  await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('500 26px Unbounded'); }));
+check('правила показаны списком', (await page.$$eval('.brandtext li', l => l.map(x => x.textContent))).includes('Без канцелярита'));
+await page.screenshot({ path: path.join(OUT, 'intel-brand.png'), fullPage: true });
+
+await page.click('[data-action=editbrand][data-id="colors-base"]');
+check('правка идёт строками', (await page.inputValue('#bf textarea')).startsWith('Фон | #141414 | основной фон'));
+await page.fill('#bf textarea', 'Фон | не-цвет | основной фон');
+await page.click('#bf button.primary');
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('вместо цвета'));
+check('неверный цвет не сохраняется с понятной подсказкой',
+  (await state()).brand.find(b => b.id === 'colors-base').data.items.length === 2);
+await page.fill('#bf textarea', 'Фон | #101010 | тёмный фон\nЗолото | #f6bd3a | акцент\nБелый | #ffffff | текст на тёмном');
+await page.click('#bf button.primary');
+await page.waitForFunction(() => window.__STATE__.brand.find(b => b.id === 'colors-base').data.items.length === 3);
+check('правка брендбука сохраняется', (await page.$$('.swatch')).length === 3);
+check('изменение попало в журнал', (await state()).activity.some(a => a.entity === 'brand' && a.action === 'update'));
 
 // --- 10а. файлы в записях
 await nav('knowledge');

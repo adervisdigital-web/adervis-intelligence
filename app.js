@@ -39,7 +39,8 @@ const FIELDS = {
   content: ['id', 'title', 'body', 'product', 'author', 'channel', 'status', 'date'],
   tasks: ['id', 'title', 'done'],
   metrics: ['id', 'post', 'date', 'views', 'replies', 'leads'],
-  files: ['id', 'record', 'name', 'path', 'mime', 'size']
+  files: ['id', 'record', 'name', 'path', 'mime', 'size'],
+  brand: ['id', 'title', 'kind', 'sort', 'data']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 
@@ -89,12 +90,13 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
         selectAll('metrics', 'measured_on'),
         selectAll('files', 'created_at'),
+        selectAll('brand', 'sort'),
         selectAll('members', 'email'),
         sb.from('activity').select('*').order('at', { ascending: false }).limit(40).then(must)
       ]);
@@ -104,6 +106,7 @@ function createApi(cfg) {
         tasks: tasks.map(r => fromRow('tasks', r)),
         metrics: metrics.map(r => fromRow('metrics', r)),
         files: files.map(r => fromRow('files', r)),
+        brand: brand.map(r => fromRow('brand', r)),
         members, activity
       };
     },
@@ -167,7 +170,7 @@ function createApi(cfg) {
 
 let api = null;
 let me = null;
-let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], members: [], activity: [] };
+let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], members: [], activity: [] };
 let page = 'home', query = '', category = 'Все';
 let month = new Date().getMonth(), year = new Date().getFullYear();
 let loadedAt = 0;
@@ -182,7 +185,8 @@ let ai = {
 };
 
 const sections = [
-  ['home', '⌂', 'Обзор'], ['knowledge', '▦', 'База знаний'], ['products', '◇', 'Услуги и продукты'],
+  ['home', '⌂', 'Обзор'], ['knowledge', '▦', 'База знаний'], ['brand', '◈', 'Брендбук'],
+  ['products', '◇', 'Услуги и продукты'],
   ['cases', '▤', 'Кейсы'], ['content', '✎', 'Контент-студия'], ['calendar', '▣', 'Календарь'],
   ['assistant', '✦', 'AI-рабочая зона'], ['analytics', '⌁', 'Аналитика'], ['competitors', '◎', 'Конкуренты'],
   ['tasks', '✓', 'Задачи и рост'], ['roadmap', '↗', 'Развитие системы'], ['settings', '⚙', 'Настройки']
@@ -284,7 +288,7 @@ function filters(categories) {
     <select class="input" id="category" aria-label="Фильтр">${['Все', ...categories].map(c => `<option ${c === category ? 'selected' : ''}>${E(c)}</option>`).join('')}</select></div>`;
 }
 
-const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл' };
+const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -293,6 +297,49 @@ function feed(limit) {
       <b>${ACTION_NAME[a.action] || a.action} ${ENTITY_NAME[a.entity] || a.entity}</b>
       ${a.title ? `<br><span class="muted">«${E(a.title)}»</span>` : ''}
     </div><small>${E(memberName(a.actor))} · ${ago(a.at)}</small></div>`).join('');
+}
+
+// Цвет и шрифт приходят из базы и попадают в разметку, поэтому пропускаем
+// только заведомо безопасные значения.
+const safeHex = h => /^#[0-9a-f]{3,8}$/i.test(String(h || '')) ? String(h) : '#000000';
+const FONT_STACK = {
+  'Unbounded': "'Unbounded', ui-sans-serif, sans-serif",
+  'Golos Text': "'Golos Text', ui-sans-serif, sans-serif"
+};
+
+function brandText(body) {
+  const lines = String(body || '').split('\n');
+  let html = '', list = [];
+  const flush = () => { if (list.length) { html += `<ul>${list.map(x => `<li>${E(x)}</li>`).join('')}</ul>`; list = []; } };
+  for (const line of lines) {
+    if (/^\s*—\s+/.test(line)) list.push(line.replace(/^\s*—\s+/, ''));
+    else { flush(); if (line.trim()) html += `<p>${E(line)}</p>`; }
+  }
+  flush();
+  return html || '<p class="muted">Пусто.</p>';
+}
+
+function brandBlock(b) {
+  const head = `<div class="head" style="margin:0 0 14px"><h2 style="margin:0">${E(b.title)}</h2>
+    <button data-action="editbrand" data-id="${E(b.id)}">Изменить</button></div>`;
+  const items = Array.isArray(b.data?.items) ? b.data.items : [];
+  let body;
+
+  if (b.kind === 'colors') {
+    body = `<div class="swatches">${items.map(c => `<button class="swatch" data-action="copyhex" data-id="${E(c.hex)}" title="Скопировать ${E(c.hex)}">
+      <span class="chip" style="background:${safeHex(c.hex)}"></span>
+      <b>${E(c.name)}</b><code>${E(c.hex)}</code>
+      <small class="muted">${E(c.usage || '')}</small></button>`).join('')}</div>`;
+  } else if (b.kind === 'fonts') {
+    body = items.map(f => `<div class="fontsample">
+      <div class="sampletext" style="font-family:${FONT_STACK[f.family] || 'inherit'}">${E(f.sample)}</div>
+      <small class="muted">${E(f.family)} · ${E(f.role)} · начертания ${E(f.weights)}</small></div>`).join('');
+  } else {
+    body = `<div class="brandtext">${brandText(b.data?.body)}</div>`;
+  }
+
+  return `<div class="card brandcard">${head}${body}
+    <p class="muted brandmeta">Обновил: ${E(memberName(b._by))}, ${ago(b._at)}</p></div>`;
 }
 
 function totals() {
@@ -354,6 +401,26 @@ function render() {
       + `<div class="grid three">${ks.filter(k => (category === 'Все' || category === k.category)
         && (k.title + ' ' + k.body).toLowerCase().includes(query.toLowerCase())).map(kc).join('')
       || '<div class="empty">Записи не найдены.</div>'}</div>`;
+  }
+
+  if (page === 'brand') {
+    const record = db.knowledge.find(k => k.category === 'Бренд' && /фирменн/i.test(k.title));
+    s = heading('Брендбук ADERVIS', 'Знак, цвета, шрифты и правила. Всё правится прямо здесь — брендбук не устаревает в день выпуска.')
+      + `<div class="card brandlogo">
+          <div class="head" style="margin:0 0 14px"><h2 style="margin:0">Знак</h2>
+            <small class="muted">logo.svg · icon.svg · logoB.svg</small></div>
+          <div class="logoframes">
+            <div class="logoframe"><img src="brand/logo.svg" alt="Логотип ADERVIS"></div>
+            <div class="logoframe small"><img src="brand/icon.svg" alt="Знак ADERVIS"></div>
+            <div class="logoframe light"><img src="brand/logoB.svg" alt="Логотип ADERVIS, второй вариант"></div>
+          </div>
+          <p><a href="brand/logo.svg" download>Скачать logo.svg</a> · <a href="brand/icon.svg" download>icon.svg</a> · <a href="brand/logoB.svg" download>logoB.svg</a></p>
+        </div>`
+      + db.brand.map(brandBlock).join('')
+      + (record ? `<div class="card"><div class="head" style="margin:0 0 14px"><h2 style="margin:0">Файлы бренда</h2>
+          <button data-k="${E(record.id)}">Добавить файлы</button></div>
+          ${fileList(record.id)}
+          <p class="muted">Файлы лежат в записи «${E(record.title)}» базы знаний.</p></div>` : '');
   }
 
   if (page === 'products') {
@@ -776,6 +843,60 @@ function delMetric(id) {
   });
 }
 
+// Правка брендбука строками: одна строка — один цвет или шрифт.
+// Так понятнее, чем форма с десятком полей, и быстрее правится.
+function parseBrand(kind, raw) {
+  if (kind === 'text') return { body: raw.trim() };
+  const items = raw.split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+    const parts = line.split('|').map(p => p.trim());
+    if (kind === 'colors') {
+      if (!/^#[0-9a-f]{3,8}$/i.test(parts[1] || '')) {
+        throw new Error(`в строке «${line}» вместо цвета «${parts[1] || ''}». Нужен вид #f6bd3a`);
+      }
+      return { name: parts[0] || 'Без названия', hex: parts[1], usage: parts[2] || '' };
+    }
+    return { family: parts[0] || '', role: parts[1] || '', weights: parts[2] || '', sample: parts[3] || '' };
+  });
+  if (!items.length) throw new Error('не осталось ни одной строки');
+  return { items };
+}
+
+function editBrand(id) {
+  const b = db.brand.find(x => x.id === id);
+  if (!b) return;
+  const items = Array.isArray(b.data?.items) ? b.data.items : [];
+  const raw = b.kind === 'colors' ? items.map(c => `${c.name} | ${c.hex} | ${c.usage || ''}`).join('\n')
+    : b.kind === 'fonts' ? items.map(f => `${f.family} | ${f.role} | ${f.weights} | ${f.sample}`).join('\n')
+    : (b.data?.body || '');
+  const hint = b.kind === 'colors' ? 'Одна строка — один цвет: <b>Название | #f6bd3a | где применяется</b>'
+    : b.kind === 'fonts' ? 'Одна строка — один шрифт: <b>Семейство | роль | начертания | образец текста</b>. Живой образец покажем для Unbounded и Golos Text.'
+    : 'Обычный текст. Строки, начинающиеся с «— », покажем списком.';
+
+  modal(`<h2>${E(b.title)}</h2><form id="bf">
+    <p class="muted">${hint}</p>
+    <textarea name="raw" style="min-height:280px">${E(raw)}</textarea>
+    <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
+
+  $('#bf').onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('#bf button.primary');
+    btn.disabled = true;
+    try {
+      const data = parseBrand(b.kind, new FormData(e.target).get('raw'));
+      const saved = await api.update('brand', { ...b, data });
+      upsertLocal('brand', saved);
+      noteLocal('update', 'brand', saved);
+      $('#modal').close();
+      render();
+      toast('Брендбук обновлён');
+    } catch (err) {
+      if (err?.name === 'Conflict' || /Failed to fetch|NetworkError/i.test(err?.message || '')) handleError(err);
+      else toast('Не сохранено: ' + err.message, 8000);
+      btn.disabled = false;
+    }
+  };
+}
+
 function search() {
   modal('<h2>Поиск по ADERVIS</h2><input id="global" aria-label="Глобальный поиск" placeholder="Кейс, услуга, публикация, раздел…"><div id="results"></div>');
   const fill = () => {
@@ -1019,6 +1140,11 @@ document.addEventListener('click', async e => {
     case 'delp': delP(b.dataset.id); break;
     case 'deltask': delTask(b.dataset.id); break;
     case 'delmetric': delMetric(b.dataset.id); break;
+    case 'editbrand': editBrand(b.dataset.id); break;
+    case 'copyhex':
+      try { await navigator.clipboard.writeText(b.dataset.id); toast('Скопировано: ' + b.dataset.id); }
+      catch (err) { toast('Не удалось скопировать'); }
+      break;
     case 'openfile': await openFile(b.dataset.id); break;
     case 'delfile': await delFile(b.dataset.id); break;
     case 'signout': await api.signOut(); me = null; showGate(); break;

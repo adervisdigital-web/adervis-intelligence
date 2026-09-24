@@ -72,7 +72,7 @@ check('аноним не может вызвать is_member()', (await fail('an
 
 // --- журнал изменений
 await as('authenticated', 'alex@adervis.ru', `update public.knowledge set body = 'Правка Александра' where id = 'k1'`);
-const log = (await as('authenticated', 'artem@adervis.ru', 'select actor, entity, action, title from public.activity order by id')).rows;
+const log = (await as('authenticated', 'artem@adervis.ru', `select actor, entity, action, title from public.activity where entity='knowledge' order by id`)).rows;
 check('журнал: создание и правка записаны', log.length === 2 && log[0].action === 'insert' && log[1].action === 'update', JSON.stringify(log));
 check('журнал: виден автор правки', log[1].actor === 'alex@adervis.ru' && log[1].title === 'Позиционирование');
 
@@ -148,6 +148,20 @@ check('посторонний не видит файлы в хранилище',
   (await as('authenticated', 'stranger@gmail.com', `select count(*)::int c from storage.objects`)).rows[0].c === 0);
 check('посторонний не может залить файл',
   (await fail('authenticated', 'stranger@gmail.com', `insert into storage.objects(bucket_id, name) values ('files','чужое.pdf')`)) !== null);
+
+// --- брендбук
+check('брендбук наполнен при создании базы',
+  (await as('authenticated', 'artem@adervis.ru', 'select count(*)::int c from public.brand')).rows[0].c >= 9);
+check('в брендбуке есть палитра с золотом',
+  (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.brand, jsonb_array_elements(data->'items') i where kind='colors' and i->>'hex' = '#f6bd3a'`)).rows[0].c > 0);
+check('посторонний не видит брендбук',
+  (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.brand')).rows[0].c === 0);
+check('анониму брендбук закрыт', (await fail('anon', '', 'select * from public.brand')) !== null);
+check('неизвестный вид блока отклоняется',
+  (await fail('authenticated', 'artem@adervis.ru', `insert into public.brand(id,title,kind) values ('x','Проба','что-то')`)) !== null);
+await as('authenticated', 'alex@adervis.ru', `update public.brand set data = jsonb_build_object('body','правка') where id='voice'`);
+check('правка брендбука записывается в журнал',
+  (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.activity where entity='brand' and action='update'`)).rows[0].c === 1);
 
 // --- служебная роль: ею работает серверная функция
 check('служебная роль ведёт учёт расходов на ИИ',
