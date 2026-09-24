@@ -9,8 +9,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import {
-  buildPrompt, parseReply, sanitizeOptions, usableFacts, providerRequest, providerText,
-  modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
+  buildPrompt, buildRewritePrompt, parseReply, sanitizeOptions, sanitizeRewrite, usableFacts,
+  providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
 } from './compose.ts';
 
 // В новых проектах Supabase ключи называются иначе, чем в старых,
@@ -75,20 +75,31 @@ Deno.serve(async (req) => {
       return json({ error: `Дневной лимит исчерпан: ${DAILY_LIMIT} запросов за сутки. Попробуйте завтра.` }, 429);
     }
 
-    const options = sanitizeOptions(await req.json());
+    const input = await req.json();
+    const mode = input?.mode === 'rewrite' ? 'rewrite' : 'write';
 
     // Публичные и проверенные записи. Политики доступа базы действуют и здесь:
     // запрос идёт от имени вошедшего человека.
-    const { data: rows, error } = await supabase
+    let query = supabase
       .from('knowledge')
       .select('id,title,body,source,access,status')
       .eq('access', 'Публичное')
-      .in('status', TRUSTED_STATUS)
-      .order('category');
+      .in('status', TRUSTED_STATUS);
+
+    // Можно опереться на выбранные записи. Ограничение «публичное и
+    // проверенное» остаётся в силе: выбрать внутреннюю запись нельзя.
+    const picked = Array.isArray(input?.records) ? input.records.filter((r: unknown) => typeof r === 'string').slice(0, 60) : [];
+    if (picked.length) query = query.in('id', picked);
+
+    const { data: rows, error } = await query.order('category');
     if (error) throw new Error('Не удалось прочитать базу знаний: ' + error.message);
 
     const facts = usableFacts(rows ?? []);
-    const prompt = buildPrompt(facts, options);
+    // При правке лишние факты только мешают: берём те, на которые черновик
+    // уже ссылается, а если ссылок нет — не подкладываем ничего.
+    const prompt = mode === 'rewrite'
+      ? buildRewritePrompt(picked.length ? facts : [], sanitizeRewrite(input))
+      : buildPrompt(facts, sanitizeOptions(input));
 
     let payload = null;
     let usedModel = '';

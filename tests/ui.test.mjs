@@ -151,6 +151,9 @@ const fake = (seedData) => {
     async generate(payload) {
       window.__lastAiPayload = payload;
       if (window.__aiFail) throw new Error(window.__aiFail);
+      if (payload.mode === 'rewrite') {
+        return { drafts: [{ title: payload.draft.title, body: 'Поправленный текст: ' + payload.preset + (payload.instruction || ''), sources: payload.records }], gaps: [], model: 'gemini/тест', left: 27 };
+      }
       return JSON.parse(JSON.stringify(window.__aiReply));
     },
     async upsertAll(table, list) {
@@ -545,7 +548,9 @@ await page.fill('#goal', 'Написать посты про смету и по�
 await page.click('[data-action=write]');
 await page.waitForSelector('[data-action=savedraft]');
 const payload = await page.evaluate(() => window.__lastAiPayload);
-check('на сервер уходит только задание, без фактов', JSON.stringify(Object.keys(payload).sort()) === '["author","channel","count","goal","product"]', JSON.stringify(payload));
+check('на сервер уходит только задание, без фактов',
+  JSON.stringify(Object.keys(payload).sort()) === '["author","channel","count","goal","product","records"]'
+  && Array.isArray(payload.records) && !JSON.stringify(payload).includes('ADERVIS: визуальные'), JSON.stringify(payload));
 check('задание передано полностью', payload.channel === 'Telegram' && payload.count === 3 && payload.goal.includes('смету'));
 check('черновики показаны', (await page.$$('[data-action=savedraft]')).length === 2);
 check('видны источники черновика', (await page.$$eval('article .tag', t => t.map(x => x.textContent))).some(t => t.includes('ADERVIS')));
@@ -563,6 +568,41 @@ await page.screenshot({ path: path.join(OUT, 'intel-ai-drafts.png'), fullPage: t
 await page.click('article .tag');
 check('источник открывает запись базы знаний', await page.evaluate(() => document.querySelector('#modal').open));
 await page.keyboard.press('Escape');
+
+// правка черновика на месте
+await page.click('[data-action=rewrite][data-id="1"][data-preset=shorter]');
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('поправлен'));
+const after = await page.$$eval('article .bodytext', t => t.map(x => x.textContent));
+check('правка заменила текст черновика', after[1].startsWith('Поправленный текст: shorter'), after[1]);
+check('на правку ушёл сам черновик и его источники',
+  (await page.evaluate(() => window.__lastAiPayload)).mode === 'rewrite');
+check('соседний черновик не тронут', after[0].includes('В смете легко'));
+
+await page.click('[data-action=rewriteown][data-id="0"]');
+await page.fill('#rw textarea', 'Убери первый абзац');
+await page.click('#rw button.primary');
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('поправлен'));
+check('своя правка доходит до сервера',
+  (await page.evaluate(() => window.__lastAiPayload)).instruction === 'Убери первый абзац');
+
+// выбор записей для задания
+await page.click('[data-action=pickrecords]');
+const expectPick = (await state()).knowledge
+  .filter(k => k.access === 'Публичное' && !['Черновик', 'Требует проверки'].includes(k.status)).length;
+const shownPick = await page.$$eval('.pickbox input', i => i.length);
+check('в списке только проверенные публичные записи', shownPick === expectPick, `${shownPick} из ${expectPick}`);
+check('внутренних записей в списке нет',
+  !(await page.textContent('.pickbox')).includes('История и цели'));
+await page.check('.pickbox input[value=k1]');
+await page.check('.pickbox input[value=k8]');
+await page.click('#pickok');
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('Выбрано записей: 2'));
+await page.click('[data-action=write]');
+await page.waitForSelector('[data-action=savedraft]');
+check('задание уходит с выбранными записями',
+  JSON.stringify((await page.evaluate(() => window.__lastAiPayload)).records) === '["k1","k8"]');
+await page.click('[data-action=allrecords]');
+check('можно вернуть все записи', (await page.textContent('#view')).includes('все проверенные публичные записи'));
 
 await page.evaluate(() => { window.__aiFail = 'Дневной лимит исчерпан: 30 запросов за сутки. Попробуйте завтра.'; });
 await page.click('[data-action=write]');

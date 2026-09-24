@@ -341,3 +341,15 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 /* --- публикация в канал --- */
 .publishrow{flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px;border-top:1px solid var(--line);padding-top:16px}
 .previewbox{max-height:260px;overflow:auto;font-size:13px;line-height:1.5;background:var(--bg);margin:10px 0 0}
+
+/* --- правки черновика и выбор записей --- */
+.rewrites{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0 4px;font-size:12px}
+.chip{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;color:var(--ink)}
+.chip:hover{border-color:var(--gold);color:var(--ink)}
+.chip:disabled{opacity:.5}
+.pickbox{max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px}
+.pickrow{display:flex;gap:10px;align-items:flex-start;padding:7px 4px;border-bottom:1px solid var(--line)}
+.pickrow:last-child{border-bottom:0}
+.pickrow input{margin-top:3px;width:16px;height:16px;accent-color:var(--gold);flex:none}
+.pickrow b{font-weight:600;font-size:13px}
+@media(max-width:720px){.chip{padding:9px 14px;font-size:13px}.rewrites{gap:8px}}

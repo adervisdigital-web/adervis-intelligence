@@ -223,7 +223,8 @@ let ai = {
     goal: 'Подготовить разные посты для Threads. Россия, digital-аудитория. Цель: интерес к CRM и заявки на услуги студии. Без выдуманных историй.',
     author: 'Артём Никитин', channel: 'Threads', product: 'CRM', count: 3
   },
-  drafts: [], gaps: [], saved: [], left: null, model: '', error: '', busy: false
+  drafts: [], gaps: [], saved: [], left: null, model: '', error: '', busy: false,
+  records: [] // пусто — берём все проверенные публичные
 };
 
 const sections = [
@@ -983,6 +984,11 @@ function render() {
         </div>
         <div class="card"><h2>Что уходит в модель</h2>
           <p>Проверенных публичных записей: <b>${usable}</b> из ${db.knowledge.length}.</p>
+          <p class="muted">${ai.records.length
+            ? `Выбрано записей: <b>${ai.records.length}</b> — модель увидит только их.`
+            : 'Сейчас берутся все проверенные публичные записи.'}
+            <button class="chip" data-action="pickrecords">${ai.records.length ? 'Изменить выбор' : 'Выбрать записи'}</button>
+            ${ai.records.length ? '<button class="chip" data-action="allrecords">Вернуть все</button>' : ''}</p>
           <p class="muted">Не уходят записи «Внутреннее», «Черновик» и «Требует проверки». Факты собирает сервер сам — приложение отправляет только задание, поэтому внутренние сведения не попадут в запрос даже случайно.</p>
           <div class="notice">Модель может ошибаться. Перед публикацией сверяйте факты и ссылки на источники.</div>
           <button data-page="knowledge">База знаний</button></div>
@@ -1002,6 +1008,14 @@ function render() {
             <div>${sources.length
               ? sources.map(k => `<button class="tag" data-k="${E(k.id)}" title="${E(k.title)}">${E(k.title.slice(0, 28))}</button>`).join('')
               : '<small class="muted">Источники не указаны — проверьте текст особенно внимательно.</small>'}</div>
+            <div class="rewrites">
+              <span class="muted">Поправить:</span>
+              ${[['shorter', 'короче'], ['softer', 'мягче'], ['sharper', 'острее'],
+                 ['question', 'вопрос в конце'], ['simpler', 'проще']]
+                .map(([k, t]) => `<button class="chip" data-action="rewrite" data-id="${i}" data-preset="${k}"
+                  ${ai.busy ? 'disabled' : ''}>${t}</button>`).join('')}
+              <button class="chip" data-action="rewriteown" data-id="${i}" ${ai.busy ? 'disabled' : ''}>своя правка…</button>
+            </div>
             <div class="formactions">
               <button class="primary" data-action="savedraft" data-id="${i}" ${ai.saved.includes(i) ? 'disabled' : ''}>${ai.saved.includes(i) ? 'Сохранено' : 'В контент-студию'}</button>
               <button data-action="copydraft" data-id="${i}">Копировать</button>
@@ -1507,7 +1521,7 @@ async function write() {
   ai.busy = true; ai.error = '';
   render();
   try {
-    const res = await api.generate(ai.form);
+    const res = await api.generate({ ...ai.form, records: ai.records });
     ai.drafts = res.drafts || [];
     ai.gaps = res.gaps || [];
     ai.left = res.left ?? null;
@@ -1521,6 +1535,68 @@ async function write() {
     ai.busy = false;
     render();
   }
+}
+
+// Правка черновика на месте: новый текст заменяет прежний, отметка
+// «сохранено» снимается — в контент-студию уйдёт уже исправленный вариант.
+async function rewriteDraft(i, preset, instruction) {
+  const d = ai.drafts[i];
+  if (!d) return;
+  ai.busy = true; ai.error = '';
+  render();
+  try {
+    const res = await api.generate({
+      mode: 'rewrite',
+      draft: { title: d.title, body: d.body },
+      records: d.sources || [],
+      channel: ai.form.channel,
+      preset, instruction
+    });
+    const fresh = res.drafts?.[0];
+    if (!fresh) throw new Error('Модель не вернула правку');
+    ai.drafts[i] = { ...fresh, sources: fresh.sources?.length ? fresh.sources : d.sources };
+    ai.saved = ai.saved.filter(n => n !== i);
+    ai.left = res.left ?? ai.left;
+    ai.model = res.model || ai.model;
+    toast('Черновик поправлен');
+  } catch (e) {
+    ai.error = e?.message || 'Не удалось поправить';
+  } finally {
+    ai.busy = false;
+    render();
+  }
+}
+
+// Выбор записей для задания. В списке только то, что и так уходит в модель:
+// внутреннее и непроверенное сюда не попадает даже выбором.
+function pickRecords() {
+  const usable = db.knowledge.filter(k => k.access === 'Публичное' && !['Требует проверки', 'Черновик'].includes(k.status));
+  modal(`<h2>На каких записях писать</h2>
+    <p class="muted">Ничего не отмечено — берутся все ${usable.length}. Отметьте, чтобы сузить: например, один кейс и услуги.</p>
+    <div class="pickbox">${usable.map(k => `<label class="task pickrow">
+      <input type="checkbox" value="${E(k.id)}" ${ai.records.includes(k.id) ? 'checked' : ''}>
+      <span><b>${E(k.title)}</b><small class="muted"> · ${E(k.category)}</small></span></label>`).join('')}</div>
+    <div class="formactions"><button class="primary" id="pickok">Готово</button>
+      <button data-action="close">Отмена</button></div>`);
+  $('#pickok').onclick = () => {
+    ai.records = [...document.querySelectorAll('.pickbox input:checked')].map(i => i.value);
+    $('#modal').close();
+    render();
+    toast(ai.records.length ? `Выбрано записей: ${ai.records.length}` : 'Берём все проверенные записи');
+  };
+}
+
+function rewriteOwn(i) {
+  modal(`<h2>Своя правка</h2><form id="rw">
+    <p class="muted">Скажите словами, что поменять. Факты модель не добавит — только перепишет.</p>
+    <textarea name="instruction" required maxlength="500" placeholder="Например: убери первый абзац и добавь пример из кейса Brait"></textarea>
+    <div class="formactions"><button class="primary">Поправить</button></div></form>`);
+  $('#rw').onsubmit = e => {
+    e.preventDefault();
+    const text = String(new FormData(e.target).get('instruction') || '').trim();
+    $('#modal').close();
+    if (text) rewriteDraft(i, '', text);
+  };
 }
 
 async function saveDraft(i) {
@@ -1700,6 +1776,10 @@ document.addEventListener('click', async e => {
     case 'newmetric': metricNew(); break;
     case 'brief': brief(); break;
     case 'write': await write(); break;
+    case 'rewrite': await rewriteDraft(Number(b.dataset.id), b.dataset.preset, ''); break;
+    case 'rewriteown': rewriteOwn(Number(b.dataset.id)); break;
+    case 'pickrecords': pickRecords(); break;
+    case 'allrecords': ai.records = []; render(); toast('Берём все проверенные записи'); break;
     case 'savedraft': await saveDraft(Number(b.dataset.id)); break;
     case 'copydraft': await copyDraft(Number(b.dataset.id)); break;
     case 'copy':

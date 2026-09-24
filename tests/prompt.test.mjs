@@ -1,6 +1,6 @@
 import {
   sanitizeOptions, buildPrompt, parseReply, usableFacts, providerRequest, providerText,
-  modelAttempts, RETRY_STATUS, MAX_DRAFTS
+  modelAttempts, sanitizeRewrite, buildRewritePrompt, REWRITES, RETRY_STATUS, MAX_DRAFTS
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -73,6 +73,24 @@ check('свой адрес сервиса поддерживается без л
 check('разбор ответа Gemini', providerText('gemini', { candidates: [{ content: { parts: [{ text: 'ответ' }] } }] }) === 'ответ');
 check('разбор ответа OpenAI-совместимого', providerText('openai', { choices: [{ message: { content: 'ответ' } }] }) === 'ответ');
 check('неожиданный ответ не роняет функцию', providerText('gemini', { error: 'что-то не так' }) === '');
+
+// --- правка готового черновика
+const draft = { title: 'Смета', body: 'В смете легко посчитать камеру и съёмочный день. Сложнее вспомнить подготовку.' };
+check('готовая правка подставляет указание',
+  sanitizeRewrite({ draft, preset: 'shorter' }).instruction === REWRITES.shorter);
+check('своя формулировка принимается',
+  sanitizeRewrite({ draft, instruction: 'Добавь пример из кейса' }).instruction === 'Добавь пример из кейса');
+check('без указания править нечего', !!throws(() => sanitizeRewrite({ draft })));
+check('слишком короткий текст не правим', !!throws(() => sanitizeRewrite({ draft: { body: 'мало' }, preset: 'shorter' })));
+
+const rp = buildRewritePrompt(facts, sanitizeRewrite({ draft, preset: 'softer', channel: 'Telegram' }));
+check('в правку попадает сам черновик', rp.includes('В смете легко посчитать камеру'));
+check('в правке есть указание', rp.includes(REWRITES.softer));
+check('в правке запрещено добавлять факты', /не добавляй фактов/i.test(rp));
+check('в правке передаются только нужные факты', rp.includes('[k1]') && !rp.includes('Сократили штат'));
+check('правка просит один вариант', /ровно один вариант/i.test(rp));
+check('без фактов правка тоже собирается',
+  buildRewritePrompt([], sanitizeRewrite({ draft, preset: 'simpler' })).includes('Дополнительных фактов нет'));
 
 // --- поведение при перегрузке модели
 check('перегрузку и лимит пробуем ещё раз', RETRY_STATUS.includes(503) && RETRY_STATUS.includes(429));
