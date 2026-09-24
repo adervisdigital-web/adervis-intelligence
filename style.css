@@ -301,8 +301,3 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .empty:before{content:'';display:block;width:44px;height:44px;margin:0 auto 12px;opacity:.3;
   background:url(brand/icon.svg) no-repeat center/contain}
 
-/* --- фирменная подложка --- */
-.hero{background-image:radial-gradient(120% 140% at 88% 8%,rgba(246,189,58,.18),transparent 46%),url(brand/pattern.svg);
-  background-repeat:no-repeat,repeat;background-size:auto,120px 60px;background-blend-mode:normal}
-.slidecover{background:url(brand/pattern.svg) repeat;background-size:150px 75px;margin:-5cqw -6cqw;padding:5cqw 6cqw}
-.chainloop{background:url(brand/pattern.svg) repeat;background-size:120px 60px}
