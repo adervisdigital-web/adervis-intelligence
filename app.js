@@ -74,6 +74,7 @@ const FIELDS = {
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
   brand: ['id', 'title', 'kind', 'sort', 'data'],
   finance: ['id', 'month', 'direction', 'revenue', 'costs', 'projects', 'shoot_days', 'note'],
+  economics: ['direction', 'fixed_costs', 'price', 'note'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
@@ -124,7 +125,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, finance, decisions, publications, ai, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, finance, economics, decisions, publications, ai, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -132,6 +133,7 @@ function createApi(cfg) {
         selectAll('files', 'created_at'),
         selectAll('brand', 'sort'),
         selectAll('finance', 'month'),
+        selectAll('economics', 'direction'),
         selectAll('decisions', 'decided_on'),
         selectAll('publications', 'at'),
         sb.from('ai_usage').select('*').order('at', { ascending: false }).limit(200).then(must),
@@ -146,6 +148,7 @@ function createApi(cfg) {
         files: files.map(r => fromRow('files', r)),
         brand: brand.map(r => fromRow('brand', r)),
         finance: finance.map(r => fromRow('finance', r)),
+        economics: economics.map(r => fromRow('economics', r)),
         decisions: decisions.map(r => fromRow('decisions', r)),
         publications, ai, members, activity
       };
@@ -220,7 +223,7 @@ function createApi(cfg) {
 
 let api = null;
 let me = null;
-let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], finance: [], decisions: [], publications: [], ai: [], members: [], activity: [] };
+let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], finance: [], economics: [], decisions: [], publications: [], ai: [], members: [], activity: [] };
 let page = 'home', query = '', category = 'Все';
 let month = new Date().getMonth(), year = new Date().getFullYear();
 let loadedAt = 0;
@@ -778,13 +781,82 @@ function editDecision(id) {
   submitForm($('#df'), 'decisions', d, exists, 'Решение записано');
 }
 
+// Порог безубыточности: сколько клиентов в месяц нужно направлению, чтобы
+// перестать работать в минус. Сравнивается с фактом последнего месяца.
+function breakEven() {
+  const last = moneyStats().last;
+  return (db.economics || []).filter(e => e.fixed_costs > 0 && e.price > 0).map(e => {
+    const need = Math.ceil(e.fixed_costs / e.price);
+    const rows = last ? db.finance.filter(r => r.month === last.month && r.direction === e.direction) : [];
+    const have = rows.reduce((n, r) => n + Number(r.projects || 0), 0);
+    const revenue = rows.reduce((n, r) => n + Number(r.revenue || 0), 0);
+    return { ...e, need, have, revenue, gap: Math.max(0, need - have), ok: have >= need };
+  });
+}
+
+function renderBreakEven() {
+  const rows = breakEven();
+  const add = `<button data-action="economics">${db.economics.length ? 'Изменить пороги' : 'Задать порог'}</button>`;
+  if (!rows.length) {
+    return `<div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Точка безубыточности</h2>${add}</div>
+      <p class="muted">Задайте постоянные расходы и средний чек по направлению — покажу, сколько клиентов в месяц нужно, чтобы выйти в ноль.</p></div>`;
+  }
+  return `<div class="card"><div class="head" style="margin:0 0 12px"><h2 style="margin:0">Точка безубыточности</h2>${add}</div>
+    <div class="grid three">${rows.map(r => `<div class="bezone ${r.ok ? 'ok' : 'under'}">
+      <div class="eyebrow">${E(r.direction)}</div>
+      <div class="value">${r.need}<small> клиентов до нуля</small></div>
+      <p class="muted">Постоянные ${num(r.fixed_costs)} ₽ · чек ${num(r.price)} ₽</p>
+      <p class="${r.ok ? 'plus' : 'minus'}">${r.ok
+        ? `В плюсе: ${r.have} при пороге ${r.need}`
+        : r.have ? `Сейчас ${r.have} — не хватает ${r.gap}` : 'В этом месяце клиентов не внесено'}</p>
+      ${r.note ? `<p class="muted small">${E(r.note)}</p>` : ''}
+    </div>`).join('')}</div></div>`;
+}
+
+function editEconomics() {
+  const rows = DIRECTIONS.map(d => db.economics.find(e => e.direction === d) || { direction: d, fixed_costs: 0, price: 0, note: '' });
+  modal(`<h2>Пороги по направлениям</h2>
+    <p class="muted">Постоянные расходы в месяц и средний чек. Ноль — направление не считаем.</p>
+    <form id="ef">${rows.map(r => `<div class="ecorow">
+      <b>${E(r.direction)}</b>
+      <label>Постоянные расходы, ₽<input name="fixed_${E(r.direction)}" type="number" min="0" step="100" value="${r.fixed_costs}"></label>
+      <label>Средний чек, ₽<input name="price_${E(r.direction)}" type="number" min="0" step="100" value="${r.price}"></label>
+      <label>Заметка<input name="note_${E(r.direction)}" maxlength="500" value="${E(r.note)}"></label>
+    </div>`).join('')}
+    <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
+
+  $('#ef').onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('#ef button.primary');
+    btn.disabled = true;
+    const f = new FormData(e.target);
+    try {
+      for (const d of DIRECTIONS) {
+        const row = {
+          direction: d,
+          fixed_costs: Number(f.get('fixed_' + d)) || 0,
+          price: Number(f.get('price_' + d)) || 0,
+          note: String(f.get('note_' + d) || '')
+        };
+        const old = db.economics.find(x => x.direction === d);
+        if (!old && !row.fixed_costs && !row.price) continue;
+        const saved = old ? await api.update('economics', { ...old, ...row }) : await api.insert('economics', row);
+        upsertLocal('economics', saved);
+      }
+      $('#modal').close();
+      render();
+      toast('Пороги сохранены');
+    } catch (err) { handleError(err); btn.disabled = false; }
+  };
+}
+
 function renderMoney() {
   const s = moneyStats();
   const head = heading('Деньги', 'Помесячно по направлениям. Считается только то, что внесли: ничего не достраивается.',
     `<button class="primary" data-action="newmonth">+ Внести месяц</button>`);
 
   if (!db.finance.length) {
-    return head + `<div class="card empty"><h2>Цифр пока нет</h2>
+    return head + renderBreakEven() + `<div class="card empty" style="margin-top:16px"><h2>Цифр пока нет</h2>
       <p>Внесите хотя бы три последних месяца — по каждому направлению отдельно. Дальше станет видно динамику, средний чек и маржу.</p>
       <p class="muted">Эти данные внутренние: в тексты и в запросы к ИИ они не попадают никогда.</p></div>`;
   }
@@ -818,6 +890,8 @@ function renderMoney() {
   return head
     + `<div class="grid metrics">${tiles.map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div>
         <div class="value">${b}</div><small>${E(c)}</small></div>`).join('')}</div>`
+    + renderBreakEven()
+    + `<div style="height:16px"></div>`
     + charts + table
     + `<div class="notice">Данные внутренние. Серверная функция ИИ читает только базу знаний, в тексты эти цифры не попадут.</div>`;
 }
@@ -1983,6 +2057,7 @@ document.addEventListener('click', async e => {
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
     case 'newmonth': monthNew(); break;
+    case 'economics': editEconomics(); break;
     case 'delmonth': delMonth(b.dataset.id); break;
     case 'newdecision': editDecision(); break;
     case 'deldecision': delDecision(b.dataset.id); break;

@@ -41,6 +41,7 @@ const fake = (seedData) => {
     files: [],
     publications: [],
     finance: [],
+    economics: [{ direction: 'Stock', fixed_costs: 4685, price: 449, note: 'Envato и сервер', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }],
     decisions: [],
     ai: [],
     brand: [
@@ -207,6 +208,10 @@ await page.screenshot({ path: path.join(OUT, 'intel-home.png') });
 await nav('money');
 check('пустой раздел денег объясняет, что внести', (await page.textContent('#view')).includes('Внесите хотя бы три последних месяца'));
 check('сказано, что цифры не уходят в тексты', (await page.textContent('#view')).includes('в запросы к ИИ они не попадают'));
+await page.waitForSelector('.bezone');
+const bez = (await page.$eval('.bezone', e => e.innerText)).replace(/\s+/g, ' ');
+check('порог безубыточности посчитан', /11 клиентов до нуля/.test(bez), bez);
+check('видно, из чего порог складывается', /4\s?685 ₽/.test(bez) && /449 ₽/.test(bez), bez);
 for (const [month, dir, rev, cost, proj, days] of [
   ['2026-07', 'Студия', '400000', '150000', '4', '6'],
   ['2026-08', 'Студия', '520000', '180000', '5', '8'],

@@ -359,3 +359,19 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .decision .measure{font-size:13px;margin:8px 0 0;padding:8px 10px;border-left:2px solid var(--gold);background:var(--gold-bg);border-radius:0 8px 8px 0}
 .decision .outcome{font-size:13px;margin:8px 0 0;color:var(--muted)}
 .decision h2{font-size:16px}
+
+/* --- точка безубыточности --- */
+.bezone{border:1px solid var(--line);border-left:3px solid var(--line);border-radius:12px;padding:14px}
+.bezone.ok{border-left-color:#059669}
+.bezone.under{border-left-color:var(--gold)}
+.bezone .value{font-size:30px}
+.bezone .value small{font-size:12px;font-weight:400;color:var(--muted);font-family:var(--font-ui);display:block;margin-top:4px}
+.bezone p{margin:6px 0 0;font-size:13px}
+.bezone .small{font-size:12px;line-height:1.4}
+.plus{color:#059669}
+.minus{color:#d64545}
+.ecorow{border-bottom:1px solid var(--line);padding:12px 0}
+.ecorow:last-of-type{border-bottom:0}
+.ecorow b{display:block;margin-bottom:6px;font-family:var(--font-display)}
+.ecorow label{display:block;font-size:12px;color:var(--muted);margin-top:8px}
+.ecorow input{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);margin-top:4px}
