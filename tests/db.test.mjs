@@ -161,9 +161,14 @@ check('посторонний не видит брендбук',
 check('анониму брендбук закрыт', (await fail('anon', '', 'select * from public.brand')) !== null);
 check('неизвестный вид блока отклоняется',
   (await fail('authenticated', 'artem@adervis.ru', `insert into public.brand(id,title,kind) values ('x','Проба','что-то')`)) !== null);
+// Миграции сами правят брендбук (раскладывают темы по разделам),
+// поэтому считаем прирост, а не общее число записей в журнале.
+const brandEditsBefore = (await as('authenticated', 'artem@adervis.ru',
+  `select count(*)::int c from public.activity where entity='brand' and action='update'`)).rows[0].c;
 await as('authenticated', 'alex@adervis.ru', `update public.brand set data = jsonb_build_object('body','правка') where id='voice'`);
 check('правка брендбука записывается в журнал',
-  (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.activity where entity='brand' and action='update'`)).rows[0].c === 1);
+  (await as('authenticated', 'artem@adervis.ru',
+    `select count(*)::int c from public.activity where entity='brand' and action='update'`)).rows[0].c === brandEditsBefore + 1);
 
 // --- служебная роль: ею работает серверная функция
 check('служебная роль ведёт учёт расходов на ИИ',

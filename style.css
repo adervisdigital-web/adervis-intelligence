@@ -428,3 +428,19 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .uikit .task{margin:0;display:flex;align-items:center;gap:8px}
 .uikit button:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:720px){.uilabel{flex:1 0 100%}}
+
+/* --- разделы брендбука и паттерны --- */
+.toc{margin-bottom:14px}
+.tocrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.tocrow .chip{display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+.tocrow .chip b{color:var(--muted);font-weight:600;font-size:11px}
+.sectionhead{font-family:var(--font-display);font-size:18px;margin:26px 0 12px;padding-bottom:8px;
+  border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:10px;scroll-margin-top:80px}
+.sectionhead small{font-size:12px}
+.brandtext.clipped{max-height:132px;overflow:hidden;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent)}
+.more{margin-top:8px}
+.patterns{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.patterncell{margin:0}
+.patterncell svg{width:100%;height:auto;display:block;border-radius:10px;border:1px solid var(--line)}
+.patterncell figcaption{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:12px}
+.patterncell figcaption b{font-size:13px}

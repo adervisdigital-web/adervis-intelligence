@@ -563,6 +563,12 @@ check('за картинками ходили по временным ссылк
 check('подписи под картинками на месте',
   (await page.$$eval('.gallery figcaption', f => f.map(x => x.textContent))).join() === 'Паттерн 1,Паттерн 2');
 
+// оглавление и разделы
+check('сверху есть оглавление по разделам', (await page.$$('.toc .chip')).length >= 1);
+check('темы разложены по разделам', (await page.$$('.sectionhead')).length >= 1);
+check('в оглавлении видно число тем в разделе',
+  /\d/.test(await page.$eval('.toc .chip b', e => e.textContent)));
+
 // полнота брендбука
 const progress = (await page.textContent('.progresscard')).replace(/\s+/g, ' ');
 check('видно, сколько тем заполнено', /Заполнено 10 из 11/.test(progress), progress);
@@ -575,6 +581,7 @@ const titlesBefore = await page.$$eval('.brandcard h2', h => h.map(x => x.textCo
 await page.click('[data-action=newbrand]');
 await page.fill('#nb input[name=title]', 'Упаковка подарков');
 await page.selectOption('#nb select[name=kind]', 'text');
+await page.selectOption('#nb select[name=section]', 'Прочее');
 await page.click('#nb button.primary');
 await page.waitForFunction(() => window.__STATE__.brand.some(b => b.title === 'Упаковка подарков'));
 check('новая тема появляется в конце', (await page.$$eval('.brandcard h2', h => h.map(x => x.textContent))).pop() === 'Упаковка подарков');

@@ -85,7 +85,7 @@ const FIELDS = {
   tasks: ['id', 'title', 'done'],
   metrics: ['id', 'post', 'date', 'views', 'replies', 'leads'],
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
-  brand: ['id', 'title', 'kind', 'sort', 'data'],
+  brand: ['id', 'title', 'kind', 'sort', 'data', 'section'],
   finance: ['id', 'month', 'direction', 'revenue', 'costs', 'projects', 'shoot_days', 'note'],
   economics: ['direction', 'fixed_costs', 'price', 'note'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on']
@@ -438,6 +438,42 @@ function contrastRatio(a, b) {
   return (x + 0.05) / (y + 0.05);
 }
 
+// Контур знака ADERVIS из brand/icon.svg. Нужен здесь, чтобы паттерн можно
+// было перекрашивать: у вставленной картинки цвет не поменять.
+const MARK_PATH = 'M1580.87,1460.95c-2.86-28.37-37.65-89.84-65.61-144.16l-348.64-683.49s-16.06-36.74-39.16-57.23c-18.59-16.48-47.44-17.06-47.44-17.06,0,0-28.35-.15-46.95,16.34-23.13,20.5-39.21,57.25-39.21,57.25l-349.04,683.71c-27.99,54.33-62.82,115.83-65.68,144.21-4.06,40.31,13.99,84.78,76.91,73.39,58.44-10.57,220.37-74.81,220.18-74.86l203.79-82.04,204.09,82.48c-.19.05,161.56,64.28,219.93,74.84,62.85,11.38,80.88-33.07,76.83-73.37h0ZM1644.09,1652.56c-34.42,22.09-86.28,31.73-117.72,27.51-88.97-11.91-211.9-62.67-211.9-62.67l-234.45-93.41-234.23,92.8s-123,50.77-212.03,62.68c-31.46,4.21-83.35-5.42-117.8-27.51-132.9-85.25-70.29-244.9-65.96-256.84,4.51-12.45,442.71-865.15,453.9-885.17,11.19-20.02,40.7-52.42,81.67-73.39,43.38-22.19,94.45-24.57,94.45-24.57,6.52.47,54.47,4.74,94.75,25.36,40.94,20.95,70.44,53.35,81.62,73.37,11.18,20.02,449.11,872.59,453.62,885.04,4.33,11.94,66.89,171.57-65.93,256.8h.01Z';
+
+const PATTERN_VARIANTS = [
+  { id: 'dense', title: 'Плотный', note: 'мелкий шаг, шахматкой', bg: '#141414', ink: '#1f1f1f', step: 46, size: 26, angle: 0, offset: true },
+  { id: 'sparse', title: 'Разреженный', note: 'крупный знак, много воздуха', bg: '#141414', ink: '#1c1c1c', step: 110, size: 58, angle: 0, offset: false },
+  { id: 'diagonal', title: 'Диагональный', note: 'поворот 30°, для обложек', bg: '#141414', ink: '#242424', step: 64, size: 34, angle: 30, offset: true },
+  { id: 'gold', title: 'Золотой акцент', note: 'только для крупных плашек', bg: '#141414', ink: 'rgba(246,189,58,.16)', step: 90, size: 46, angle: 0, offset: false }
+];
+
+// Плитка паттерна: знак в масштабе 2160 → нужный размер, при необходимости
+// со смещением второй строки и поворотом.
+function patternDef(v) {
+  const k = (v.size / 2160).toFixed(5);
+  const mark = (x, y) => `<g transform="translate(${x} ${y}) scale(${k})"><path d="${MARK_PATH}" fill="${v.ink}"/></g>`;
+  const tile = v.offset
+    ? mark(0, 0) + mark(v.step / 2, v.step / 2) + mark(-v.step / 2, v.step / 2) + mark(v.step / 2, -v.step / 2) + mark(-v.step / 2, -v.step / 2)
+    : mark(v.step / 2 - v.size / 2, v.step / 2 - v.size / 2);
+  return `<pattern id="pat-${v.id}" width="${v.step}" height="${v.step}" patternUnits="userSpaceOnUse"
+    patternTransform="rotate(${v.angle})">${tile}</pattern>`;
+}
+
+function patternFile(id) {
+  const v = PATTERN_VARIANTS.find(x => x.id === id);
+  if (!v) return;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <!-- Паттерн ADERVIS «${v.title}». Собран из знака бренда. -->
+  <defs>${patternDef(v)}</defs>
+  <rect width="1600" height="900" fill="${v.bg}"/>
+  <rect width="1600" height="900" fill="url(#pat-${v.id})"/>
+</svg>`;
+  download(svg, `adervis-pattern-${id}.svg`);
+  toast('Паттерн сохранён файлом');
+}
+
 const FIGURES = {
   // Охранное поле: вокруг знака свободно не меньше его половины.
   clearspace: () => `<svg class="figure" viewBox="0 0 640 300" role="img" aria-label="Охранное поле знака">
@@ -492,6 +528,21 @@ const FIGURES = {
       }).join('')}
     </svg>`;
   },
+
+  // Паттерны собираются из настоящего знака: тон в тон, как в исходниках
+  // студии — фон, а не главный герой. Каждый скачивается отдельным файлом.
+  marks: () => `<div class="patterns">
+    ${PATTERN_VARIANTS.map(v => `<figure class="patterncell">
+      <svg viewBox="0 0 320 180" role="img" aria-label="Паттерн: ${E(v.title)}">
+        <defs>${patternDef(v)}</defs>
+        <rect width="320" height="180" rx="10" fill="${v.bg}"/>
+        <rect width="320" height="180" rx="10" fill="url(#pat-${v.id})"/>
+      </svg>
+      <figcaption><b>${E(v.title)}</b><span class="muted">${E(v.note)}</span>
+        <button class="chip" data-action="patternfile" data-id="${v.id}">Скачать SVG</button></figcaption>
+    </figure>`).join('')}
+    <p class="muted">Знак взят из файла и не перерисован. Паттерн — фон: поверх него должен читаться текст, поэтому контраст к фону держим низким.</p>
+  </div>`,
 
   // Набор иконок. Одна геометрия, одна толщина штриха, размеры токенами.
   icons: () => {
@@ -636,7 +687,7 @@ function brandSlides() {
 function slideHtml(sl, i, total) {
   const foot = `<div class="slidefoot"><span>ADERVIS · Брендбук</span><span>${i + 1} / ${total}</span></div>`;
   const head = title => `<div class="slidehead">
-    <span class="slidelabel">${E(title)}${sl.part ? ' · ' + E(sl.part) : ''}</span>
+    <span class="slidelabel">${sl.section ? E(sl.section) + ' · ' : ''}${E(title)}${sl.part ? ' · ' + E(sl.part) : ''}</span>
     <img class="slidemark" src="brand/icon.svg" alt=""></div>`;
 
   if (sl.kind === 'cover') {
@@ -746,8 +797,27 @@ function brandProgress() {
       : '<p class="muted">Все темы заполнены.</p>'}</div>`;
 }
 
+// Темы сгруппированы по разделам, сверху — оглавление. Иначе брендбук
+// превращается в ленту из тридцати карточек, которую никто не дочитывает.
+const SECTIONS = ['Компания', 'Знак', 'Цвет', 'Шрифт и текст', 'Элементы', 'Правила', 'Материалы', 'Прочее'];
+
+function brandSections() {
+  const groups = SECTIONS
+    .map(name => ({ name, items: db.brand.filter(b => (b.section || 'Прочее') === name) }))
+    .filter(g => g.items.length);
+
+  const toc = `<div class="card toc"><div class="eyebrow">Разделы</div>
+    <div class="tocrow">${groups.map(g => `<a class="chip" href="#s-${encodeURIComponent(g.name)}">${E(g.name)}
+      <b>${g.items.length}</b></a>`).join('')}</div></div>`;
+
+  return toc + groups.map(g => `<h2 class="sectionhead" id="s-${encodeURIComponent(g.name)}">${E(g.name)}
+    <small class="muted">${g.items.length}</small></h2>
+    ${g.items.map(brandBlock).join('')}`).join('');
+}
+
 function brandBlock(b) {
-  const order = db.brand.map(x => x.id);
+  // Двигаем тему внутри её раздела: иначе она уезжала бы в чужую группу.
+  const order = db.brand.filter(x => (x.section || 'Прочее') === (b.section || 'Прочее')).map(x => x.id);
   const i = order.indexOf(b.id);
   const head = `<div class="head" style="margin:0 0 14px"><h2 style="margin:0">${E(b.title)}</h2>
     <span class="blockbtns">
@@ -776,7 +846,10 @@ function brandBlock(b) {
     body = draw ? draw() : '<p class="muted">Чертёж не найден.</p>';
     if (b.data?.body) body += `<div class="brandtext" style="margin-top:12px">${brandText(b.data.body)}</div>`;
   } else {
-    body = `<div class="brandtext">${brandText(b.data?.body)}</div>`;
+    // Длинный текст сворачиваем: карточка остаётся одного роста с соседями.
+    const long = (b.data?.body || '').length > 420;
+    body = `<div class="brandtext ${long ? 'clipped' : ''}">${brandText(b.data?.body)}</div>`
+      + (long ? '<button class="chip more" data-action="expand">Показать целиком</button>' : '');
   }
 
   return `<div class="card brandcard">${head}${body}
@@ -1342,7 +1415,7 @@ function render() {
           <p><a href="brand/logo.svg" download>Скачать logo.svg</a> · <a href="brand/icon.svg" download>icon.svg</a> · <a href="brand/logoB.svg" download>logoB.svg</a></p>
         </div>`
       + brandProgress()
-      + db.brand.map(brandBlock).join('')
+      + brandSections()
       + (record ? `<div class="card"><div class="head" style="margin:0 0 14px"><h2 style="margin:0">Файлы бренда</h2>
           <button data-k="${E(record.id)}">Добавить файлы</button></div>
           ${fileList(record.id)}
@@ -1619,6 +1692,7 @@ function editK(id) {
     <label>Содержание</label><textarea name="body" required maxlength="20000">${E(k.body)}</textarea>
     <div class="formgrid">
       <div><label>Категория</label><select name="category">${opts(['Компания', 'Авторы', 'Стратегия', 'Услуги', 'Продукты', 'Кейсы', 'Каналы', 'Ресурсы', 'Бренд'], k.category)}</select></div>
+
       <div><label>Использование</label><select name="access">${opts(['Внутреннее', 'Публичное'], k.access)}</select></div>
       <div><label>Статус</label><select name="status">${opts(['Черновик', 'Со слов команды', 'Публичный источник', 'Подтверждено', 'Требует проверки'], k.status)}</select></div>
       <div><label>Источник</label><input name="source" maxlength="1000" value="${E(k.source)}"></div>
@@ -1940,13 +2014,16 @@ function parseBrand(kind, raw) {
 function newBrandBlock() {
   modal(`<h2>Новая тема брендбука</h2><form id="nb">
     <label>Название</label><input name="title" required maxlength="200" placeholder="Например: Упаковка подарков">
-    <label>Что внутри</label>
-    <select name="kind">
-      <option value="text">Текст и правила</option>
-      <option value="colors">Цвета образцами</option>
-      <option value="fonts">Шрифты с образцами</option>
-      <option value="gallery">Картинки из хранилища</option>
-    </select>
+    <div class="formgrid">
+      <div><label>Что внутри</label>
+        <select name="kind">
+          <option value="text">Текст и правила</option>
+          <option value="colors">Цвета образцами</option>
+          <option value="fonts">Шрифты с образцами</option>
+          <option value="gallery">Картинки из хранилища</option>
+        </select></div>
+      <div><label>Раздел</label><select name="section">${opts(SECTIONS, 'Материалы')}</select></div>
+    </div>
     <p class="muted">Тему можно будет наполнить сразу после создания, кнопкой «Изменить».</p>
     <div class="formactions"><button class="primary">Создать</button></div></form>`);
 
@@ -1957,7 +2034,7 @@ function newBrandBlock() {
     const f = Object.fromEntries(new FormData(e.target));
     const maxSort = db.brand.reduce((n, b) => Math.max(n, b.sort || 0), 0);
     const block = {
-      id: 'b-' + uid(), title: f.title, kind: f.kind, sort: maxSort + 10,
+      id: 'b-' + uid(), title: f.title, kind: f.kind, section: f.section || 'Прочее', sort: maxSort + 10,
       data: f.kind === 'text' ? { body: 'Пока не заполнено.' } : { items: [] }
     };
     try {
@@ -1973,7 +2050,11 @@ function newBrandBlock() {
 
 // Меняем местами значения сортировки у соседних тем.
 async function moveBrand(id, dir) {
-  const list = [...db.brand].sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const self = db.brand.find(b => b.id === id);
+  if (!self) return;
+  const list = db.brand
+    .filter(b => (b.section || 'Прочее') === (self.section || 'Прочее'))
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0));
   const i = list.findIndex(b => b.id === id);
   const j = i + Number(dir);
   if (i < 0 || j < 0 || j >= list.length) return;
@@ -2012,8 +2093,13 @@ function editBrand(id) {
     : 'Обычный текст. Строки, начинающиеся с «— », покажем списком.';
 
   modal(`<h2>${E(b.title)}</h2><form id="bf">
+    <div class="formgrid">
+      <div><label>Название темы</label><input name="title" required maxlength="200" value="${E(b.title)}"></div>
+      <div><label>Раздел</label><select name="section">${opts(SECTIONS, b.section || 'Прочее')}</select></div>
+    </div>
+    <label>Содержимое</label>
     <p class="muted">${hint}</p>
-    <textarea name="raw" style="min-height:280px">${E(raw)}</textarea>
+    <textarea name="raw" style="min-height:260px">${E(raw)}</textarea>
     <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
 
   $('#bf').onsubmit = async e => {
@@ -2021,8 +2107,13 @@ function editBrand(id) {
     const btn = $('#bf button.primary');
     btn.disabled = true;
     try {
-      const data = parseBrand(b.kind, new FormData(e.target).get('raw'));
-      const saved = await api.update('brand', { ...b, data });
+      const f = new FormData(e.target);
+      const data = parseBrand(b.kind, f.get('raw'));
+      const saved = await api.update('brand', {
+        ...b, data,
+        title: String(f.get('title') || b.title).slice(0, 200),
+        section: String(f.get('section') || b.section || 'Прочее')
+      });
       upsertLocal('brand', saved);
       noteLocal('update', 'brand', saved);
       $('#modal').close();
@@ -2354,6 +2445,13 @@ document.addEventListener('click', async e => {
     case 'publish': publishPost(b.dataset.id); break;
     case 'editbrand': editBrand(b.dataset.id); break;
     case 'newbrand': newBrandBlock(); break;
+    case 'patternfile': patternFile(b.dataset.id); break;
+    case 'expand': {
+      const box = b.previousElementSibling;
+      const open = box.classList.toggle('clipped');
+      b.textContent = open ? 'Показать целиком' : 'Свернуть';
+      break;
+    }
     case 'movebrand': await moveBrand(b.dataset.id, b.dataset.dir); break;
     case 'delbrand': delBrand(b.dataset.id); break;
     case 'deckon': deck = { on: true, i: 0 }; render(); break;
