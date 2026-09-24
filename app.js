@@ -554,8 +554,15 @@ function deckMove(step) {
 }
 
 function brandBlock(b) {
+  const order = db.brand.map(x => x.id);
+  const i = order.indexOf(b.id);
   const head = `<div class="head" style="margin:0 0 14px"><h2 style="margin:0">${E(b.title)}</h2>
-    <button data-action="editbrand" data-id="${E(b.id)}">Изменить</button></div>`;
+    <span class="blockbtns">
+      <button class="chip" data-action="movebrand" data-id="${E(b.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Выше">↑</button>
+      <button class="chip" data-action="movebrand" data-id="${E(b.id)}" data-dir="1" ${i === order.length - 1 ? 'disabled' : ''} aria-label="Ниже">↓</button>
+      <button data-action="editbrand" data-id="${E(b.id)}">Изменить</button>
+      <button class="chip danger" data-action="delbrand" data-id="${E(b.id)}" aria-label="Удалить тему">${icon('close', 14)}</button>
+    </span></div>`;
   const items = Array.isArray(b.data?.items) ? b.data.items : [];
   let body;
 
@@ -1125,7 +1132,8 @@ function render() {
   if (page === 'brand' && !deck.on) {
     const record = db.knowledge.find(k => k.category === 'Бренд' && /фирменн/i.test(k.title));
     s = heading('Брендбук ADERVIS', 'Знак, цвета, шрифты и правила. Всё правится прямо здесь — брендбук не устаревает в день выпуска.',
-      `<button class="primary" data-action="deckon">Показать слайдами</button>`)
+      `<button class="primary" data-action="deckon">Показать слайдами</button>
+       <button data-action="newbrand">+ Тема</button>`)
       + `<div class="card brandlogo">
           <div class="head" style="margin:0 0 14px"><h2 style="margin:0">Знак</h2>
             <small class="muted">logo.svg · icon.svg · logoB.svg</small></div>
@@ -1729,6 +1737,69 @@ function parseBrand(kind, raw) {
   return { items };
 }
 
+// Состав брендбука меняется прямо в приложении: темы добавляются, двигаются
+// и удаляются. Иначе структура застывает в том виде, в каком её задумали.
+function newBrandBlock() {
+  modal(`<h2>Новая тема брендбука</h2><form id="nb">
+    <label>Название</label><input name="title" required maxlength="200" placeholder="Например: Упаковка подарков">
+    <label>Что внутри</label>
+    <select name="kind">
+      <option value="text">Текст и правила</option>
+      <option value="colors">Цвета образцами</option>
+      <option value="fonts">Шрифты с образцами</option>
+      <option value="gallery">Картинки из хранилища</option>
+    </select>
+    <p class="muted">Тему можно будет наполнить сразу после создания, кнопкой «Изменить».</p>
+    <div class="formactions"><button class="primary">Создать</button></div></form>`);
+
+  $('#nb').onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('#nb button.primary');
+    btn.disabled = true;
+    const f = Object.fromEntries(new FormData(e.target));
+    const maxSort = db.brand.reduce((n, b) => Math.max(n, b.sort || 0), 0);
+    const block = {
+      id: 'b-' + uid(), title: f.title, kind: f.kind, sort: maxSort + 10,
+      data: f.kind === 'text' ? { body: 'Пока не заполнено.' } : { items: [] }
+    };
+    try {
+      const saved = await api.insert('brand', block);
+      upsertLocal('brand', saved);
+      noteLocal('insert', 'brand', saved);
+      $('#modal').close();
+      render();
+      toast('Тема добавлена — теперь наполните её');
+    } catch (err) { handleError(err); btn.disabled = false; }
+  };
+}
+
+// Меняем местами значения сортировки у соседних тем.
+async function moveBrand(id, dir) {
+  const list = [...db.brand].sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const i = list.findIndex(b => b.id === id);
+  const j = i + Number(dir);
+  if (i < 0 || j < 0 || j >= list.length) return;
+  const a = list[i], b = list[j];
+  try {
+    const savedA = await api.update('brand', { ...a, sort: b.sort });
+    const savedB = await api.update('brand', { ...b, sort: a.sort });
+    upsertLocal('brand', savedA);
+    upsertLocal('brand', savedB);
+    db.brand.sort((x, y) => (x.sort || 0) - (y.sort || 0));
+    render();
+  } catch (err) { handleError(err); }
+}
+
+function delBrand(id) {
+  const b = db.brand.find(x => x.id === id);
+  if (!b) return;
+  askDelete('Удалить тему брендбука?', `«${E(b.title)}» исчезнет из списка и из слайдов.`, async () => {
+    await api.remove('brand', id);
+    db.brand = db.brand.filter(x => x.id !== id);
+    noteLocal('delete', 'brand', b);
+  });
+}
+
 function editBrand(id) {
   const b = db.brand.find(x => x.id === id);
   if (!b) return;
@@ -2084,6 +2155,9 @@ document.addEventListener('click', async e => {
     case 'delmetric': delMetric(b.dataset.id); break;
     case 'publish': publishPost(b.dataset.id); break;
     case 'editbrand': editBrand(b.dataset.id); break;
+    case 'newbrand': newBrandBlock(); break;
+    case 'movebrand': await moveBrand(b.dataset.id, b.dataset.dir); break;
+    case 'delbrand': delBrand(b.dataset.id); break;
     case 'deckon': deck = { on: true, i: 0 }; render(); break;
     case 'deckoff':
       deck.on = false;

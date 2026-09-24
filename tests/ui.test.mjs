@@ -525,6 +525,30 @@ check('за картинками ходили по временным ссылк
 check('подписи под картинками на месте',
   (await page.$$eval('.gallery figcaption', f => f.map(x => x.textContent))).join() === 'Паттерн 1,Паттерн 2');
 
+// состав брендбука: добавить, подвинуть, удалить тему
+const titlesBefore = await page.$$eval('.brandcard h2', h => h.map(x => x.textContent));
+await page.click('[data-action=newbrand]');
+await page.fill('#nb input[name=title]', 'Упаковка подарков');
+await page.selectOption('#nb select[name=kind]', 'text');
+await page.click('#nb button.primary');
+await page.waitForFunction(() => window.__STATE__.brand.some(b => b.title === 'Упаковка подарков'));
+check('новая тема появляется в конце', (await page.$$eval('.brandcard h2', h => h.map(x => x.textContent))).pop() === 'Упаковка подарков');
+check('новая тема создаётся с подсказкой, что пустая',
+  (await page.textContent('#view')).includes('Пока не заполнено'));
+
+await page.locator('.brandcard').last().locator('[data-action=movebrand][data-dir="-1"]').click();
+await page.waitForFunction(t => [...document.querySelectorAll('.brandcard h2')].map(x => x.textContent).pop() === t,
+  titlesBefore[titlesBefore.length - 1]);
+check('тему можно подвинуть выше',
+  (await page.$$eval('.brandcard h2', h => h.map(x => x.textContent))).at(-2) === 'Упаковка подарков');
+check('у самой первой темы стрелка вверх недоступна',
+  await page.locator('.brandcard').first().locator('[data-action=movebrand][data-dir="-1"]').isDisabled());
+
+await page.locator('.brandcard').nth(-2).locator('[data-action=delbrand]').click();
+await page.click('#confirmdel');
+await page.waitForFunction(() => !window.__STATE__.brand.some(b => b.title === 'Упаковка подарков'));
+check('тему можно удалить', !(await page.$$eval('.brandcard h2', h => h.map(x => x.textContent))).includes('Упаковка подарков'));
+
 // брендбук слайдами
 await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
