@@ -35,9 +35,11 @@ const fake = (seedData) => {
     content: seedData.content.map(o => ({ ...o, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' })),
     tasks: seedData.tasks.map(o => ({ ...o, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' })),
     metrics: [],
+    files: [],
     members: [{ email: 'artem@adervis.ru', name: 'Артём' }, { email: 'alex@adervis.ru', name: 'Александр' }],
     activity: []
   };
+  window.__STORAGE__ = [];
   let session = null;
   let nextFails = null;
   const now = () => new Date().toISOString();
@@ -89,10 +91,25 @@ const fake = (seedData) => {
       log('update', table, cur);
       return clone(cur);
     },
+    async uploadFile(record, file) {
+      boom();
+      const path = `${record}/${state.files.length + 1}-${file.name}`;
+      window.__STORAGE__.push(path);
+      const row = { id: 'f' + (state.files.length + 1), record, name: file.name, path, mime: file.type || '', size: file.size, _at: now(), _by: session };
+      state.files.push(row);
+      log('insert', 'files', row);
+      return clone(row);
+    },
+    async fileUrl(path) { return 'data:text/plain,' + encodeURIComponent(path); },
+    async removeStorage(paths) { window.__STORAGE__ = window.__STORAGE__.filter(p => !paths.includes(p)); },
     async remove(table, id) {
       boom();
       const row = state[table].find(x => x.id === id);
       state[table] = state[table].filter(x => x.id !== id);
+      if (table === 'knowledge') {
+        state.files.filter(f => f.record === id).forEach(f => log('delete', 'files', f));
+        state.files = state.files.filter(f => f.record !== id);
+      }
       if (table === 'content') {
         state.metrics.filter(m => m.post === id).forEach(m => log('delete', 'metrics', m));
         state.metrics = state.metrics.filter(m => m.post !== id);
@@ -254,6 +271,48 @@ check('в бриф не попали внутренние записи', !brief.
 check('в бриф не попали непроверенные записи', !brief.includes('Цифры на сайте'));
 check('в брифе есть публичные факты', brief.includes('Позиционирование сайта'));
 await page.keyboard.press('Escape');
+
+// --- 10а. файлы в записях
+await nav('knowledge');
+await page.click('article[data-k=k1]');
+check('в записи есть раздел файлов', (await page.textContent('#filelist')).includes('Файлов пока нет'));
+await page.setInputFiles('#fileinput', { name: 'брендбук.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 проверка') });
+await page.waitForFunction(() => window.__STATE__.files.length === 1);
+check('файл попал в хранилище', (await page.evaluate(() => window.__STORAGE__.length)) === 1);
+check('файл виден в списке записи', (await page.textContent('#filelist')).includes('брендбук.pdf'));
+await page.screenshot({ path: path.join(OUT, 'intel-files.png') });
+const layout = await page.evaluate(() => {
+  const row = document.querySelector('.filerow');
+  const dialog = document.querySelector('#modal');
+  const r = row.getBoundingClientRect(), d = dialog.getBoundingClientRect();
+  const btns = [...row.querySelectorAll('button')].map(b => b.getBoundingClientRect().width > 0);
+  return { fits: r.right <= d.right + 1 && r.left >= d.left - 1, buttons: btns.length, allVisible: btns.every(Boolean), overflow: dialog.scrollWidth > dialog.clientWidth + 1 };
+});
+check('строка файла умещается в окно записи', layout.fits && !layout.overflow, JSON.stringify(layout));
+check('кнопки «Открыть» и «удалить» на месте', layout.buttons === 2 && layout.allVisible);
+await page.keyboard.press('Escape');
+check('на карточке записи виден счётчик файлов', (await page.textContent('article[data-k=k1]')).includes('Файлов: 1'));
+
+await page.click('article[data-k=k1]');
+page.once('dialog', d => d.accept());
+await page.click('[data-action=delfile]');
+await page.waitForFunction(() => window.__STATE__.files.length === 0);
+check('удаление файла убирает его и из хранилища', (await page.evaluate(() => window.__STORAGE__.length)) === 0);
+await page.keyboard.press('Escape');
+
+await page.click('[data-action=newk]');
+check('у несохранённой записи вместо файлов подсказка', (await page.textContent('#modal')).includes('после сохранения записи'));
+await page.keyboard.press('Escape');
+
+// файлы удаляются вместе с записью
+await page.click('article[data-k=k22]');
+await page.setInputFiles('#fileinput', { name: 'кейс.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg') });
+await page.waitForFunction(() => window.__STATE__.files.length === 1);
+await page.click('#modal [data-action=delk]');
+check('перед удалением записи предупреждают о файлах', (await page.textContent('#modal')).includes('файлы (1)'));
+await page.click('#confirmdel');
+await page.waitForFunction(() => window.__STATE__.files.length === 0);
+check('вместе с записью удалены её файлы из хранилища', (await page.evaluate(() => window.__STORAGE__.length)) === 0);
 
 // --- 10б. ИИ пишет черновики
 await nav('assistant');

@@ -23,6 +23,19 @@ await db.exec(`
     select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
   grant usage on schema public to anon, authenticated;
   grant usage on schema auth to anon, authenticated;
+
+  -- хранилище файлов, как в Supabase: защита уже включена
+  create schema storage;
+  create table storage.buckets (
+    id text primary key, name text, public boolean default false,
+    file_size_limit bigint, created_at timestamptz default now());
+  create table storage.objects (
+    id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id),
+    name text, owner uuid, created_at timestamptz default now());
+  alter table storage.objects enable row level security;
+  grant usage on schema storage to anon, authenticated;
+  grant select, insert, update, delete on storage.objects to authenticated;
+  grant select on storage.buckets to anon, authenticated;
 `);
 
 await db.exec(SQL);
@@ -105,6 +118,36 @@ check('участник не может подделать свой счётчи
   (await fail('authenticated', 'artem@adervis.ru', `insert into public.ai_usage(actor,model) values ('artem@adervis.ru','подделка')`)) !== null);
 check('участник не может стереть счётчик',
   (await fail('authenticated', 'artem@adervis.ru', 'delete from public.ai_usage')) !== null);
+
+// --- файлы в записях
+await as('authenticated', 'artem@adervis.ru', `insert into public.knowledge(id,title,body,category,source,access,status)
+  values ('kf','Кейс с файлами','Описание','Кейсы','https://adervis.ru/','Публичное','Публичный источник')`);
+await as('authenticated', 'artem@adervis.ru', `insert into public.files(id,record,name,path,mime,size)
+  values ('f1','kf','брендбук.pdf','kf/abc.pdf','application/pdf',120000)`);
+check('участник прикладывает файл к записи',
+  (await as('authenticated', 'artem@adervis.ru', 'select count(*)::int c from public.files')).rows[0].c === 1);
+check('посторонний не видит вложений',
+  (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.files')).rows[0].c === 0);
+check('анониму вложения закрыты', (await fail('anon', '', 'select * from public.files')) !== null);
+check('два файла не могут занять один путь в хранилище',
+  (await fail('authenticated', 'artem@adervis.ru', `insert into public.files(id,record,name,path,mime,size)
+    values ('f2','kf','копия.pdf','kf/abc.pdf','application/pdf',1)`)) !== null);
+check('файл без записи невозможен',
+  (await fail('authenticated', 'artem@adervis.ru', `insert into public.files(id,record,name,path,mime,size)
+    values ('f3','нет-такой','x.pdf','kf/x.pdf','application/pdf',1)`)) !== null);
+await as('authenticated', 'artem@adervis.ru', `delete from public.knowledge where id='kf'`);
+check('удаление записи уносит её вложения',
+  (await as('authenticated', 'artem@adervis.ru', 'select count(*)::int c from public.files')).rows[0].c === 0);
+
+check('хранилище закрыто от публичного доступа',
+  (await as('authenticated', 'artem@adervis.ru', `select public from storage.buckets where id='files'`)).rows[0].public === false);
+await db.exec(`insert into storage.objects(bucket_id, name) values ('files','kf/abc.pdf')`);
+check('участник видит файлы в хранилище',
+  (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from storage.objects`)).rows[0].c === 1);
+check('посторонний не видит файлы в хранилище',
+  (await as('authenticated', 'stranger@gmail.com', `select count(*)::int c from storage.objects`)).rows[0].c === 0);
+check('посторонний не может залить файл',
+  (await fail('authenticated', 'stranger@gmail.com', `insert into storage.objects(bucket_id, name) values ('files','чужое.pdf')`)) !== null);
 
 // --- служебная роль: ею работает серверная функция
 check('служебная роль ведёт учёт расходов на ИИ',

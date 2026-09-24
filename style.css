@@ -43,3 +43,16 @@ button.tag:hover{border-color:#9278ff}
 .link{background:none;border:0;color:#6550ea;padding:0;font-size:13px;cursor:pointer}
 .link:hover{text-decoration:underline}
 .gatehint{font-size:12px;margin:14px 0 0;text-align:center}
+
+/* --- файлы в записях --- */
+.filesblock{margin-top:22px;border-top:1px solid var(--line);padding-top:16px}
+.filesblock h3{margin:0 0 10px}
+.files{display:grid;gap:8px;margin-bottom:12px}
+.filerow{display:flex;align-items:center;gap:12px;padding:8px;border:1px solid var(--line);border-radius:10px}
+.filerow .thumb{width:46px;height:46px;border-radius:8px;object-fit:cover;flex:none;background:var(--bg)}
+.filerow .thumb.kind{display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--muted)}
+.filemeta{flex:1;min-width:0;overflow-wrap:anywhere}
+.filemeta b{font-size:13px}
+.filerow button{flex:none}
+#fileinput{max-width:100%}
+#filestatus{display:block;margin-top:6px}

@@ -38,7 +38,8 @@ const FIELDS = {
   knowledge: ['id', 'title', 'body', 'category', 'source', 'access', 'status'],
   content: ['id', 'title', 'body', 'product', 'author', 'channel', 'status', 'date'],
   tasks: ['id', 'title', 'done'],
-  metrics: ['id', 'post', 'date', 'views', 'replies', 'leads']
+  metrics: ['id', 'post', 'date', 'views', 'replies', 'leads'],
+  files: ['id', 'record', 'name', 'path', 'mime', 'size']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 
@@ -88,11 +89,12 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
         selectAll('metrics', 'measured_on'),
+        selectAll('files', 'created_at'),
         selectAll('members', 'email'),
         sb.from('activity').select('*').order('at', { ascending: false }).limit(40).then(must)
       ]);
@@ -101,8 +103,33 @@ function createApi(cfg) {
         content: content.map(r => fromRow('content', r)),
         tasks: tasks.map(r => fromRow('tasks', r)),
         metrics: metrics.map(r => fromRow('metrics', r)),
+        files: files.map(r => fromRow('files', r)),
         members, activity
       };
+    },
+
+    // Файлы лежат в закрытом хранилище: прямая ссылка без входа не работает.
+    async uploadFile(record, file) {
+      const ext = (file.name.match(/\.[a-z0-9]{1,8}$/i) || [''])[0].toLowerCase();
+      const path = `${record}/${crypto.randomUUID()}${ext}`;
+      const { error } = await sb.storage.from('files')
+        .upload(path, file, { contentType: file.type || 'application/octet-stream' });
+      if (error) throw error;
+      const row = { id: uid(), record, name: file.name.slice(0, 300), path, mime: file.type || '', size: file.size };
+      try {
+        return fromRow('files', must(await sb.from('files').insert(toRow('files', row)).select().single()));
+      } catch (e) {
+        await sb.storage.from('files').remove([path]); // не оставляем файл без записи
+        throw e;
+      }
+    },
+    async fileUrl(path) {
+      const { data, error } = await sb.storage.from('files').createSignedUrl(path, 3600);
+      if (error) throw error;
+      return data.signedUrl;
+    },
+    async removeStorage(paths) {
+      if (paths.length) await sb.storage.from('files').remove(paths);
     },
 
     async insert(table, o) {
@@ -140,7 +167,7 @@ function createApi(cfg) {
 
 let api = null;
 let me = null;
-let db = { knowledge: [], content: [], tasks: [], metrics: [], members: [], activity: [] };
+let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], members: [], activity: [] };
 let page = 'home', query = '', category = 'Все';
 let month = new Date().getMonth(), year = new Date().getFullYear();
 let loadedAt = 0;
@@ -203,9 +230,39 @@ function heading(title, desc, action = '') {
 }
 
 function kc(k) {
+  const attached = db.files.filter(f => f.record === k.id).length;
   return `<article class="card click" tabindex="0" role="button" data-k="${E(k.id)}"><div class="eyebrow">${E(k.category)}</div>
     <h2 style="margin-top:10px">${E(k.title)}</h2>
-    <p class="muted">${E(k.body.slice(0, 145))}${k.body.length > 145 ? '…' : ''}</p>${tag(k.status)}${tag(k.access)}</article>`;
+    <p class="muted">${E(k.body.slice(0, 145))}${k.body.length > 145 ? '…' : ''}</p>
+    ${tag(k.status)}${tag(k.access)}${attached ? tag('Файлов: ' + attached) : ''}</article>`;
+}
+
+const ENTITY_ICON = { 'image/': '🖼', 'video/': '▶', 'audio/': '♪' };
+const fileSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' МБ' : Math.max(1, Math.round(n / 1024)) + ' КБ';
+const fileKind = f => Object.entries(ENTITY_ICON).find(([p]) => f.mime.startsWith(p))?.[1]
+  || (f.name.match(/\.([a-z0-9]{1,8})$/i)?.[1] || '?').toUpperCase();
+
+function fileList(recordId) {
+  const rows = db.files.filter(f => f.record === recordId);
+  if (!rows.length) return '<p class="muted">Файлов пока нет. Брендбук, фото и видео кейсов, документы — до 50 МБ каждый.</p>';
+  return `<div class="files">${rows.map(f => `<div class="filerow">
+    ${f.mime.startsWith('image/')
+      ? `<img class="thumb" data-thumb="${E(f.id)}" alt="">`
+      : `<div class="thumb kind">${E(fileKind(f))}</div>`}
+    <div class="filemeta"><b>${E(f.name)}</b><br><small class="muted">${fileSize(f.size)} · ${E(memberName(f._by))}</small></div>
+    <button type="button" data-action="openfile" data-id="${E(f.id)}">Открыть</button>
+    <button type="button" class="del" data-action="delfile" data-id="${E(f.id)}" aria-label="Удалить файл «${E(f.name)}»">✕</button>
+  </div>`).join('')}</div>`;
+}
+
+// Картинки показываем превью: ссылки на закрытое хранилище временные,
+// поэтому запрашиваем их уже после отрисовки списка.
+async function loadThumbs(recordId) {
+  for (const f of db.files.filter(x => x.record === recordId && x.mime.startsWith('image/'))) {
+    const img = document.querySelector(`[data-thumb="${CSS.escape(f.id)}"]`);
+    if (!img) continue;
+    try { img.src = await api.fileUrl(f.path); } catch (e) { img.replaceWith(Object.assign(document.createElement('div'), { className: 'thumb kind', textContent: '—' })); }
+  }
 }
 
 function pc(p) {
@@ -227,7 +284,7 @@ function filters(categories) {
     <select class="input" id="category" aria-label="Фильтр">${['Все', ...categories].map(c => `<option ${c === category ? 'selected' : ''}>${E(c)}</option>`).join('')}</select></div>`;
 }
 
-const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер' };
+const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -442,7 +499,8 @@ function render() {
         <div class="card"><h2>Данные</h2>
           <p class="muted">Данные хранятся на сервере и доступны обоим руководителям. Экспорт нужен для резервной копии и для переноса в локальную версию.</p>
           <button class="primary" data-action="export">Экспорт JSON</button> <button data-action="import">Импорт JSON</button>
-          <div class="notice">Импорт добавляет записи из файла и обновляет совпадающие по номеру. Ничего не удаляется.</div></div>
+          <div class="notice">Импорт добавляет записи из файла и обновляет совпадающие по номеру. Ничего не удаляется.</div>
+          <p class="muted">Приложенные файлы (${db.files.length}) хранятся отдельно и в выгрузку JSON не входят.</p></div>
         <div class="card"><h2>Вход и оформление</h2>
           <p>Вы вошли как <b>${E(me?.email || '')}</b>.</p>
           <p>Доступ выдан: ${db.members.map(m => E(m.name)).join(', ') || '—'}</p>
@@ -527,10 +585,66 @@ function editK(id) {
       <div><label>Источник</label><input name="source" maxlength="1000" value="${E(k.source)}"></div>
     </div>
     <p>${source(k.source)}</p>
+    ${exists ? `<div class="filesblock"><h3>Файлы</h3>
+        <div id="filelist">${fileList(k.id)}</div>
+        <p><input type="file" id="fileinput" multiple>
+        <small class="muted" id="filestatus"></small></p>
+      </div>` : '<div class="notice">Файлы можно будет приложить после сохранения записи.</div>'}
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(k._by))}, ${ago(k._at)}</p>` : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists ? `<button type="button" class="danger" data-action="delk" data-id="${E(k.id)}">Удалить запись</button>` : ''}</div></form>`);
   submitForm($('#kf'), 'knowledge', k, exists, 'Запись сохранена');
+
+  if (exists) {
+    loadThumbs(k.id);
+    $('#fileinput').onchange = async e => {
+      const chosen = [...e.target.files];
+      e.target.value = '';
+      for (const [i, file] of chosen.entries()) {
+        $('#filestatus').textContent = `Загружаю ${i + 1} из ${chosen.length}: ${file.name}`;
+        try {
+          if (file.size > 52428800) throw new Error('файл больше 50 МБ');
+          const saved = await api.uploadFile(k.id, file);
+          db.files.push(saved);
+          noteLocal('insert', 'files', saved);
+        } catch (err) {
+          $('#filestatus').textContent = '';
+          toast(`Не загрузилось «${file.name}»: ${err.message || 'ошибка хранилища'}`, 8000);
+          break;
+        }
+      }
+      $('#filestatus').textContent = '';
+      $('#filelist').innerHTML = fileList(k.id);
+      loadThumbs(k.id);
+      render();
+    };
+  }
+}
+
+async function openFile(id) {
+  const file = db.files.find(f => f.id === id);
+  if (!file) return;
+  try { window.open(await api.fileUrl(file.path), '_blank', 'noopener'); }
+  catch (e) { toast('Не удалось открыть файл: ' + (e.message || 'нет связи'), 7000); }
+}
+
+// Здесь нельзя открыть наше окно подтверждения: оно заменило бы редактор
+// записи вместе с несохранённым текстом.
+async function delFile(id) {
+  const file = db.files.find(f => f.id === id);
+  if (!file || !confirm(`Удалить файл «${file.name}»? Это нельзя отменить.`)) return;
+  try {
+    await api.remove('files', id);
+    await api.removeStorage([file.path]);
+    db.files = db.files.filter(f => f.id !== id);
+    noteLocal('delete', 'files', file);
+    $('#filelist').innerHTML = fileList(file.record);
+    loadThumbs(file.record);
+    render();
+    toast('Файл удалён');
+  } catch (e) {
+    handleError(e);
+  }
 }
 
 function editP(id) {
@@ -615,11 +729,17 @@ function askDelete(title, text, run) {
 function delK(id) {
   const k = db.knowledge.find(x => x.id === id);
   if (!k) return;
-  askDelete('Удалить запись?', `«${E(k.title)}» исчезнет из базы знаний, поиска и AI-брифа.`, async () => {
-    await api.remove('knowledge', id);
-    db.knowledge = db.knowledge.filter(x => x.id !== id);
-    noteLocal('delete', 'knowledge', k);
-  });
+  const attached = db.files.filter(f => f.record === id);
+  askDelete('Удалить запись?',
+    `«${E(k.title)}» исчезнет из базы знаний, поиска и AI-брифа.${attached.length ? ` Приложенные файлы (${attached.length}) тоже будут удалены.` : ''}`,
+    async () => {
+      await api.remove('knowledge', id);
+      db.knowledge = db.knowledge.filter(x => x.id !== id);
+      db.files = db.files.filter(f => f.record !== id);
+      noteLocal('delete', 'knowledge', k);
+      // Строки о файлах уносит сама база, а сами файлы убираем из хранилища.
+      await api.removeStorage(attached.map(f => f.path));
+    });
 }
 
 function delP(id) {
@@ -899,6 +1019,8 @@ document.addEventListener('click', async e => {
     case 'delp': delP(b.dataset.id); break;
     case 'deltask': delTask(b.dataset.id); break;
     case 'delmetric': delMetric(b.dataset.id); break;
+    case 'openfile': await openFile(b.dataset.id); break;
+    case 'delfile': await delFile(b.dataset.id); break;
     case 'signout': await api.signOut(); me = null; showGate(); break;
   }
 });
