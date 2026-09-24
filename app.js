@@ -90,13 +90,14 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, ai, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
         selectAll('metrics', 'measured_on'),
         selectAll('files', 'created_at'),
         selectAll('brand', 'sort'),
+        sb.from('ai_usage').select('*').order('at', { ascending: false }).limit(200).then(must),
         selectAll('members', 'email'),
         sb.from('activity').select('*').order('at', { ascending: false }).limit(40).then(must)
       ]);
@@ -107,7 +108,7 @@ function createApi(cfg) {
         metrics: metrics.map(r => fromRow('metrics', r)),
         files: files.map(r => fromRow('files', r)),
         brand: brand.map(r => fromRow('brand', r)),
-        members, activity
+        ai, members, activity
       };
     },
 
@@ -170,7 +171,7 @@ function createApi(cfg) {
 
 let api = null;
 let me = null;
-let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], members: [], activity: [] };
+let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], ai: [], members: [], activity: [] };
 let page = 'home', query = '', category = 'Все';
 let month = new Date().getMonth(), year = new Date().getFullYear();
 let loadedAt = 0;
@@ -185,7 +186,8 @@ let ai = {
 };
 
 const sections = [
-  ['home', '⌂', 'Обзор'], ['knowledge', '▦', 'База знаний'], ['brand', '◈', 'Брендбук'],
+  ['home', '⌂', 'Обзор'], ['chain', '⛓', 'Нейроцепочка'],
+  ['knowledge', '▦', 'База знаний'], ['brand', '◈', 'Брендбук'],
   ['products', '◇', 'Услуги и продукты'],
   ['cases', '▤', 'Кейсы'], ['content', '✎', 'Контент-студия'], ['calendar', '▣', 'Календарь'],
   ['assistant', '✦', 'AI-рабочая зона'], ['analytics', '⌁', 'Аналитика'], ['competitors', '◎', 'Конкуренты'],
@@ -523,6 +525,118 @@ function brandBlock(b) {
     <p class="muted brandmeta">Обновил: ${E(memberName(b._by))}, ${ago(b._at)}</p></div>`;
 }
 
+// Нейроцепочка: знания → контент → ИИ → каналы → результат.
+// Числа берутся из базы, ничего не придумывается: пустое звено так и
+// показывается пустым, а разрывы цепочки перечисляются отдельно.
+const TRUSTED = ['Со слов команды', 'Публичный источник', 'Подтверждено'];
+
+function chainStats() {
+  const k = db.knowledge;
+  const forAi = k.filter(x => x.access === 'Публичное' && TRUSTED.includes(x.status));
+  const byStatus = s => db.content.filter(p => p.status === s).length;
+  const month = Date.now() - 30 * 86400000;
+  const recentAi = db.ai.filter(r => new Date(r.at).getTime() > month);
+  const measured = new Set(db.metrics.map(m => m.post));
+  const channels = [...new Set(db.content.map(p => p.channel))];
+  const t = totals();
+
+  return {
+    knowledge: {
+      total: k.length, forAi: forAi.length,
+      internal: k.filter(x => x.access === 'Внутреннее').length,
+      check: k.filter(x => x.status === 'Требует проверки').length,
+      files: db.files.length
+    },
+    content: {
+      total: db.content.length, drafts: byStatus('Черновик') + byStatus('Идея'),
+      review: byStatus('На проверке'), ready: byStatus('Утверждено'), published: byStatus('Опубликовано'),
+      dated: db.content.filter(p => p.date).length
+    },
+    ai: {
+      requests: recentAi.length,
+      drafts: recentAi.reduce((n, r) => n + (r.drafts || 0), 0),
+      model: recentAi[0]?.model || '',
+      ready: forAi.length > 0
+    },
+    channels: { list: channels, connected: 0 },
+    result: { posts: t.posts, views: t.views, leads: t.leads, measured: measured.size }
+  };
+}
+
+function chainGaps(s) {
+  const gaps = [];
+  const published = db.content.filter(p => p.status === 'Опубликовано');
+  const unmeasured = published.filter(p => !db.metrics.some(m => m.post === p.id));
+  const casesNoFiles = db.knowledge.filter(k => k.category === 'Кейсы' && !db.files.some(f => f.record === k.id));
+
+  if (s.knowledge.check) gaps.push(['knowledge', `Записей «Требует проверки»: ${s.knowledge.check}`,
+    'Такие факты не попадают в тексты — ИИ их не берёт. Подтвердите или поправьте.']);
+  if (casesNoFiles.length) gaps.push(['cases', `Кейсов без файлов: ${casesNoFiles.length}`,
+    'Кейс без фото и видео нечем показать клиенту.']);
+  if (!s.content.total) gaps.push(['content', 'Нет ни одного материала', 'Цепочка обрывается на втором звене.']);
+  else if (!s.content.dated) gaps.push(['calendar', 'Ни у одной публикации нет даты',
+    'Календарь пустой, порядок выхода не виден.']);
+  if (!s.ai.requests) gaps.push(['assistant', 'ИИ ещё ни разу не использован',
+    'Черновики по проверенным фактам пишутся за десяток секунд.']);
+  if (!s.channels.connected) gaps.push(['settings', 'Каналы не подключены',
+    'Публикация и сбор статистики пока вручную. Ближайшие на подключение — Telegram и VK.']);
+  if (unmeasured.length) gaps.push(['analytics', `Опубликовано без замеров: ${unmeasured.length}`,
+    'Без замера непонятно, что сработало.']);
+  else if (!s.result.posts) gaps.push(['analytics', 'Нет ни одного замера',
+    'Последнее звено цепочки пустое: результат не измеряется.']);
+  return gaps;
+}
+
+function chainLink(n, id, title, value, unit, rows, state) {
+  return `<button class="link-node ${state}" data-page="${id}">
+    <span class="nodenum">${n}</span>
+    <b>${E(title)}</b>
+    <span class="nodevalue">${E(String(value))}<small>${E(unit)}</small></span>
+    <span class="noderows">${rows.map(r => `<span>${E(r)}</span>`).join('')}</span>
+  </button>`;
+}
+
+function renderChain() {
+  const s = chainStats();
+  const gaps = chainGaps(s);
+  const links = [
+    chainLink(1, 'knowledge', 'Знания', s.knowledge.total, 'записей', [
+      `${s.knowledge.forAi} проверенных публичных`,
+      `${s.knowledge.internal} внутренних`,
+      `${s.knowledge.files} файлов`
+    ], s.knowledge.forAi ? 'ok' : 'empty'),
+    chainLink(2, 'assistant', 'ИИ', s.ai.requests, 'запросов за 30 дней', [
+      s.ai.drafts ? `${s.ai.drafts} черновиков написано` : 'черновиков пока нет',
+      s.ai.ready ? `берёт ${s.knowledge.forAi} фактов` : 'нет проверенных фактов',
+      s.ai.model ? s.ai.model.split('/').pop() : 'модель не вызывалась'
+    ], s.ai.requests ? 'ok' : 'empty'),
+    chainLink(3, 'content', 'Контент', s.content.total, 'материалов', [
+      `${s.content.drafts} в черновиках`,
+      `${s.content.review + s.content.ready} на проверке и готовы`,
+      `${s.content.published} опубликовано`
+    ], s.content.total ? 'ok' : 'empty'),
+    chainLink(4, 'calendar', 'Каналы', s.channels.list.length, 'каналов в планах', [
+      s.channels.list.slice(0, 3).join(', ') || 'каналы не выбраны',
+      `${s.content.dated} публикаций с датой`,
+      'автопубликация не подключена'
+    ], s.content.dated ? 'warn' : 'empty'),
+    chainLink(5, 'analytics', 'Результат', s.result.leads || '—', 'лидов', [
+      `${s.result.measured} публикаций с замерами`,
+      s.result.views ? `${s.result.views.toLocaleString('ru')} просмотров` : 'просмотры не внесены',
+      s.result.posts ? 'по последним замерам' : 'замеров нет'
+    ], s.result.posts ? 'ok' : 'empty')
+  ];
+
+  return heading('Нейроцепочка', 'Как знания компании превращаются в результат. Числа живые, звенья кликабельны.')
+    + `<div class="chain">${links.join('<span class="chainarrow" aria-hidden="true">→</span>')}</div>
+      <div class="chainloop"><span>Обратная связь: что сработало — возвращается в знания и в следующие тексты</span></div>
+      <div class="head"><h2>Где цепочка рвётся</h2><small class="muted">${gaps.length ? 'Найдено мест: ' + gaps.length : 'Разрывов нет'}</small></div>
+      ${gaps.length
+        ? `<div class="grid three">${gaps.map(([to, title, why]) => `<button class="card gapcard" data-page="${to}">
+            <b>${E(title)}</b><p class="muted">${E(why)}</p><span class="gaplink">Перейти →</span></button>`).join('')}</div>`
+        : '<div class="card empty">Все звенья заполнены. Так держать.</div>'}`;
+}
+
 function totals() {
   const last = {};
   for (const m of db.metrics) if (!last[m.post] || m.date >= last[m.post].date) last[m.post] = m;
@@ -584,6 +698,7 @@ function render() {
       || '<div class="empty">Записи не найдены.</div>'}</div>`;
   }
 
+  if (page === 'chain') s = renderChain();
   if (page === 'brand') { loadBrandFonts(); setTimeout(loadShots, 0); }
   if (page === 'brand' && deck.on) s = renderDeck();
 

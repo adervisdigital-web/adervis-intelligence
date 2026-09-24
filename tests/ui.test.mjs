@@ -39,6 +39,7 @@ const fake = (seedData) => {
     tasks: seedData.tasks.map(o => ({ ...o, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' })),
     metrics: [],
     files: [],
+    ai: [],
     brand: [
       { id: 'colors-base', title: 'Базовые цвета', kind: 'colors', sort: 20, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { items: [{ name: 'Фон', hex: '#141414', usage: 'основной фон' }, { name: 'Золото', hex: '#f6bd3a', usage: 'акцент' }] } },
@@ -185,6 +186,29 @@ check('свой вошёл', await page.isVisible('#shell'));
 check('в боковом меню его имя', (await page.textContent('#myname')) === 'Артём');
 check('на главной 24 записи', (await page.$$eval('.metric .value', v => v[0].textContent)) === '24');
 await page.screenshot({ path: path.join(OUT, 'intel-home.png') });
+
+// --- 1б. нейроцепочка
+await nav('chain');
+const nodes = await page.$$eval('.link-node', ns => ns.map(n => ({
+  title: n.querySelector('b').textContent,
+  value: n.querySelector('.nodevalue').childNodes[0].textContent.trim(),
+  state: [...n.classList].find(c => ['ok', 'warn', 'empty'].includes(c))
+})));
+check('в цепочке пять звеньев', nodes.length === 5, JSON.stringify(nodes.map(n => n.title)));
+check('порядок звеньев верный',
+  nodes.map(n => n.title).join(' → ') === 'Знания → ИИ → Контент → Каналы → Результат');
+check('знания считают записи из базы', nodes[0].value === '24', nodes[0].value);
+check('звено ИИ пустое, пока им не пользовались', nodes[1].state === 'empty' && nodes[1].value === '0');
+check('контент считает материалы', nodes[2].value === '3', nodes[2].value);
+check('звено результата пустое без замеров', nodes[4].state === 'empty' && nodes[4].value === '—');
+const gaps = await page.$$eval('.gapcard b', g => g.map(x => x.textContent));
+check('разрывы найдены и названы', gaps.length >= 3, gaps.join(' | '));
+check('непроверенные записи названы разрывом', gaps.some(g => /Требует проверки/.test(g)));
+check('отсутствие замеров названо разрывом', gaps.some(g => /замер/i.test(g)));
+await page.screenshot({ path: path.join(OUT, 'intel-chain.png'), fullPage: true });
+await page.click('.gapcard');
+await page.waitForFunction(() => document.querySelector('#crumb').textContent !== 'Нейроцепочка');
+check('разрыв ведёт в нужный раздел', (await page.textContent('#crumb')) === 'База знаний', await page.textContent('#crumb'));
 
 // --- 2. создание записи
 await nav('knowledge');
