@@ -295,8 +295,10 @@ await page.keyboard.press('Escape');
 // --- 9б. брендбук
 await nav('brand');
 check('брендбук показывает логотипы', (await page.$$('.logoframe img')).length === 3);
-check('логотипы действительно отрисовались',
-  await page.$$eval('.logoframe img', imgs => imgs.every(i => i.complete && i.naturalWidth > 0)));
+const logosDrawn = await page.waitForFunction(
+  () => { const i = [...document.querySelectorAll('.logoframe img')]; return i.length === 3 && i.every(x => x.complete && x.naturalWidth > 0); },
+  null, { timeout: 8000 }).then(() => true).catch(() => false);
+check('логотипы действительно отрисовались', logosDrawn);
 check('цвета показаны образцами', (await page.$$('.swatch')).length === 2);
 check('у образца виден код цвета', (await page.textContent('.swatch')).includes('#141414'));
 check('образец шрифта набран фирменным шрифтом',
@@ -487,6 +489,44 @@ const hit = await m.evaluate(() => {
   return el && el.closest('.sidebar') ? 'sidebar' : 'other';
 });
 check('на телефоне меню поверх верхней панели', hit === 'sidebar');
+
+// --- 13. обход всех разделов на узком экране
+await m.evaluate(() => document.body.classList.remove('menu'));
+const sections = ['home', 'knowledge', 'brand', 'products', 'cases', 'content', 'calendar',
+  'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
+const wide = [], small = [];
+for (const id of sections) {
+  await m.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);
+  await m.waitForTimeout(120);
+  const r = await m.evaluate(() => {
+    const doc = document.scrollingElement;
+    const over = [...document.querySelectorAll('.main *')]
+      .filter(e => e.getBoundingClientRect().right > window.innerWidth + 1)
+      .map(e => e.className || e.tagName).slice(0, 3);
+    const tap = [...document.querySelectorAll('.main button')]
+      .filter(b => b.getBoundingClientRect().height > 0 && b.getBoundingClientRect().height < 36).length;
+    return { scroll: doc.scrollWidth > window.innerWidth + 1, over, tap };
+  });
+  if (r.scroll) wide.push(id + ' (' + r.over.join(', ') + ')');
+  if (r.tap) small.push(id + ':' + r.tap);
+}
+check('ни один раздел не уезжает вбок на телефоне', wide.length === 0, wide.join(' | '));
+check('кнопки на телефоне не мельче 36 точек', small.length === 0, small.join(' | '));
+
+// слайды листаются пальцем
+await m.evaluate(() => document.querySelector('#nav button[data-page=brand]').click());
+await m.waitForSelector('[data-action=deckon]');
+await m.click('[data-action=deckon]');
+await m.waitForSelector('.slide.is-current');
+const box = await m.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }; });
+await m.mouse.move(box.x + box.w / 3, box.y);
+await m.mouse.down();
+await m.mouse.move(box.x - box.w / 3, box.y, { steps: 8 });
+await m.mouse.up();
+await m.waitForTimeout(200);
+check('слайд листается смахиванием', (await m.textContent('.deckbar small')).includes('слайд 2'),
+  await m.textContent('.deckbar small'));
+await m.screenshot({ path: path.join(OUT, 'mobile-deck.png') });
 await m.close();
 
 check('ни одной ошибки в консоли (включая CSP)', errors.length === 0, errors.join(' | '));

@@ -474,6 +474,22 @@ function renderDeck() {
     <p class="muted">Листать — стрелками на клавиатуре. «Печать / PDF» сохраняет все слайды: в окне печати выберите «Сохранить как PDF», ориентация — альбомная, фоновую графику оставить включённой.</p>`;
 }
 
+// На телефоне слайды листают пальцем. Порог в 50 точек, чтобы обычное
+// нажатие и вертикальная прокрутка не считались смахиванием.
+function bindDeckSwipe() {
+  const el = $('#deck');
+  if (!el) return;
+  let from = null;
+  el.onpointerdown = e => { from = { x: e.clientX, y: e.clientY }; };
+  el.onpointercancel = () => { from = null; };
+  el.onpointerup = e => {
+    if (!from) return;
+    const dx = e.clientX - from.x, dy = e.clientY - from.y;
+    from = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) deckMove(dx < 0 ? 1 : -1);
+  };
+}
+
 function deckMove(step) {
   const total = brandSlides().length;
   deck.i = (deck.i + step + total) % total;
@@ -599,7 +615,7 @@ function render() {
       ['03', 'Adervis Stock', 'Ассеты Envato по прямой ссылке.', 'https://stock.adervis.ru/']
     ];
     s = heading('Три направления. Одна компания.', 'Услуги студии и цифровые продукты с отдельными аудиториями.')
-      + `<div class="grid three">${items.map(([n, t, b, u]) => `<div class="card"><div class="value" style="font-size:42px;color:#9278ff">${n}</div>
+      + `<div class="grid three">${items.map(([n, t, b, u]) => `<div class="card"><div class="value numbermark">${n}</div>
         <h2>${t}</h2><p class="muted">${b}</p>${source(u)}<p><button data-action="newp">Подготовить материал</button></p></div>`).join('')}</div>
       <div class="notice">Тарифы и функции сверять перед публикацией. Сегменты аудитории — рабочее предположение.</div>
       <div class="grid three">${db.knowledge.filter(k => k.category === 'Услуги').map(kc).join('')}</div>`;
@@ -750,6 +766,7 @@ function render() {
   }
 
   $('#view').innerHTML = s;
+  if (page === 'brand' && deck.on) bindDeckSwipe();
 
   const f = $('#filter');
   if (f) f.oninput = e => {
@@ -1409,6 +1426,10 @@ async function enter() {
     return;
   }
   await reload();
+  // Фирменные шрифты — для всего интерфейса, не только для брендбука.
+  // В коде приложения лежат только бесплатные замены, настоящие приходят
+  // из закрытого хранилища после входа.
+  loadBrandFonts();
   $('#gate').hidden = true;
   $('#shell').hidden = false;
   $('#myname').textContent = memberName(me.email);

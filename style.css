@@ -155,3 +155,105 @@ button.tag:hover{border-color:#9278ff}
 .sgallery.cols-1 img{height:40cqw;object-fit:contain;background:#1b1b1b}
 .sgallery.cols-2 img{height:32cqw}
 .sgallery figcaption{font-size:1.4cqw;color:#9a9a9a;margin-top:.7cqw}
+
+/* ==========================================================================
+   ФИРМЕННЫЙ СТИЛЬ ADERVIS
+   Палитра и шрифты из брендбука. Этот слой идёт последним и перекрывает
+   служебные цвета, с которыми приложение начиналось.
+   ========================================================================== */
+
+:root{
+  --gold:#f6bd3a;
+  --gold-soft:#ffd673;
+  --gold-bg:rgba(246,189,58,.12);
+  --ink-on-gold:#141414;
+  --c-video:#ef4444; --c-design:#8b5cf6; --c-photo:#f6bd3a; --c-ai:#22c55e;
+  --font-display:'Eurostile Extd','Unbounded',ui-sans-serif,sans-serif;
+  --font-ui:'TT Fors','Golos Text',ui-sans-serif,sans-serif;
+
+  /* светлая тема: та же палитра, вывернутая */
+  --bg:#f4f4f5; --panel:#fff; --ink:#141414; --muted:#5c5c5c; --line:rgba(20,20,20,.12);
+  --dark:#141414; --shadow:0 18px 48px rgba(20,20,20,.08);
+  --blue:#eef1f6; --green:#e8f3ea; --orange:#f8eee0; --purple:#f2ece0;
+}
+
+html[data-theme=dark]{
+  --bg:#141414; --panel:#1b1b1b; --ink:#fdfdfd; --muted:#9a9a9a;
+  --line:rgba(253,253,253,.10); --shadow:0 24px 64px rgba(0,0,0,.5);
+  --blue:#232323; --green:#1f2a22; --orange:#2a231a; --purple:#232323;
+}
+
+body{font-family:var(--font-ui)}
+h1,h2,h3,.value,.covertitle,.slidetitle{font-family:var(--font-display);letter-spacing:-.01em}
+.eyebrow,.slidelabel{letter-spacing:.14em}
+
+/* --- боковое меню --- */
+.sidebar{background:#0f0f0f;border-right:1px solid var(--line)}
+html:not([data-theme=dark]) .sidebar{background:#141414}
+.brandmark{background:var(--gold);color:var(--ink-on-gold)}
+.brand small,.workspace span,.bottom small{color:#8a8a8a}
+.workspace{background:#1b1b1b;border-color:#2a2a2a}
+.nav button{color:#bdbdbd;border-color:transparent}
+.nav button:hover{background:#1f1f1f;color:#fdfdfd}
+.nav button.active{background:#1f1f1f;color:#fdfdfd;box-shadow:inset 3px 0 0 var(--gold)}
+.nav button.active i{color:var(--gold)}
+.bottom{border-top-color:#2a2a2a}
+.bottom button{border-color:#2f2f2f;color:#bdbdbd}
+.bottom button:hover{background:#1f1f1f;color:#fdfdfd}
+.avatar{background:var(--gold);color:var(--ink-on-gold)}
+
+/* --- кнопки и ссылки --- */
+.primary,.primary.lime{background:var(--gold);color:var(--ink-on-gold);font-weight:600;border-color:transparent}
+.primary:hover,.primary.lime:hover{background:var(--gold-soft);box-shadow:0 0 28px rgba(246,189,58,.28)}
+.primary:disabled{opacity:.6}
+button:not([class]):hover,.iconbtn:hover,.swatch:hover,button.tag:hover,.click:hover{border-color:var(--gold)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+a,.link{color:#c8952a}
+html[data-theme=dark] a,html[data-theme=dark] .link{color:var(--gold)}
+.task input{accent-color:var(--gold)}
+.gatecard input:focus,.input:focus,dialog input:focus,dialog select:focus,dialog textarea:focus{border-color:var(--gold);outline:none}
+.danger{color:#d64545;border-color:rgba(214,69,69,.45)}
+
+/* --- поверхности --- */
+.card{border-radius:16px}
+.numbermark{color:var(--gold);font-size:42px}
+.timeline .card{border-left:4px solid var(--gold)}
+.timeline .card:first-child{border-left-color:var(--gold-soft)}
+.notice{background:var(--gold-bg);border:1px solid rgba(246,189,58,.28)}
+.tag{background:var(--gold-bg);color:#8a6410}
+html[data-theme=dark] .tag{color:var(--gold-soft)}
+.tag.green{background:rgba(34,197,94,.14);color:#2f7f4d}
+.tag.blue{background:rgba(139,92,246,.14);color:#6a4bbd}
+.tag.orange{background:rgba(239,68,68,.12);color:#b03b3b}
+html[data-theme=dark] .tag.green{color:#7fd8a0}
+html[data-theme=dark] .tag.blue{color:#c0a8ff}
+html[data-theme=dark] .tag.orange{color:#ff9d9d}
+.dot.l{background:var(--gold)}
+.dot.o{background:var(--c-video)}
+
+/* --- главный баннер --- */
+.hero{background:#1b1b1b;border:1px solid var(--line);color:#fdfdfd;
+  background-image:radial-gradient(120% 140% at 88% 8%,rgba(246,189,58,.18),transparent 46%)}
+.hero:after{content:'';position:absolute;right:-6%;top:-32%;width:38%;height:190%;
+  background:url(brand/icon.svg) no-repeat center/contain;opacity:.10}
+.hero p{color:#c9c9c9;max-width:62%}
+.hero .eyebrow{color:var(--gold)}
+.hero button{background:var(--gold);color:var(--ink-on-gold);border-color:transparent;font-weight:600}
+.hero button:hover{background:var(--gold-soft)}
+.hero button[data-page=cases],.hero button[data-page=competitors]{background:transparent;color:#fdfdfd;border:1px solid rgba(253,253,253,.28)}
+.hero button[data-page=cases]:hover,.hero button[data-page=competitors]:hover{border-color:var(--gold);background:rgba(246,189,58,.08)}
+
+/* --- вход --- */
+.gate{background:#141414}
+.gatecard{background:#1b1b1b;border:1px solid rgba(253,253,253,.10);color:#fdfdfd;box-shadow:0 30px 80px rgba(0,0,0,.55)}
+.gatecard .muted,.gatecard label,.gatehint{color:#9a9a9a}
+.gatecard b{color:#fdfdfd}
+.gatecard input{background:#141414;border-color:rgba(253,253,253,.16);color:#fdfdfd}
+.gaterow .task{color:#fdfdfd}
+.gatecard .link{color:var(--gold)}
+
+/* --- брендбук --- */
+.swatch .chip{height:56px}
+.logoframe{background:#141414}
+.logoframe.light{background:#fdfdfd}
+.sampletext{font-size:30px}
