@@ -292,6 +292,35 @@ check('фирменный шрифт действительно загрузил
 check('правила показаны списком', (await page.$$eval('.brandtext li', l => l.map(x => x.textContent))).includes('Без канцелярита'));
 await page.screenshot({ path: path.join(OUT, 'intel-brand.png'), fullPage: true });
 
+// брендбук слайдами
+await page.click('[data-action=deckon]');
+await page.waitForSelector('.slide.is-current');
+const slideCount = await page.$$eval('.slide', s => s.length);
+// обложка + знак + 3 темы + финал
+check('слайды собраны по темам', slideCount === 6, String(slideCount));
+check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
+const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
+check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));
+check('первый слайд — обложка', (await page.textContent('.slide.is-current')).includes('Брендбук'));
+await page.keyboard.press('ArrowRight');
+await page.waitForFunction(() => document.querySelector('.slide.is-current').textContent.includes('Знак'));
+check('стрелка листает на слайд знака', (await page.$$('.slide.is-current .sframe')).length === 3);
+await page.keyboard.press('ArrowRight');
+await page.waitForFunction(() => document.querySelector('.deckbar small').textContent.includes('слайд 3'));
+check('счётчик слайдов идёт следом', true);
+await page.screenshot({ path: path.join(OUT, 'intel-deck.png') });
+
+await page.emulateMedia({ media: 'print' });
+const printed = await page.evaluate(() => {
+  const all = [...document.querySelectorAll('.slide')];
+  return { visible: all.filter(s => getComputedStyle(s).display !== 'none').length, bar: getComputedStyle(document.querySelector('.deckbar')).display };
+});
+check('в печать уходят все слайды', printed.visible === slideCount, JSON.stringify(printed));
+check('панель управления в печать не попадает', printed.bar === 'none');
+await page.emulateMedia({ media: 'screen' });
+await page.click('[data-action=deckoff]');
+await page.waitForSelector('.swatch');
+
 await page.click('[data-action=editbrand][data-id="colors-base"]');
 check('правка идёт строками', (await page.inputValue('#bf textarea')).startsWith('Фон | #141414 | основной фон'));
 await page.fill('#bf textarea', 'Фон | не-цвет | основной фон');

@@ -319,6 +319,113 @@ function brandText(body) {
   return html || '<p class="muted">Пусто.</p>';
 }
 
+// Брендбук как презентация: каждая тема — слайд 16:9 в фирменном стиле.
+// Длинные темы разбиваются на несколько слайдов, чтобы текст не мельчал.
+let deck = { on: false, i: 0 };
+
+const chunked = (list, size) => list.length
+  ? Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, i * size + size))
+  : [[]];
+
+function splitBody(body) {
+  const intro = [], bullets = [];
+  for (const line of String(body || '').split('\n')) {
+    if (/^\s*—\s+/.test(line)) bullets.push(line.replace(/^\s*—\s+/, ''));
+    else if (line.trim()) intro.push(line.trim());
+  }
+  return { intro, bullets };
+}
+
+function brandSlides() {
+  const slides = [{ kind: 'cover' }, { kind: 'logo' }];
+  for (const b of db.brand) {
+    if (b.kind === 'colors') {
+      const items = Array.isArray(b.data?.items) ? b.data.items : [];
+      chunked(items, 8).forEach((part, i, all) => slides.push({
+        kind: 'colors', title: b.title, items: part, part: all.length > 1 ? `${i + 1}/${all.length}` : ''
+      }));
+    } else if (b.kind === 'fonts') {
+      slides.push({ kind: 'fonts', title: b.title, items: Array.isArray(b.data?.items) ? b.data.items : [] });
+    } else {
+      const { intro, bullets } = splitBody(b.data?.body);
+      chunked(bullets, 6).forEach((part, i, all) => slides.push({
+        kind: 'text', title: b.title, intro: i === 0 ? intro : [], bullets: part,
+        part: all.length > 1 ? `${i + 1}/${all.length}` : ''
+      }));
+    }
+  }
+  slides.push({ kind: 'end' });
+  return slides;
+}
+
+function slideHtml(sl, i, total) {
+  const foot = `<div class="slidefoot"><span>ADERVIS · Брендбук</span><span>${i + 1} / ${total}</span></div>`;
+  const head = title => `<div class="slidehead">
+    <span class="slidelabel">${E(title)}${sl.part ? ' · ' + E(sl.part) : ''}</span>
+    <img class="slidemark" src="brand/icon.svg" alt=""></div>`;
+
+  if (sl.kind === 'cover') {
+    return `<div class="slidecover">
+      <img class="coverlogo" src="brand/logo.svg" alt="ADERVIS">
+      <h1 class="covertitle">Брендбук</h1>
+      <p class="coversub">Фирменный стиль ADERVIS Digital · обновлено ${new Date().toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+    </div>${foot}`;
+  }
+  if (sl.kind === 'logo') {
+    return head('Знак') + `<div class="slidebody slidelogos">
+      <div class="sframe"><img src="brand/logo.svg" alt="Логотип на тёмном"></div>
+      <div class="sframe light"><img src="brand/logoB.svg" alt="Логотип на светлом"></div>
+      <div class="sframe"><img class="mark" src="brand/icon.svg" alt="Знак"></div>
+    </div>` + foot;
+  }
+  if (sl.kind === 'colors') {
+    return head(sl.title) + `<div class="slidebody"><div class="sswatches">${sl.items.map(c => `<div class="sswatch">
+      <span style="background:${safeHex(c.hex)}"></span><b>${E(c.name)}</b><code>${E(c.hex)}</code>
+      <small>${E(c.usage || '')}</small></div>`).join('')}</div></div>` + foot;
+  }
+  if (sl.kind === 'fonts') {
+    return head(sl.title) + `<div class="slidebody">${sl.items.map(f => `<div class="sfont">
+      <div class="sfontsample" style="font-family:${FONT_STACK[f.family] || 'inherit'}">${E(f.sample)}</div>
+      <div class="sfontmeta">${E(f.family)} · ${E(f.role)} · ${E(f.weights)}</div></div>`).join('')}</div>` + foot;
+  }
+  if (sl.kind === 'end') {
+    return `<div class="slidecover">
+      <img class="coverlogo mark" src="brand/icon.svg" alt="">
+      <h1 class="covertitle">adervis.ru</h1>
+      <p class="coversub">Вопросы по стилю и свежая версия брендбука — в ADERVIS Intelligence</p>
+    </div>${foot}`;
+  }
+  return head(sl.title) + `<div class="slidebody">
+    <h2 class="slidetitle">${E(sl.title)}</h2>
+    ${sl.intro.map(p => `<p class="slidelead">${E(p)}</p>`).join('')}
+    ${sl.bullets.length ? `<ul class="slidelist">${sl.bullets.map(x => `<li>${E(x)}</li>`).join('')}</ul>` : ''}
+  </div>` + foot;
+}
+
+function renderDeck() {
+  const slides = brandSlides();
+  deck.i = Math.max(0, Math.min(deck.i, slides.length - 1));
+  return `<div class="deckbar">
+      <div><b>Брендбук ADERVIS</b> <small class="muted">слайд ${deck.i + 1} из ${slides.length}</small></div>
+      <div class="deckbtns">
+        <button data-action="deckprev" aria-label="Предыдущий слайд">←</button>
+        <button data-action="decknext" aria-label="Следующий слайд">→</button>
+        <button data-action="deckfull">Во весь экран</button>
+        <button data-action="deckprint">Печать / PDF</button>
+        <button data-action="deckoff">Списком</button>
+      </div></div>
+    <div class="deck" id="deck">${slides.map((sl, i) =>
+      `<section class="slide${i === deck.i ? ' is-current' : ''}">${slideHtml(sl, i, slides.length)}</section>`).join('')}</div>
+    <p class="muted">Листать — стрелками на клавиатуре. «Печать / PDF» сохраняет все слайды: в окне печати выберите «Сохранить как PDF», ориентация — альбомная, фоновую графику оставить включённой.</p>`;
+}
+
+function deckMove(step) {
+  const total = brandSlides().length;
+  deck.i = (deck.i + step + total) % total;
+  render();
+  document.querySelector('.slide.is-current')?.scrollIntoView({ block: 'nearest' });
+}
+
 function brandBlock(b) {
   const head = `<div class="head" style="margin:0 0 14px"><h2 style="margin:0">${E(b.title)}</h2>
     <button data-action="editbrand" data-id="${E(b.id)}">Изменить</button></div>`;
@@ -403,9 +510,12 @@ function render() {
       || '<div class="empty">Записи не найдены.</div>'}</div>`;
   }
 
-  if (page === 'brand') {
+  if (page === 'brand' && deck.on) s = renderDeck();
+
+  if (page === 'brand' && !deck.on) {
     const record = db.knowledge.find(k => k.category === 'Бренд' && /фирменн/i.test(k.title));
-    s = heading('Брендбук ADERVIS', 'Знак, цвета, шрифты и правила. Всё правится прямо здесь — брендбук не устаревает в день выпуска.')
+    s = heading('Брендбук ADERVIS', 'Знак, цвета, шрифты и правила. Всё правится прямо здесь — брендбук не устаревает в день выпуска.',
+      `<button class="primary" data-action="deckon">Показать слайдами</button>`)
       + `<div class="card brandlogo">
           <div class="head" style="margin:0 0 14px"><h2 style="margin:0">Знак</h2>
             <small class="muted">logo.svg · icon.svg · logoB.svg</small></div>
@@ -1141,6 +1251,18 @@ document.addEventListener('click', async e => {
     case 'deltask': delTask(b.dataset.id); break;
     case 'delmetric': delMetric(b.dataset.id); break;
     case 'editbrand': editBrand(b.dataset.id); break;
+    case 'deckon': deck = { on: true, i: 0 }; render(); break;
+    case 'deckoff':
+      deck.on = false;
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      render();
+      break;
+    case 'decknext': deckMove(1); break;
+    case 'deckprev': deckMove(-1); break;
+    case 'deckfull':
+      try { await $('#deck').requestFullscreen(); } catch (err) { toast('Полный экран недоступен в этом браузере'); }
+      break;
+    case 'deckprint': window.print(); break;
     case 'copyhex':
       try { await navigator.clipboard.writeText(b.dataset.id); toast('Скопировано: ' + b.dataset.id); }
       catch (err) { toast('Не удалось скопировать'); }
@@ -1168,6 +1290,14 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('keydown', e => {
+  // Листание слайдов: только когда открыт показ и не заполняют поле.
+  if (deck.on && page === 'brand' && !$('#modal').open && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) {
+    if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); deckMove(1); return; }
+    if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); deckMove(-1); return; }
+    if (e.key === 'Home') { deck.i = 0; render(); return; }
+    if (e.key === 'End') { deck.i = brandSlides().length - 1; render(); return; }
+    if (e.key === 'Escape' && !document.fullscreenElement) { deck.on = false; render(); return; }
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && !$('#shell').hidden) { e.preventDefault(); search(); }
   if (e.key === 'Escape') document.body.classList.remove('menu');
   if (e.key === 'Enter' && e.target.matches('article[role=button]')) e.target.click();
