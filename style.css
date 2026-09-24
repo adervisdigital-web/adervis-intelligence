@@ -353,3 +353,9 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .pickrow input{margin-top:3px;width:16px;height:16px;accent-color:var(--gold);flex:none}
 .pickrow b{font-weight:600;font-size:13px}
 @media(max-width:720px){.chip{padding:9px 14px;font-size:13px}.rewrites{gap:8px}}
+
+/* --- деньги и решения --- */
+.table .minus{color:#d64545}
+.decision .measure{font-size:13px;margin:8px 0 0;padding:8px 10px;border-left:2px solid var(--gold);background:var(--gold-bg);border-radius:0 8px 8px 0}
+.decision .outcome{font-size:13px;margin:8px 0 0;color:var(--muted)}
+.decision h2{font-size:16px}

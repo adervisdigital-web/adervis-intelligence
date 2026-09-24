@@ -40,6 +40,8 @@ const fake = (seedData) => {
     metrics: [],
     files: [],
     publications: [],
+    finance: [],
+    decisions: [],
     ai: [],
     brand: [
       { id: 'colors-base', title: 'Базовые цвета', kind: 'colors', sort: 20, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
@@ -201,8 +203,70 @@ check('в боковом меню его имя', (await page.textContent('#myna
 check('на главной 24 записи', (await page.$$eval('.metric .value', v => v[0].textContent)) === '24');
 await page.screenshot({ path: path.join(OUT, 'intel-home.png') });
 
+// --- 1в. деньги
+await nav('money');
+check('пустой раздел денег объясняет, что внести', (await page.textContent('#view')).includes('Внесите хотя бы три последних месяца'));
+check('сказано, что цифры не уходят в тексты', (await page.textContent('#view')).includes('в запросы к ИИ они не попадают'));
+for (const [month, dir, rev, cost, proj, days] of [
+  ['2026-07', 'Студия', '400000', '150000', '4', '6'],
+  ['2026-08', 'Студия', '520000', '180000', '5', '8'],
+  ['2026-08', 'CRM', '30000', '5000', '0', '0']
+]) {
+  await page.click('[data-action=newmonth]');
+  await page.fill('#mo input[name=month]', month);
+  await page.selectOption('#mo select[name=direction]', dir);
+  await page.fill('#mo input[name=revenue]', rev);
+  await page.fill('#mo input[name=costs]', cost);
+  await page.fill('#mo input[name=projects]', proj);
+  await page.fill('#mo input[name=shoot_days]', days);
+  await page.click('#mo button.primary');
+  await page.waitForFunction(() => !document.querySelector('#modal').open);
+}
+const tiles = await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')));
+check('выручка месяца сложена по направлениям', /550\s?000 ₽/.test(tiles[0]), tiles[0]);
+check('рост к прошлому месяцу посчитан', /\+38% к прошлому/.test(tiles[0]), tiles[0]);
+check('прибыль и маржа посчитаны', /365\s?000 ₽/.test(tiles[1]) && /маржа 66%/.test(tiles[1]), tiles[1]);
+check('средний чек посчитан по проектам', /110\s?000 ₽/.test(tiles[2]), tiles[2]);
+check('график по направлениям нарисован', (await page.$$('.chart .serie')).length === 2);
+check('в таблице все внесённые строки', (await page.$$('.table tbody tr')).length === 3);
+const repeat = async () => {
+  await page.click('[data-action=newmonth]');
+  await page.fill('#mo input[name=month]', '2026-08');
+  await page.selectOption('#mo select[name=direction]', 'Студия');
+  await page.fill('#mo input[name=revenue]', '600000');
+  await page.click('#mo button.primary');
+  await page.waitForFunction(() => !document.querySelector('#modal').open);
+};
+await repeat();
+check('повторный ввод месяца заменяет строку, а не дублирует', (await page.$$('.table tbody tr')).length === 3);
+const afterRepeat = await page.$$eval('.metric', m => m[0].innerText.replace(/\s+/g, ' '));
+check('новая сумма пересчитана вместе с другими направлениями', /630\s?000 ₽/.test(afterRepeat), afterRepeat);
+
+// --- 1г. решения
+await nav('decisions');
+check('пустой журнал решений объясняет смысл', (await page.textContent('#view')).includes('Через полгода будет видно'));
+await page.click('[data-action=newdecision]');
+await page.fill('#df input[name=title]', 'Поднять цены на монтаж на 20%');
+await page.fill('#df textarea[name=why]', 'Загрузка на пределе, отказываем каждому третьему.');
+await page.fill('#df input[name=measure]', 'Не потеряем больше одного клиента из пяти');
+await page.selectOption('#df select[name=status]', 'Проверяем');
+await page.fill('#df input[name=due_on]', '2026-09-01');
+await page.click('#df button.primary');
+await page.waitForFunction(() => !document.querySelector('#modal').open);
+check('решение записано', (await state()).decisions.length === 1);
+check('просроченное решение попало в «пора проверить»', (await page.textContent('#view')).includes('Пора проверить'));
+check('признак успеха виден в карточке', (await page.textContent('.decision .measure')).includes('одного клиента из пяти'));
+await page.click('.decision');
+await page.fill('#df textarea[name=outcome]', 'Потеряли одного, выручка выросла на 15%.');
+await page.selectOption('#df select[name=status]', 'Сработало');
+await page.click('#df button.primary');
+await page.waitForFunction(() => window.__STATE__.decisions[0].status === 'Сработало');
+check('итог решения сохранён', (await state()).decisions[0].outcome.includes('выручка выросла'));
+check('счётчик сработавших обновился', (await page.$$eval('.metric', m => m[2].innerText)).includes('1'));
+
 // --- 1а. фирменная графика
-check('у каждого раздела своя иконка', (await page.$$('#nav button svg')).length === 14);
+const navCount = (await page.$$('#nav button')).length;
+check('у каждого раздела своя иконка', (await page.$$('#nav button svg')).length === navCount, String(navCount));
 check('иконки нарисованы, а не написаны символами',
   await page.$$eval('#nav button i', els => els.every(e => e.querySelector('svg') && !/[⌂▦◈◇▤✎▣✦⌁◎✓↗⚙⛓]/.test(e.textContent))));
 check('иконки берут цвет от текста',

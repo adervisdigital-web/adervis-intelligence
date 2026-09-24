@@ -22,6 +22,8 @@ function toast(text, ms = 3500) {
 // страницы, без эмодзи; цвет наследуется от текста.
 const ICONS = {
   home: '<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z"/>',
+  money: '<path d="M9 20V5h4.5a4 4 0 0 1 0 8H9"/><path d="M6 13h7M6 16.5h7"/>',
+  decisions: '<path d="M6 21V4"/><path d="M6 5h11l-2.2 3.6L17 12H6z"/>',
   chain: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="m6.7 11 3.8-3.8M6.7 13l3.8 3.8M13.5 7.2 17.3 11M13.5 16.8 17.3 13"/>',
   knowledge: '<path d="M6 4h9a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z"/><path d="M6 17h11"/>',
   brand: '<path d="M12 3 21 12 12 21 3 12z"/><path d="M12 8.5 15.5 12 12 15.5 8.5 12z"/>',
@@ -70,7 +72,9 @@ const FIELDS = {
   tasks: ['id', 'title', 'done'],
   metrics: ['id', 'post', 'date', 'views', 'replies', 'leads'],
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
-  brand: ['id', 'title', 'kind', 'sort', 'data']
+  brand: ['id', 'title', 'kind', 'sort', 'data'],
+  finance: ['id', 'month', 'direction', 'revenue', 'costs', 'projects', 'shoot_days', 'note'],
+  decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 
@@ -120,13 +124,15 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, publications, ai, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, finance, decisions, publications, ai, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
         selectAll('metrics', 'measured_on'),
         selectAll('files', 'created_at'),
         selectAll('brand', 'sort'),
+        selectAll('finance', 'month'),
+        selectAll('decisions', 'decided_on'),
         selectAll('publications', 'at'),
         sb.from('ai_usage').select('*').order('at', { ascending: false }).limit(200).then(must),
         selectAll('members', 'email'),
@@ -139,6 +145,8 @@ function createApi(cfg) {
         metrics: metrics.map(r => fromRow('metrics', r)),
         files: files.map(r => fromRow('files', r)),
         brand: brand.map(r => fromRow('brand', r)),
+        finance: finance.map(r => fromRow('finance', r)),
+        decisions: decisions.map(r => fromRow('decisions', r)),
         publications, ai, members, activity
       };
     },
@@ -212,7 +220,7 @@ function createApi(cfg) {
 
 let api = null;
 let me = null;
-let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], publications: [], ai: [], members: [], activity: [] };
+let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], finance: [], decisions: [], publications: [], ai: [], members: [], activity: [] };
 let page = 'home', query = '', category = 'Все';
 let month = new Date().getMonth(), year = new Date().getFullYear();
 let loadedAt = 0;
@@ -228,7 +236,8 @@ let ai = {
 };
 
 const sections = [
-  ['home', '⌂', 'Обзор'], ['chain', '⛓', 'Нейроцепочка'],
+  ['home', '⌂', 'Обзор'], ['money', '₽', 'Деньги'], ['decisions', '⚑', 'Решения'],
+  ['chain', '⛓', 'Нейроцепочка'],
   ['knowledge', '▦', 'База знаний'], ['brand', '◈', 'Брендбук'],
   ['products', '◇', 'Услуги и продукты'],
   ['cases', '▤', 'Кейсы'], ['content', '✎', 'Контент-студия'], ['calendar', '▣', 'Календарь'],
@@ -675,6 +684,144 @@ function chartData() {
   return { series, leads, spark, posts: named.length };
 }
 
+// ------------------------------------------------------------------ деньги
+//
+// Помесячные цифры по направлениям. Считаем только то, что введено:
+// выручка, расходы, прибыль, средний чек, съёмочные дни. Ничего не
+// достраивается и не прогнозируется — иначе решения будут приняты по выдумке.
+const DIRECTIONS = ['Студия', 'CRM', 'Stock', 'Медиа'];
+const monthName = m => new Date(m + (m.length === 7 ? '-01' : '')).toLocaleDateString('ru', { month: 'long', year: 'numeric' });
+
+function moneyStats() {
+  const months = [...new Set(db.finance.map(r => r.month))].sort();
+  const sum = (rows, f) => rows.reduce((n, r) => n + Number(r[f] || 0), 0);
+  const byMonth = months.map(m => {
+    const rows = db.finance.filter(r => r.month === m);
+    const revenue = sum(rows, 'revenue'), costs = sum(rows, 'costs');
+    return { month: m, revenue, costs, profit: revenue - costs, projects: sum(rows, 'projects'), days: sum(rows, 'shoot_days') };
+  });
+  const last = byMonth[byMonth.length - 1] || null;
+  const prev = byMonth[byMonth.length - 2] || null;
+  const year = byMonth.slice(-12);
+  return {
+    months, byMonth, last, prev,
+    yearRevenue: sum(year, 'revenue'),
+    yearProfit: sum(year, 'profit'),
+    avgCheck: last && last.projects ? Math.round(last.revenue / last.projects) : 0,
+    margin: last && last.revenue ? Math.round(100 * last.profit / last.revenue) : 0,
+    byDirection: DIRECTIONS.map(d => ({
+      name: d,
+      points: months.map(m => ({ x: m.slice(0, 7), y: sum(db.finance.filter(r => r.month === m && r.direction === d), 'revenue') }))
+    })).filter(s => s.points.some(p => p.y > 0))
+  };
+}
+
+// ---------------------------------------------------------------- решения
+//
+// Журнал решений: что решили, почему и по какому признаку поймём результат.
+// Смысл в последней колонке — через полгода видно, какие решения были верными.
+const DECISION_STATUS = ['Думаем', 'Делаем', 'Проверяем', 'Сработало', 'Не сработало', 'Отменено'];
+const today = () => new Date().toISOString().slice(0, 10);
+
+function renderDecisions() {
+  const open = db.decisions.filter(d => ['Думаем', 'Делаем', 'Проверяем'].includes(d.status));
+  const due = open.filter(d => d.due_on && d.due_on <= today());
+  const done = db.decisions.filter(d => !['Думаем', 'Делаем', 'Проверяем'].includes(d.status));
+  const worked = done.filter(d => d.status === 'Сработало').length;
+
+  const card = d => `<article class="card click decision" tabindex="0" role="button" data-d="${E(d.id)}">
+    <div class="row" style="border:0;padding:0 0 8px">${tag(d.status)}
+      <small class="muted">${E(d.decided_on)}${d.due_on ? ` · проверить ${E(d.due_on)}` : ''}</small></div>
+    <h2 style="margin:0 0 8px">${E(d.title)}</h2>
+    ${d.why ? `<p class="muted">${E(d.why.slice(0, 160))}${d.why.length > 160 ? '…' : ''}</p>` : ''}
+    ${d.measure ? `<p class="measure"><b>Поймём по:</b> ${E(d.measure)}</p>` : '<p class="muted">Признак успеха не задан — непонятно, как проверять.</p>'}
+    ${d.outcome ? `<p class="outcome"><b>Вышло:</b> ${E(d.outcome.slice(0, 160))}</p>` : ''}
+  </article>`;
+
+  return heading('Решения', 'Что решили, почему и как поймём, что сработало.',
+    `<button class="primary" data-action="newdecision">+ Решение</button>`)
+    + (db.decisions.length ? `<div class="grid metrics">${[
+        ['В работе', open.length, 'думаем, делаем, проверяем'],
+        ['Пора проверить', due.length, due.length ? 'срок подошёл' : 'просроченных нет'],
+        ['Сработало', worked, `из ${done.length} завершённых`],
+        ['Всего', db.decisions.length, 'за всё время']
+      ].map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small></div>`).join('')}</div>` : '')
+    + (due.length ? `<div class="head"><h2>Пора проверить</h2><small class="muted">срок подошёл</small></div>
+        <div class="grid three">${due.map(card).join('')}</div>` : '')
+    + (open.length ? `<div class="head"><h2>В работе</h2></div><div class="grid three">${open.filter(d => !due.includes(d)).map(card).join('') || '<div class="empty">Всё в проверке.</div>'}</div>` : '')
+    + (done.length ? `<div class="head"><h2>Завершённые</h2><small class="muted">опыт компании</small></div>
+        <div class="grid three">${done.map(card).join('')}</div>` : '')
+    + (!db.decisions.length ? `<div class="card empty"><h2>Журнал пуст</h2>
+        <p>Записывайте сюда решения: нанимать ли монтажёра, поднимать ли цены, брать ли клиента.
+        Через полгода будет видно, какие из них оказались верными.</p></div>` : '');
+}
+
+function editDecision(id) {
+  const exists = db.decisions.some(d => d.id === id);
+  const d = db.decisions.find(d => d.id === id) || {
+    id: uid(), title: '', why: '', measure: '', outcome: '', status: 'Думаем', decided_on: today(), due_on: ''
+  };
+  modal(`<h2>Решение</h2><form id="df">
+    <label>Что решили</label><input name="title" required maxlength="300" value="${E(d.title)}">
+    <label>Почему — что нас к этому привело</label><textarea name="why" maxlength="4000">${E(d.why)}</textarea>
+    <label>По какому признаку поймём, что сработало</label>
+    <input name="measure" maxlength="500" value="${E(d.measure)}" placeholder="Например: три заявки с сайта за месяц">
+    <div class="formgrid">
+      <div><label>Статус</label><select name="status">${opts(DECISION_STATUS, d.status)}</select></div>
+      <div><label>Когда решили</label><input type="date" name="decided_on" value="${E(d.decided_on)}"></div>
+      <div><label>Когда проверить</label><input type="date" name="due_on" value="${E(d.due_on || '')}"></div>
+    </div>
+    <label>Что вышло на самом деле</label><textarea name="outcome" maxlength="4000">${E(d.outcome)}</textarea>
+    ${exists ? `<p class="muted">Последняя правка: ${E(memberName(d._by))}, ${ago(d._at)}</p>` : ''}
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${exists ? `<button type="button" class="danger" data-action="deldecision" data-id="${E(d.id)}">Удалить</button>` : ''}</div></form>`);
+  submitForm($('#df'), 'decisions', d, exists, 'Решение записано');
+}
+
+function renderMoney() {
+  const s = moneyStats();
+  const head = heading('Деньги', 'Помесячно по направлениям. Считается только то, что внесли: ничего не достраивается.',
+    `<button class="primary" data-action="newmonth">+ Внести месяц</button>`);
+
+  if (!db.finance.length) {
+    return head + `<div class="card empty"><h2>Цифр пока нет</h2>
+      <p>Внесите хотя бы три последних месяца — по каждому направлению отдельно. Дальше станет видно динамику, средний чек и маржу.</p>
+      <p class="muted">Эти данные внутренние: в тексты и в запросы к ИИ они не попадают никогда.</p></div>`;
+  }
+
+  const delta = s.prev && s.prev.revenue
+    ? Math.round(100 * (s.last.revenue - s.prev.revenue) / s.prev.revenue) : null;
+  const tiles = [
+    ['Выручка за месяц', num(s.last.revenue) + ' ₽', monthName(s.last.month) + (delta !== null ? ` · ${delta > 0 ? '+' : ''}${delta}% к прошлому` : '')],
+    ['Прибыль', num(s.last.profit) + ' ₽', s.margin ? `маржа ${s.margin}%` : 'расходы не внесены'],
+    ['Средний чек', s.avgCheck ? num(s.avgCheck) + ' ₽' : '—', s.last.projects ? `проектов: ${s.last.projects}` : 'проекты не внесены'],
+    ['Съёмочных дней', s.last.days || '—', 'в этом месяце']
+  ];
+
+  const table = `<div class="card tablewrap"><table class="table">
+    <thead><tr><th>Месяц</th><th>Направление</th><th>Выручка</th><th>Расходы</th><th>Прибыль</th><th>Проектов</th><th>Дней</th><th></th></tr></thead>
+    <tbody>${[...db.finance].sort((a, b) => b.month.localeCompare(a.month)).map(r => `<tr>
+      <td>${E(monthName(r.month))}</td><td>${tag(r.direction)}</td>
+      <td>${num(r.revenue)}</td><td>${num(r.costs)}</td>
+      <td class="${r.revenue - r.costs < 0 ? 'minus' : ''}">${num(r.revenue - r.costs)}</td>
+      <td>${r.projects || '—'}</td><td>${r.shoot_days || '—'}</td>
+      <td><button class="del" data-action="delmonth" data-id="${E(r.id)}" aria-label="Удалить строку">${icon('close', 15)}</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+
+  const charts = s.byDirection.length
+    ? `<div class="card chartcard" style="margin-bottom:16px"><div class="head" style="margin:0 0 6px">
+        <h2 style="margin:0">Выручка по направлениям</h2><small class="muted">направлений: ${s.byDirection.length}</small></div>
+        <p class="muted chartnote">Каждая линия — направление. Видно, что кормит, а что забирает время.</p>
+        ${lineChart(s.byDirection)}</div>`
+    : '';
+
+  return head
+    + `<div class="grid metrics">${tiles.map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div>
+        <div class="value">${b}</div><small>${E(c)}</small></div>`).join('')}</div>`
+    + charts + table
+    + `<div class="notice">Данные внутренние. Серверная функция ИИ читает только базу знаний, в тексты эти цифры не попадут.</div>`;
+}
+
 // Нейроцепочка: знания → контент → ИИ → каналы → результат.
 // Числа берутся из базы, ничего не придумывается: пустое звено так и
 // показывается пустым, а разрывы цепочки перечисляются отдельно.
@@ -895,6 +1042,8 @@ function render() {
       || '<div class="empty">Записи не найдены.</div>'}</div>`;
   }
 
+  if (page === 'money') s = renderMoney();
+  if (page === 'decisions') s = renderDecisions();
   if (page === 'chain') s = renderChain();
   if (page === 'brand') { loadBrandFonts(); setTimeout(loadShots, 0); }
   if (page === 'brand' && deck.on) s = renderDeck();
@@ -1344,6 +1493,64 @@ function taskNew() {
   };
 }
 
+// Ввод месяца: одно направление за раз. Повторный ввод того же месяца
+// и направления заменяет прежнюю строку, а не плодит дубликаты.
+function monthNew() {
+  const now = new Date();
+  const month = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  modal(`<h2>Цифры за месяц</h2><form id="mo">
+    <div class="formgrid">
+      <div><label>Месяц</label><input type="month" name="month" required value="${month.slice(0, 7)}"></div>
+      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, 'Студия')}</select></div>
+      <div><label>Выручка, ₽</label><input name="revenue" type="number" min="0" step="1000" required></div>
+      <div><label>Расходы, ₽</label><input name="costs" type="number" min="0" step="1000" value="0"></div>
+      <div><label>Проектов</label><input name="projects" type="number" min="0" step="1" value="0"></div>
+      <div><label>Съёмочных дней</label><input name="shoot_days" type="number" min="0" step="1" value="0"></div>
+    </div>
+    <label>Заметка</label><input name="note" maxlength="500" placeholder="Например: два крупных проекта и отпуск">
+    <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
+
+  $('#mo').onsubmit = async e => {
+    e.preventDefault();
+    const btn = $('#mo button.primary');
+    btn.disabled = true;
+    const f = Object.fromEntries(new FormData(e.target));
+    const row = {
+      id: uid(), month: f.month + '-01', direction: f.direction, note: f.note || '',
+      revenue: Number(f.revenue), costs: Number(f.costs), projects: Number(f.projects), shoot_days: Number(f.shoot_days)
+    };
+    const same = db.finance.find(r => r.month === row.month && r.direction === row.direction);
+    try {
+      const saved = same ? await api.update('finance', { ...same, ...row, id: same.id }) : await api.insert('finance', row);
+      upsertLocal('finance', saved);
+      noteLocal(same ? 'update' : 'insert', 'finance', { ...saved, title: monthName(saved.month) + ' · ' + saved.direction });
+      $('#modal').close();
+      render();
+      toast(same ? 'Месяц обновлён' : 'Месяц внесён');
+    } catch (err) { handleError(err); btn.disabled = false; }
+  };
+}
+
+function delMonth(id) {
+  const r = db.finance.find(x => x.id === id);
+  if (!r) return;
+  askDelete('Удалить строку?', `${E(monthName(r.month))} · ${E(r.direction)}`, async () => {
+    await api.remove('finance', id);
+    db.finance = db.finance.filter(x => x.id !== id);
+    noteLocal('delete', 'finance', { ...r, title: monthName(r.month) + ' · ' + r.direction });
+  });
+}
+
+function delDecision(id) {
+  const d = db.decisions.find(x => x.id === id);
+  if (!d) return;
+  askDelete('Удалить решение?', `«${E(d.title)}» исчезнет из журнала вместе с выводами.`, async () => {
+    await api.remove('decisions', id);
+    db.decisions = db.decisions.filter(x => x.id !== id);
+    noteLocal('delete', 'decisions', d);
+  });
+}
+
 function metricNew() {
   if (!db.content.length) { toast('Сначала создайте публикацию'); return; }
   modal(`<h2>Замер результата</h2><form id="mf">
@@ -1756,11 +1963,12 @@ document.addEventListener('click', async e => {
     document.body.classList.remove('menu');
     return;
   }
-  const b = e.target.closest('button,article[data-k],article[data-p]');
+  const b = e.target.closest('button,article[data-k],article[data-p],article[data-d]');
   if (!b) return;
   if (b.dataset.page) { go(b.dataset.page); return; }
   if (b.dataset.k) { editK(b.dataset.k); return; }
   if (b.dataset.p) { editP(b.dataset.p); return; }
+  if (b.dataset.d) { editDecision(b.dataset.d); return; }
   if (b.dataset.result) {
     $('#modal').close();
     if (b.dataset.result === 'page') go(b.dataset.id);
@@ -1774,6 +1982,10 @@ document.addEventListener('click', async e => {
     case 'newp': editP(); break;
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
+    case 'newmonth': monthNew(); break;
+    case 'delmonth': delMonth(b.dataset.id); break;
+    case 'newdecision': editDecision(); break;
+    case 'deldecision': delDecision(b.dataset.id); break;
     case 'brief': brief(); break;
     case 'write': await write(); break;
     case 'rewrite': await rewriteDraft(Number(b.dataset.id), b.dataset.preset, ''); break;
@@ -1847,6 +2059,7 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && !$('#shell').hidden) { e.preventDefault(); search(); }
   if (e.key === 'Escape') document.body.classList.remove('menu');
   if (e.key === 'Enter' && e.target.matches('article[role=button]')) e.target.click();
+  if (e.key === ' ' && e.target.matches('article[role=button]')) { e.preventDefault(); e.target.click(); }
 });
 
 // Второй руководитель мог что-то поменять, пока вкладка была не видна.
