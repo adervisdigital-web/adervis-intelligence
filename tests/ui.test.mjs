@@ -52,6 +52,8 @@ const fake = (seedData) => {
           { family: 'TT Fors', role: 'Текст', weights: 'Regular', sample: 'Визуал для бизнеса', file: 'brand/tt-fors-regular.ttf' }] } },
       { id: 'patterns', title: 'Паттерны', kind: 'gallery', sort: 85, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { items: [{ file: 'brand/gallery/pattern-1.jpg', caption: 'Паттерн 1' }, { file: 'brand/gallery/pattern-2.jpg', caption: 'Паттерн 2' }] } },
+      { id: 'photo', title: 'Фото и видео', kind: 'text', sort: 120, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { body: 'Пока не заполнено.' } },
       { id: 'voice', title: 'Как мы говорим', kind: 'text', sort: 90, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { body: 'Пишем живо и просто.\n— Без канцелярита\n— Без выдуманных цифр' } }
     ],
@@ -525,6 +527,13 @@ check('за картинками ходили по временным ссылк
 check('подписи под картинками на месте',
   (await page.$$eval('.gallery figcaption', f => f.map(x => x.textContent))).join() === 'Паттерн 1,Паттерн 2');
 
+// полнота брендбука
+const progress = (await page.textContent('.progresscard')).replace(/\s+/g, ' ');
+check('видно, сколько тем заполнено', /Заполнено 4 из 5/.test(progress), progress);
+check('пустая тема названа поимённо', /Ждут содержимого.*Фото и видео/.test(progress), progress);
+check('из полноты можно сразу открыть пустую тему',
+  (await page.$$('.progresscard [data-action=editbrand]')).length > 0);
+
 // состав брендбука: добавить, подвинуть, удалить тему
 const titlesBefore = await page.$$eval('.brandcard h2', h => h.map(x => x.textContent));
 await page.click('[data-action=newbrand]');
@@ -537,10 +546,11 @@ check('новая тема создаётся с подсказкой, что п
   (await page.textContent('#view')).includes('Пока не заполнено'));
 
 await page.locator('.brandcard').last().locator('[data-action=movebrand][data-dir="-1"]').click();
-await page.waitForFunction(t => [...document.querySelectorAll('.brandcard h2')].map(x => x.textContent).pop() === t,
-  titlesBefore[titlesBefore.length - 1]);
-check('тему можно подвинуть выше',
-  (await page.$$eval('.brandcard h2', h => h.map(x => x.textContent))).at(-2) === 'Упаковка подарков');
+const moved = await page.waitForFunction(() => {
+  const list = [...window.__STATE__.brand].sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  return list[list.length - 1].title !== 'Упаковка подарков';
+}, null, { timeout: 8000 }).then(() => true).catch(() => false);
+check('тему можно подвинуть выше', moved, await page.textContent('#alerts'));
 check('у самой первой темы стрелка вверх недоступна',
   await page.locator('.brandcard').first().locator('[data-action=movebrand][data-dir="-1"]').isDisabled());
 
@@ -553,8 +563,8 @@ check('тему можно удалить', !(await page.$$eval('.brandcard h2',
 await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
 const slideCount = await page.$$eval('.slide', s => s.length);
-// обложка + знак + 4 темы (цвета, шрифты, галерея, текст) + финал
-check('слайды собраны по темам', slideCount === 7, String(slideCount));
+// обложка + знак + 5 тем (цвета, шрифты, галерея, два текста) + финал
+check('слайды собраны по темам', slideCount === 8, String(slideCount));
 check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
 const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
 check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));

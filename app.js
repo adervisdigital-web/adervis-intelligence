@@ -553,6 +553,24 @@ function deckMove(step) {
   document.querySelector('.slide.is-current')?.scrollIntoView({ block: 'nearest' });
 }
 
+// Тема считается пустой, если в ней нет картинок или прямо написано, что
+// она не заполнена. Пустые места лучше видеть, чем считать, что всё готово.
+const brandEmpty = b => b.kind === 'text'
+  ? /пока не заполнено/i.test(b.data?.body || '') || !(b.data?.body || '').trim()
+  : !(Array.isArray(b.data?.items) && b.data.items.length);
+
+function brandProgress() {
+  const empty = db.brand.filter(brandEmpty);
+  const done = db.brand.length - empty.length;
+  if (!db.brand.length) return '';
+  return `<div class="card progresscard">
+    <div class="head" style="margin:0 0 8px"><h2 style="margin:0">Заполнено ${done} из ${db.brand.length}</h2>
+      <div class="progress" style="width:180px"><i style="width:${Math.round(100 * done / db.brand.length)}%"></i></div></div>
+    ${empty.length
+      ? `<p class="muted">Ждут содержимого: ${empty.map(b => `<button class="chip" data-action="editbrand" data-id="${E(b.id)}">${E(b.title)}</button>`).join(' ')}</p>`
+      : '<p class="muted">Все темы заполнены.</p>'}</div>`;
+}
+
 function brandBlock(b) {
   const order = db.brand.map(x => x.id);
   const i = order.indexOf(b.id);
@@ -1144,6 +1162,7 @@ function render() {
           </div>
           <p><a href="brand/logo.svg" download>Скачать logo.svg</a> · <a href="brand/icon.svg" download>icon.svg</a> · <a href="brand/logoB.svg" download>logoB.svg</a></p>
         </div>`
+      + brandProgress()
       + db.brand.map(brandBlock).join('')
       + (record ? `<div class="card"><div class="head" style="margin:0 0 14px"><h2 style="margin:0">Файлы бренда</h2>
           <button data-k="${E(record.id)}">Добавить файлы</button></div>

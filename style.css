@@ -375,3 +375,17 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .ecorow b{display:block;margin-bottom:6px;font-family:var(--font-display)}
 .ecorow label{display:block;font-size:12px;color:var(--muted);margin-top:8px}
 .ecorow input{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);margin-top:4px}
+
+/* --- полнота брендбука --- */
+.progresscard{margin-bottom:16px}
+.progresscard .progress{height:8px;background:var(--line);border-radius:10px;overflow:hidden;flex:none}
+.progresscard .progress i{display:block;height:100%;background:var(--gold);border-radius:10px}
+.progresscard .chip{margin:3px 2px 0 0}
+.blockbtns{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.blockbtns .chip.danger{border-color:transparent;padding:6px 8px}
+.blockbtns .chip.danger:hover{border-color:rgba(214,69,69,.45)}
+@media(max-width:720px){
+  .blockbtns .chip{min-height:38px;min-width:38px;padding:8px 12px}
+  .blockbtns .chip.danger{padding:8px 10px}
+  .progresscard .chip{min-height:38px}
+}
