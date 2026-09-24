@@ -42,7 +42,20 @@ const ICONS = {
   theme: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
   refresh: '<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 5v5h-5"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>'
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  // предметные иконки студии — та же геометрия и та же толщина штриха
+  video: '<rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/>',
+  photo: '<rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/><path d="M8.5 6 10 4h4l1.5 2"/>',
+  design: '<path d="M4 17c6 0 10-10 16-10"/><circle cx="4" cy="17" r="2"/><circle cx="20" cy="7" r="2"/>',
+  estimate: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  client: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>',
+  shooting: '<rect x="3" y="9" width="18" height="11" rx="2"/><path d="m3 9 2.4-4 16 1.4L21 9"/><path d="m8 9-2-3.6M13 9.4l-2-3.7M18 9.9l-2-3.7"/>',
+  editing: '<path d="M3 8h18M3 16h18"/><rect x="6" y="5" width="5" height="6" rx="1"/><rect x="13" y="13" width="6" height="6" rx="1"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  lead: '<path d="M5 12 7 5h10l2 7v6a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M3.5 12H8l2 3h4l2-3h4.5"/>',
+  time: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+  place: '<path d="M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'
 };
 
 const icon = (name, size = 20) => ICONS[name]
@@ -477,6 +490,60 @@ const FIGURES = {
           <text class="fnote" x="${x + cell / 2}" y="${y + 126}" text-anchor="middle">${label}</text>
         </g>`;
       }).join('')}
+    </svg>`;
+  },
+
+  // Набор иконок. Одна геометрия, одна толщина штриха, размеры токенами.
+  icons: () => {
+    const groups = [
+      ['Разделы', ['home', 'money', 'decisions', 'chain', 'knowledge', 'brand', 'products', 'cases', 'content', 'calendar', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings']],
+      ['Работа студии', ['video', 'photo', 'design', 'shooting', 'editing', 'mic', 'estimate', 'client', 'lead', 'file', 'time', 'place']],
+      ['Действия', ['plus', 'search', 'refresh', 'menu', 'theme', 'close']]
+    ];
+    return `<div class="iconsheet">${groups.map(([title, names]) => `<div class="icongroup">
+      <div class="eyebrow">${E(title)}</div>
+      <div class="icongrid">${names.map(n => `<div class="iconcell">${icon(n, 24)}<span>${E(n)}</span></div>`).join('')}</div>
+    </div>`).join('')}
+    <p class="muted">Размеры: 16 в строке текста, 20 в меню, 24 в карточках, 32 в крупных блоках. Толщина штриха одна — 1,7. Заливкой не пользуемся: только контур.</p></div>`;
+  },
+
+  // Живые элементы интерфейса во всех состояниях — не картинка, а сами компоненты.
+  uikit: () => `<div class="uikit">
+    <div class="uirow"><span class="uilabel">Кнопки</span>
+      <button class="primary" type="button">Основная</button>
+      <button type="button">Второстепенная</button>
+      <button class="chip" type="button">Чип</button>
+      <button class="danger" type="button">Опасная</button>
+      <button class="primary" type="button" disabled>Выключена</button></div>
+    <div class="uirow"><span class="uilabel">Поля</span>
+      <input class="input" value="Обычное поле" aria-label="Обычное поле">
+      <input class="input uifocus" value="В фокусе" aria-label="Поле в фокусе">
+      <input class="input uierror" value="С ошибкой" aria-label="Поле с ошибкой"></div>
+    <div class="uirow"><span class="uilabel">Отметки</span>
+      ${['Черновик', 'На проверке', 'Утверждено', 'Опубликовано'].map(t => `<span class="tag">${t}</span>`).join('')}
+      <span class="tag green">Сработало</span><span class="tag orange">Требует проверки</span></div>
+    <div class="uirow"><span class="uilabel">Переключатели</span>
+      <label class="task"><input type="checkbox" checked> Отмечено</label>
+      <label class="task"><input type="checkbox"> Не отмечено</label></div>
+    <p class="muted">Выключенная кнопка — прозрачность 0,5 и никакой реакции на нажатие. Наведение меняет только цвет рамки: размеры не прыгают.</p>
+  </div>`,
+
+  // Шкала отступов: всё кратно четырём.
+  spacing: () => {
+    const steps = [4, 8, 12, 16, 24, 32, 48, 64];
+    const W = 640, H = 40 + steps.length * 26;
+    return `<svg class="figure" viewBox="0 0 ${W} ${H}" role="img" aria-label="Шкала отступов">
+      ${steps.map((s, i) => {
+        const y = 14 + i * 26;
+        return `<g><text class="flabel" x="0" y="${y + 13}">${s}</text>
+          <rect x="44" y="${y}" width="${s * 6}" height="18" rx="3" fill="var(--gold-bg)" stroke="var(--gold)" stroke-width="1"/>
+          <text class="fnote" x="${44 + s * 6 + 10}" y="${y + 13}">${
+            s === 4 ? 'внутри мелких элементов' : s === 8 ? 'между иконкой и текстом'
+            : s === 12 ? 'внутри чипов и полей' : s === 16 ? 'внутри карточек'
+            : s === 24 ? 'между карточками' : s === 32 ? 'между блоками'
+            : s === 48 ? 'между секциями' : 'между крупными разделами'}</text></g>`;
+      }).join('')}
+      <text class="fnote" x="0" y="${H - 6}">Любой отступ кратен четырём. Промежуточных значений нет: 10, 15 и 22 в макетах не встречаются.</text>
     </svg>`;
   },
 

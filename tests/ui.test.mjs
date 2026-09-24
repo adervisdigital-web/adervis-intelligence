@@ -60,6 +60,12 @@ const fake = (seedData) => {
         data: { figure: 'contrast' } },
       { id: 'misuse-figure', title: 'Как нельзя: наглядно', kind: 'figure', sort: 16, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'misuse' } },
+      { id: 'icons-set', title: 'Иконки', kind: 'figure', sort: 82, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'icons' } },
+      { id: 'ui-elements', title: 'Элементы интерфейса', kind: 'figure', sort: 84, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'uikit' } },
+      { id: 'spacing-scale', title: 'Шкала отступов', kind: 'figure', sort: 62, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'spacing' } },
       { id: 'voice', title: 'Как мы говорим', kind: 'text', sort: 90, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { body: 'Пишем живо и просто.\n— Без канцелярита\n— Без выдуманных цифр' } }
     ],
@@ -503,7 +509,7 @@ await page.keyboard.press('Escape');
 
 // --- 9б. брендбук
 await nav('brand');
-check('чертежи брендбука нарисованы', (await page.$$('.figure')).length === 3);
+check('чертежи брендбука нарисованы', (await page.$$('.figure')).length === 4, String((await page.$$('.figure')).length));
 check('охранное поле показано схемой с размерами',
   (await page.$$('.figure .fdim')).length === 4 && (await page.textContent('#view')).includes('половина высоты знака'));
 check('на странице «как нельзя» шесть случаев с перечёркиванием',
@@ -515,6 +521,18 @@ check('высокий контраст признан годным',
   ratios.some(m => Number(m[1]) > 15 && m[2] === 'годится'), ratios.map(m => m[1]).join(', '));
 check('негодное сочетание помечено отдельно',
   (await page.$$eval('.figure .fnote.bad', t => t.length)) > 0);
+// страницы элементов
+check('набор иконок показан целиком', (await page.$$('.iconcell')).length >= 30, String((await page.$$('.iconcell')).length));
+check('у всех иконок одна толщина штриха',
+  (await page.$$eval('.iconcell svg', s => [...new Set(s.map(x => x.getAttribute('stroke-width')))])).length === 1);
+check('иконки нарисованы контуром, без заливки',
+  await page.$$eval('.iconcell svg', s => s.every(x => x.getAttribute('fill') === 'none')));
+check('элементы интерфейса показаны живыми компонентами', (await page.$$('.uikit button')).length >= 5);
+check('выключенная кнопка действительно выключена',
+  await page.$eval('.uikit button:disabled', b => getComputedStyle(b).opacity === '0.5' && b.disabled));
+check('поле с ошибкой отличается цветом рамки',
+  await page.$eval('.uikit .uierror', i => getComputedStyle(i).borderColor.includes('214')));
+check('шкала отступов нарисована', (await page.textContent('#view')).includes('кратен четырём'));
 check('брендбук показывает логотипы', (await page.$$('.logoframe img')).length === 3);
 const logosDrawn = await page.waitForFunction(
   () => { const i = [...document.querySelectorAll('.logoframe img')]; return i.length === 3 && i.every(x => x.complete && x.naturalWidth > 0); },
@@ -547,7 +565,7 @@ check('подписи под картинками на месте',
 
 // полнота брендбука
 const progress = (await page.textContent('.progresscard')).replace(/\s+/g, ' ');
-check('видно, сколько тем заполнено', /Заполнено 7 из 8/.test(progress), progress);
+check('видно, сколько тем заполнено', /Заполнено 10 из 11/.test(progress), progress);
 check('пустая тема названа поимённо', /Ждут содержимого.*Фото и видео/.test(progress), progress);
 check('из полноты можно сразу открыть пустую тему',
   (await page.$$('.progresscard [data-action=editbrand]')).length > 0);
@@ -581,9 +599,9 @@ check('тему можно удалить', !(await page.$$eval('.brandcard h2',
 await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
 const slideCount = await page.$$eval('.slide', s => s.length);
-// обложка + знак + 8 тем (цвета, шрифты, галерея, два текста, три чертежа) + финал
-check('слайды собраны по темам', slideCount === 11, String(slideCount));
-check('чертёж попал на слайды', (await page.$$('.slide .sfigure .figure')).length === 3);
+// обложка + знак + 11 тем + финал
+check('слайды собраны по темам', slideCount === 14, String(slideCount));
+check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 6, String((await page.$$('.slide .sfigure')).length));
 check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
 const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
 check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));

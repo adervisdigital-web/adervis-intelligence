@@ -411,3 +411,20 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 /* чертёж на слайде */
 .sfigure .figure{max-height:62cqh}
 .slidenote{font-size:1.6cqw;color:#9a9a9a;margin:1.4cqw 0 0}
+
+/* --- страницы элементов --- */
+.iconsheet .icongroup{margin-bottom:18px}
+.icongrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-top:8px}
+.iconcell{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.iconcell span{font-size:10px;color:var(--muted);letter-spacing:.04em}
+.iconcell svg{color:var(--ink)}
+.uikit{display:grid;gap:14px}
+.uirow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.uirow:last-of-type{border-bottom:0}
+.uilabel{flex:0 0 120px;font-size:12px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.uikit .input{min-width:160px}
+.uikit .uifocus{border-color:var(--gold);box-shadow:0 0 0 2px rgba(246,189,58,.22)}
+.uikit .uierror{border-color:#d64545}
+.uikit .task{margin:0;display:flex;align-items:center;gap:8px}
+.uikit button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:720px){.uilabel{flex:1 0 100%}}
