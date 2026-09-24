@@ -389,3 +389,25 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
   .blockbtns .chip.danger{padding:8px 10px}
   .progresscard .chip{min-height:38px}
 }
+
+/* --- чертежи брендбука --- */
+.figure{width:100%;height:auto;display:block;overflow:visible}
+.figure .fzone{fill:none;stroke:var(--gold);stroke-width:1.5;stroke-dasharray:7 6}
+.figure .fmark{fill:none;stroke:var(--line);stroke-width:1.5}
+.figure .fdim{stroke:var(--gold);stroke-width:1.5}
+.figure .flabel{fill:var(--ink);font-size:13px;font-family:var(--font-ui);font-weight:600}
+.figure .fnote{fill:var(--muted);font-size:12px;font-family:var(--font-ui)}
+.figure .fnote.good{fill:#059669}
+.figure .fnote.bad{fill:#d64545}
+.figure .fcell{fill:var(--bg);stroke:var(--line);stroke-width:1}
+.figure .fslash{stroke:#d64545;stroke-width:2.5;stroke-linecap:round;opacity:.85}
+/* сами ошибки: знак искажается прямо на чертеже */
+.figure .fimg.stretch{transform:scaleX(1.45);transform-origin:center;transform-box:fill-box}
+.figure .fimg.recolor{filter:hue-rotate(155deg) saturate(2.2)}
+.figure .fimg.shadow{filter:drop-shadow(0 4px 3px rgba(0,0,0,.6)) drop-shadow(0 0 2px #fff)}
+.figure .fimg.rotate{transform:rotate(-17deg);transform-origin:center;transform-box:fill-box}
+.figure .fcell.busy{fill:url(#busy)}
+.figure .fcell.frame{stroke:var(--ink);stroke-width:5}
+/* чертёж на слайде */
+.sfigure .figure{max-height:62cqh}
+.slidenote{font-size:1.6cqw;color:#9a9a9a;margin:1.4cqw 0 0}

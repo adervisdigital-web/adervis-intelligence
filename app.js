@@ -408,6 +408,106 @@ async function loadBrandFonts() {
   }
 }
 
+// ---------------------------------------------------- чертежи брендбука
+//
+// Страницы, которые не пишутся словами, а рисуются: охранное поле, минимальные
+// размеры, неправильное использование знака и допустимые сочетания цветов.
+// Рисунок живёт в коде, а не в данных: это чертёж, а не содержимое.
+
+// Контраст считается по формуле WCAG, а не оценивается на глаз.
+function luminance(hex) {
+  const v = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(c => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+}
+function contrastRatio(a, b) {
+  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+const FIGURES = {
+  // Охранное поле: вокруг знака свободно не меньше его половины.
+  clearspace: () => `<svg class="figure" viewBox="0 0 640 300" role="img" aria-label="Охранное поле знака">
+    <rect class="fzone" x="120" y="40" width="400" height="220" rx="10"/>
+    <rect class="fmark" x="200" y="90" width="240" height="120" rx="6"/>
+    <image href="brand/logo.svg" x="212" y="112" width="216" height="76" preserveAspectRatio="xMidYMid meet"/>
+    ${[[160, 150, 200, 150], [480, 150, 440, 150], [320, 65, 320, 90], [320, 235, 320, 210]]
+      .map(([x1, y1, x2, y2]) => `<line class="fdim" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`).join('')}
+    <text class="flabel" x="160" y="140" text-anchor="middle">X</text>
+    <text class="flabel" x="480" y="140" text-anchor="middle">X</text>
+    <text class="flabel" x="336" y="80" text-anchor="start">X</text>
+    <text class="flabel" x="336" y="230" text-anchor="start">X</text>
+    <text class="fnote" x="320" y="285" text-anchor="middle">X — половина высоты знака. Ближе этого расстояния не ставим ничего: ни текст, ни другие логотипы, ни край макета.</text>
+  </svg>`,
+
+  // Минимальные размеры: меньше — знак перестаёт читаться.
+  minsize: () => `<svg class="figure" viewBox="0 0 640 220" role="img" aria-label="Минимальные размеры знака">
+    ${[[60, 120, 'logo.svg', 'Горизонтальный', 'от 120 px / 30 мм'],
+       [320, 56, 'icon.svg', 'Знак', 'от 24 px / 8 мм'],
+       [470, 24, 'icon.svg', 'Знак в строке', 'от 16 px']]
+      .map(([x, w, file, title, note]) => `<g>
+        <image href="brand/${file}" x="${x}" y="${100 - w / 3}" width="${w}" height="${w / 1.5}" preserveAspectRatio="xMidYMid meet"/>
+        <text class="flabel" x="${x}" y="150">${title}</text>
+        <text class="fnote" x="${x}" y="170">${note}</text>
+      </g>`).join('')}
+    <text class="fnote" x="320" y="205" text-anchor="middle">Ниже этих размеров знак не воспроизводят: тонкие линии слипаются в печати и на экране.</text>
+  </svg>`,
+
+  // Неправильное использование — показано, а не описано.
+  misuse: () => {
+    const cases = [
+      ['stretch', 'Растянут по ширине'],
+      ['recolor', 'Перекрашен'],
+      ['shadow', 'С тенью и обводкой'],
+      ['busy', 'На пёстром фоне без подложки'],
+      ['rotate', 'Повёрнут'],
+      ['frame', 'Заключён в рамку']
+    ];
+    const W = 640, cell = 200, gap = 12;
+    return `<svg class="figure" viewBox="0 0 ${W} 300" role="img" aria-label="Как нельзя обращаться со знаком">
+      <defs><pattern id="busy" width="18" height="18" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">
+        <rect width="18" height="18" fill="#3c6ea5"/><circle cx="9" cy="9" r="5" fill="#d05a3a"/>
+        <rect x="0" y="0" width="18" height="4" fill="#e7c948"/></pattern></defs>
+      ${cases.map(([kind, label], i) => {
+        const x = (i % 3) * (cell + gap) + 8, y = Math.floor(i / 3) * 150 + 6;
+        return `<g class="fbad">
+          <rect class="fcell ${kind}" x="${x}" y="${y}" width="${cell}" height="104" rx="10"/>
+          <image class="fimg ${kind}" href="brand/icon.svg" x="${x + 70}" y="${y + 28}" width="60" height="48" preserveAspectRatio="xMidYMid meet"/>
+          <line class="fslash" x1="${x + 12}" y1="${y + 92}" x2="${x + cell - 12}" y2="${y + 12}"/>
+          <text class="fnote" x="${x + cell / 2}" y="${y + 126}" text-anchor="middle">${label}</text>
+        </g>`;
+      }).join('')}
+    </svg>`;
+  },
+
+  // Сочетания цветов с посчитанным контрастом.
+  contrast: () => {
+    const pairs = [
+      ['#fdfdfd', '#141414', 'Текст на фирменном фоне'],
+      ['#f6bd3a', '#141414', 'Золото на фоне'],
+      ['#141414', '#f6bd3a', 'Тёмный на золоте — кнопка'],
+      ['#9a9a9a', '#141414', 'Вторичный текст'],
+      ['#f6bd3a', '#fdfdfd', 'Золото на белом'],
+      ['#fdfdfd', '#f6bd3a', 'Белый на золоте']
+    ];
+    const W = 640, cell = 200, gap = 12;
+    return `<svg class="figure" viewBox="0 0 ${W} 300" role="img" aria-label="Сочетания цветов и контраст">
+      ${pairs.map(([fg, bg, label], i) => {
+        const ratio = contrastRatio(fg, bg);
+        const ok = ratio >= 4.5;
+        const x = (i % 3) * (cell + gap) + 8, y = Math.floor(i / 3) * 150 + 6;
+        return `<g>
+          <rect x="${x}" y="${y}" width="${cell}" height="104" rx="10" fill="${bg}" stroke="rgba(128,128,128,.35)"/>
+          <text x="${x + 16}" y="${y + 46}" fill="${fg}" font-size="22" font-weight="700">ADERVIS</text>
+          <text x="${x + 16}" y="${y + 74}" fill="${fg}" font-size="13">Текст примера</text>
+          <text class="fnote ${ok ? 'good' : 'bad'}" x="${x + cell / 2}" y="${y + 126}" text-anchor="middle">
+            ${ratio.toFixed(1)}:1 — ${ok ? 'годится' : 'только крупным текстом'} · ${label}</text>
+        </g>`;
+      }).join('')}
+    </svg>`;
+  }
+};
+
 function brandText(body) {
   const lines = String(body || '').split('\n');
   let html = '', list = [];
@@ -452,6 +552,8 @@ function brandSlides() {
       chunked(items, 6).forEach((part, i, all) => slides.push({
         kind: 'gallery', title: b.title, items: part, part: all.length > 1 ? `${i + 1}/${all.length}` : ''
       }));
+    } else if (b.kind === 'figure') {
+      slides.push({ kind: 'figure', title: b.title, figure: b.data?.figure, note: b.data?.body || '' });
     } else {
       const { intro, bullets } = splitBody(b.data?.body);
       chunked(bullets, 6).forEach((part, i, all) => slides.push({
@@ -498,6 +600,11 @@ function slideHtml(sl, i, total) {
     return head(sl.title) + `<div class="slidebody"><div class="sgallery cols-${Math.min(3, sl.items.length)}">
       ${sl.items.map(g => `<figure data-shot="${E(g.file)}"><img alt="${E(g.caption || '')}">
         <figcaption>${E(g.caption || '')}</figcaption></figure>`).join('')}</div></div>` + foot;
+  }
+  if (sl.kind === 'figure') {
+    const draw = FIGURES[sl.figure];
+    return head(sl.title) + `<div class="slidebody sfigure">${draw ? draw() : ''}
+      ${sl.note ? `<p class="slidenote">${E(sl.note.split('\n')[0])}</p>` : ''}</div>` + foot;
   }
   if (sl.kind === 'end') {
     return `<div class="slidecover">
@@ -557,6 +664,7 @@ function deckMove(step) {
 // она не заполнена. Пустые места лучше видеть, чем считать, что всё готово.
 const brandEmpty = b => b.kind === 'text'
   ? /пока не заполнено/i.test(b.data?.body || '') || !(b.data?.body || '').trim()
+  : b.kind === 'figure' ? !FIGURES[b.data?.figure]
   : !(Array.isArray(b.data?.items) && b.data.items.length);
 
 function brandProgress() {
@@ -596,6 +704,10 @@ function brandBlock(b) {
   } else if (b.kind === 'gallery') {
     body = `<div class="gallery">${items.map(g => `<figure data-shot="${E(g.file)}">
       <img alt="${E(g.caption || '')}"><figcaption>${E(g.caption || '')}</figcaption></figure>`).join('')}</div>`;
+  } else if (b.kind === 'figure') {
+    const draw = FIGURES[b.data?.figure];
+    body = draw ? draw() : '<p class="muted">Чертёж не найден.</p>';
+    if (b.data?.body) body += `<div class="brandtext" style="margin-top:12px">${brandText(b.data.body)}</div>`;
   } else {
     body = `<div class="brandtext">${brandText(b.data?.body)}</div>`;
   }
