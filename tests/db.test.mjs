@@ -55,9 +55,11 @@ await db.exec(`insert into public.members(email, name) values ('artem@adervis.ru
 const K = `insert into public.knowledge(id,title,body,category,source,access,status)
            values ('k1','Позиционирование','Визуал для бизнеса','Компания','https://adervis.ru/','Публичное','Публичный источник')`;
 await as('authenticated', 'artem@adervis.ru', K);
-check('участник может создать запись', (await as('authenticated', 'artem@adervis.ru', 'select count(*)::int c from public.knowledge')).rows[0].c === 1);
+// Считаем свою запись, а не все: миграции наполняют базу стартовым содержимым.
+check('участник может создать запись',
+  (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.knowledge where id='k1'`)).rows[0].c === 1);
 check('updated_by заполняется сам',
-  (await as('authenticated', 'artem@adervis.ru', 'select updated_by from public.knowledge')).rows[0].updated_by === 'artem@adervis.ru');
+  (await as('authenticated', 'artem@adervis.ru', `select updated_by from public.knowledge where id='k1'`)).rows[0].updated_by === 'artem@adervis.ru');
 
 // --- посторонний с валидным логином не видит ничего
 check('посторонний не видит записи', (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.knowledge')).rows[0].c === 0);
@@ -72,7 +74,7 @@ check('аноним не может вызвать is_member()', (await fail('an
 
 // --- журнал изменений
 await as('authenticated', 'alex@adervis.ru', `update public.knowledge set body = 'Правка Александра' where id = 'k1'`);
-const log = (await as('authenticated', 'artem@adervis.ru', `select actor, entity, action, title from public.activity where entity='knowledge' order by id`)).rows;
+const log = (await as('authenticated', 'artem@adervis.ru', `select actor, entity, action, title from public.activity where entity='knowledge' and entity_id='k1' order by id`)).rows;
 check('журнал: создание и правка записаны', log.length === 2 && log[0].action === 'insert' && log[1].action === 'update', JSON.stringify(log));
 check('журнал: виден автор правки', log[1].actor === 'alex@adervis.ru' && log[1].title === 'Позиционирование');
 
