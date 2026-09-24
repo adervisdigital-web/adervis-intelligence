@@ -286,3 +286,23 @@ html[data-theme=dark] .tag.orange{color:#ff9d9d}
   .link-node{min-width:0}
   .chainarrow{transform:rotate(90deg);align-self:flex-start;margin-left:18px}
 }
+
+/* --- единый набор иконок --- */
+.ic{flex:none}
+.nav i{width:20px;height:20px;display:grid;place-items:center;color:#9a9a9a}
+.nav button.active i{color:var(--gold)}
+.search{display:inline-flex;align-items:center;gap:9px}
+.search .kbd{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
+.primary{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.iconbtn{display:inline-grid;place-items:center;padding:0}
+.del{display:inline-grid;place-items:center;padding:6px}
+dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);border:1px solid var(--line)}
+/* фирменный знак в пустых состояниях */
+.empty:before{content:'';display:block;width:44px;height:44px;margin:0 auto 12px;opacity:.3;
+  background:url(brand/icon.svg) no-repeat center/contain}
+
+/* --- фирменная подложка --- */
+.hero{background-image:radial-gradient(120% 140% at 88% 8%,rgba(246,189,58,.18),transparent 46%),url(brand/pattern.svg);
+  background-repeat:no-repeat,repeat;background-size:auto,120px 60px;background-blend-mode:normal}
+.slidecover{background:url(brand/pattern.svg) repeat;background-size:150px 75px;margin:-5cqw -6cqw;padding:5cqw 6cqw}
+.chainloop{background:url(brand/pattern.svg) repeat;background-size:120px 60px}

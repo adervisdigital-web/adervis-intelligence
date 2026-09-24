@@ -18,6 +18,36 @@ function toast(text, ms = 3500) {
   toastTimer = setTimeout(() => ($('#alerts').textContent = ''), ms);
 }
 
+// Иконки — один набор в фирменной геометрии. По брендбуку: только SVG внутри
+// страницы, без эмодзи; цвет наследуется от текста.
+const ICONS = {
+  home: '<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z"/>',
+  chain: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="m6.7 11 3.8-3.8M6.7 13l3.8 3.8M13.5 7.2 17.3 11M13.5 16.8 17.3 13"/>',
+  knowledge: '<path d="M6 4h9a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z"/><path d="M6 17h11"/>',
+  brand: '<path d="M12 3 21 12 12 21 3 12z"/><path d="M12 8.5 15.5 12 12 15.5 8.5 12z"/>',
+  products: '<path d="M12 4 4 8l8 4 8-4z"/><path d="m4 12 8 4 8-4"/><path d="m4 16 8 4 8-4"/>',
+  cases: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>',
+  content: '<path d="M4 20h4L20 8l-4-4L4 16z"/><path d="m14 6 4 4"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  assistant: '<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><path d="m6.5 6.5 3 3M14.5 14.5l3 3M17.5 6.5l-3 3M9.5 14.5l-3 3"/>',
+  analytics: '<path d="M5 19v-8M10 19V5M15 19v-6M20 19v-9"/>',
+  competitors: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
+  tasks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  roadmap: '<path d="M4 20 20 4"/><path d="M14 4h6v6"/>',
+  settings: '<path d="M5 8h14M5 16h14"/><circle cx="10" cy="8" r="2"/><circle cx="15" cy="16" r="2"/>',
+  search: '<circle cx="11" cy="11" r="6"/><path d="m15.5 15.5 4.5 4.5"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  theme: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 5v5h-5"/>',
+  close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>'
+};
+
+const icon = (name, size = 20) => ICONS[name]
+  ? `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`
+  : '';
+
 const rtf = new Intl.RelativeTimeFormat('ru', { numeric: 'auto' });
 function ago(iso) {
   const sec = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -257,7 +287,7 @@ function fileList(recordId) {
       : `<div class="thumb kind">${E(fileKind(f))}</div>`}
     <div class="filemeta"><b>${E(f.name)}</b><br><small class="muted">${fileSize(f.size)} · ${E(memberName(f._by))}</small></div>
     <button type="button" data-action="openfile" data-id="${E(f.id)}">Открыть</button>
-    <button type="button" class="del" data-action="delfile" data-id="${E(f.id)}" aria-label="Удалить файл «${E(f.name)}»">✕</button>
+    <button type="button" class="del" data-action="delfile" data-id="${E(f.id)}" aria-label="Удалить файл «${E(f.name)}»">${icon('close', 15)}</button>
   </div>`).join('')}</div>`;
 }
 
@@ -298,7 +328,7 @@ function pc(p) {
 function tasksList(manage) {
   return db.tasks.map(t => `<div class="row"><label class="task ${t.done ? 'done' : ''}">
     <input type="checkbox" data-task="${E(t.id)}" ${t.done ? 'checked' : ''}>${E(t.title)}</label>
-    ${manage ? `<button class="del" data-action="deltask" data-id="${E(t.id)}" aria-label="Удалить задачу «${E(t.title)}»">✕</button>` : ''}</div>`).join('')
+    ${manage ? `<button class="del" data-action="deltask" data-id="${E(t.id)}" aria-label="Удалить задачу «${E(t.title)}»">${icon('close', 15)}</button>` : ''}</div>`).join('')
     || '<div class="empty">Задач нет.</div>';
 }
 
@@ -828,7 +858,7 @@ function render() {
         ? `<div class="card tablewrap"><table class="table"><thead><tr><th>Публикация</th><th>Дата</th><th>Просмотры</th><th>Ответы</th><th>Лиды</th><th></th></tr></thead><tbody>
           ${db.metrics.map(m => `<tr><td>${E(db.content.find(p => p.id === m.post)?.title || 'Не найдена')}</td>
             <td>${E(m.date)}</td><td>${E(m.views)}</td><td>${E(m.replies)}</td><td>${E(m.leads)}</td>
-            <td><button class="del" data-action="delmetric" data-id="${E(m.id)}" aria-label="Удалить замер">✕</button></td></tr>`).join('')}
+            <td><button class="del" data-action="delmetric" data-id="${E(m.id)}" aria-label="Удалить замер">${icon('close', 15)}</button></td></tr>`).join('')}
           </tbody></table></div>`
         : '<div class="card empty"><h2>Пока нечего сравнивать</h2><p>Загрузите реальные просмотры, ответы и лиды. Придуманных графиков здесь нет.</p></div>')
       + `<div class="notice">Сравнивайте публикации одного канала на одинаковом возрасте, например через 48 часов. Связь с продажами пока отмечается вручную.</div>`;
@@ -908,7 +938,7 @@ function go(p) {
 // ----------------------------------------------------------- окна и формы
 
 function modal(html) {
-  $('#modal').innerHTML = '<button class="close" data-action="close" aria-label="Закрыть">✕</button>' + html;
+  $('#modal').innerHTML = `<button class="close iconbtn" data-action="close" aria-label="Закрыть">${icon('close', 18)}</button>` + html;
   if (!$('#modal').open) $('#modal').showModal();
 }
 
@@ -1584,7 +1614,12 @@ $('#gateform').onsubmit = async e => {
   }
 };
 
-$('#nav').innerHTML = sections.map(([id, icon, t]) => `<button data-page="${id}"><i>${icon}</i><span>${t}</span></button>`).join('');
+$('#nav').innerHTML = sections.map(([id, , t]) => `<button data-page="${id}"><i>${icon(id)}</i><span>${t}</span></button>`).join('');
+$('#menu').innerHTML = icon('menu');
+$('#refresh').innerHTML = icon('refresh');
+$('#theme').innerHTML = icon('theme');
+$('#search').innerHTML = `${icon('search', 17)}<span>Поиск</span><span class="kbd">Ctrl K</span>`;
+$('#create').innerHTML = `${icon('plus', 17)}<span>Создать</span>`;
 $('#theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 $('#menu').onclick = () => document.body.classList.toggle('menu');
 $('#search').onclick = search;

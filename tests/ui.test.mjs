@@ -187,6 +187,17 @@ check('в боковом меню его имя', (await page.textContent('#myna
 check('на главной 24 записи', (await page.$$eval('.metric .value', v => v[0].textContent)) === '24');
 await page.screenshot({ path: path.join(OUT, 'intel-home.png') });
 
+// --- 1а. фирменная графика
+check('у каждого раздела своя иконка', (await page.$$('#nav button svg')).length === 14);
+check('иконки нарисованы, а не написаны символами',
+  await page.$$eval('#nav button i', els => els.every(e => e.querySelector('svg') && !/[⌂▦◈◇▤✎▣✦⌁◎✓↗⚙⛓]/.test(e.textContent))));
+check('иконки берут цвет от текста',
+  await page.$eval('#nav button svg', s => s.getAttribute('stroke') === 'currentColor'));
+check('в панели сверху тоже иконки',
+  (await page.$$eval('#menu svg, #search svg, #theme svg, #refresh svg, #create svg', s => s.length)) === 5);
+check('активный раздел подсвечен золотым',
+  (await page.$eval('#nav button.active i', e => getComputedStyle(e).color)) === 'rgb(246, 189, 58)');
+
 // --- 1б. нейроцепочка
 await nav('chain');
 const nodes = await page.$$eval('.link-node', ns => ns.map(n => ({
