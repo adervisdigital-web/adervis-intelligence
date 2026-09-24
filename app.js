@@ -302,10 +302,38 @@ function feed(limit) {
 // Цвет и шрифт приходят из базы и попадают в разметку, поэтому пропускаем
 // только заведомо безопасные значения.
 const safeHex = h => /^#[0-9a-f]{3,8}$/i.test(String(h || '')) ? String(h) : '#000000';
-const FONT_STACK = {
-  'Unbounded': "'Unbounded', ui-sans-serif, sans-serif",
-  'Golos Text': "'Golos Text', ui-sans-serif, sans-serif"
+
+// Имя семейства попадает в разметку, поэтому оставляем только буквы, цифры,
+// пробел и дефис.
+const safeFamily = f => /^[\wЀ-ӿ][\wЀ-ӿ \-]{0,40}$/u.test(String(f || '')) ? String(f) : '';
+const fontStack = family => {
+  const name = safeFamily(family);
+  return name ? `'${name}', ui-sans-serif, sans-serif` : 'inherit';
 };
+const FONT_STACK = new Proxy({}, { get: (_, family) => fontStack(String(family)) });
+
+// Фирменные шрифты коммерческие: их файлы лежат в закрытом хранилище, а не
+// в коде приложения. Подгружаем их вошедшему участнику по временной ссылке.
+const loadedFonts = new Set();
+async function loadBrandFonts() {
+  const block = db.brand.find(b => b.kind === 'fonts');
+  for (const item of (block?.data?.items || [])) {
+    const family = safeFamily(item.family);
+    if (!family || !item.file || loadedFonts.has(family)) continue;
+    // Помечаем попытку сразу: иначе при недоступном файле приложение будет
+    // дёргать хранилище на каждой перерисовке.
+    loadedFonts.add(family);
+    try {
+      const face = new FontFace(family, `url("${await api.fileUrl(item.file)}")`);
+      await face.load();
+      document.fonts.add(face);
+      if (page === 'brand') render();
+    } catch (e) {
+      // Шрифта нет или нет доступа — образец покажем системным шрифтом.
+      console.warn('Шрифт не загрузился:', item.family, e?.message || e);
+    }
+  }
+}
 
 function brandText(body) {
   const lines = String(body || '').split('\n');
@@ -510,6 +538,7 @@ function render() {
       || '<div class="empty">Записи не найдены.</div>'}</div>`;
   }
 
+  if (page === 'brand') loadBrandFonts();
   if (page === 'brand' && deck.on) s = renderDeck();
 
   if (page === 'brand' && !deck.on) {
@@ -965,7 +994,7 @@ function parseBrand(kind, raw) {
       }
       return { name: parts[0] || 'Без названия', hex: parts[1], usage: parts[2] || '' };
     }
-    return { family: parts[0] || '', role: parts[1] || '', weights: parts[2] || '', sample: parts[3] || '' };
+    return { family: parts[0] || '', role: parts[1] || '', weights: parts[2] || '', sample: parts[3] || '', file: parts[4] || '' };
   });
   if (!items.length) throw new Error('не осталось ни одной строки');
   return { items };
@@ -976,10 +1005,10 @@ function editBrand(id) {
   if (!b) return;
   const items = Array.isArray(b.data?.items) ? b.data.items : [];
   const raw = b.kind === 'colors' ? items.map(c => `${c.name} | ${c.hex} | ${c.usage || ''}`).join('\n')
-    : b.kind === 'fonts' ? items.map(f => `${f.family} | ${f.role} | ${f.weights} | ${f.sample}`).join('\n')
+    : b.kind === 'fonts' ? items.map(f => `${f.family} | ${f.role} | ${f.weights} | ${f.sample} | ${f.file || ''}`).join('\n')
     : (b.data?.body || '');
   const hint = b.kind === 'colors' ? 'Одна строка — один цвет: <b>Название | #f6bd3a | где применяется</b>'
-    : b.kind === 'fonts' ? 'Одна строка — один шрифт: <b>Семейство | роль | начертания | образец текста</b>. Живой образец покажем для Unbounded и Golos Text.'
+    : b.kind === 'fonts' ? 'Одна строка — один шрифт: <b>Семейство | роль | начертания | образец текста | файл в хранилище</b>. Последнее поле необязательное: если файл указан, образец набирается настоящим шрифтом.'
     : 'Обычный текст. Строки, начинающиеся с «— », покажем списком.';
 
   modal(`<h2>${E(b.title)}</h2><form id="bf">

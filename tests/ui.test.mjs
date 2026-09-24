@@ -16,7 +16,10 @@ const seed = JSON.parse(fs.readFileSync(SEEDFILE, 'utf8'));
 let fails = 0;
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const TYPES = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png'
+};
 const server = http.createServer((req, res) => {
   const file = path.join(ROOT, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
   if (!file.startsWith(path.resolve(ROOT))) { res.writeHead(403).end(); return; }
@@ -40,7 +43,8 @@ const fake = (seedData) => {
       { id: 'colors-base', title: 'Базовые цвета', kind: 'colors', sort: 20, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { items: [{ name: 'Фон', hex: '#141414', usage: 'основной фон' }, { name: 'Золото', hex: '#f6bd3a', usage: 'акцент' }] } },
       { id: 'fonts', title: 'Шрифты', kind: 'fonts', sort: 40, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
-        data: { items: [{ family: 'Unbounded', role: 'Заголовки', weights: '500, 700', sample: 'ADERVIS' }] } },
+        data: { items: [{ family: 'Unbounded', role: 'Заголовки', weights: '500, 700', sample: 'ADERVIS' },
+          { family: 'TT Fors', role: 'Текст', weights: 'Regular', sample: 'Визуал для бизнеса', file: 'brand/tt-fors-regular.ttf' }] } },
       { id: 'voice', title: 'Как мы говорим', kind: 'text', sort: 90, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { body: 'Пишем живо и просто.\n— Без канцелярита\n— Без выдуманных цифр' } }
     ],
@@ -108,7 +112,12 @@ const fake = (seedData) => {
       log('insert', 'files', row);
       return clone(row);
     },
-    async fileUrl(path) { return 'data:text/plain,' + encodeURIComponent(path); },
+    async fileUrl(path) {
+      // Для шрифтов подменяем ссылку на настоящий файл с того же адреса:
+      // так проверяется и загрузка, и то, что правила безопасности не мешают.
+      if (path.startsWith('brand/')) { window.__FONT_ASKED__ = path; return 'fonts/golostext-400-latin.woff2'; }
+      return 'data:text/plain,' + encodeURIComponent(path);
+    },
     async removeStorage(paths) { window.__STORAGE__ = window.__STORAGE__.filter(p => !paths.includes(p)); },
     async remove(table, id) {
       boom();
@@ -283,6 +292,8 @@ await page.keyboard.press('Escape');
 // --- 9б. брендбук
 await nav('brand');
 check('брендбук показывает логотипы', (await page.$$('.logoframe img')).length === 3);
+check('логотипы действительно отрисовались',
+  await page.$$eval('.logoframe img', imgs => imgs.every(i => i.complete && i.naturalWidth > 0)));
 check('цвета показаны образцами', (await page.$$('.swatch')).length === 2);
 check('у образца виден код цвета', (await page.textContent('.swatch')).includes('#141414'));
 check('образец шрифта набран фирменным шрифтом',
@@ -290,6 +301,13 @@ check('образец шрифта набран фирменным шрифто�
 check('фирменный шрифт действительно загрузился',
   await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('500 26px Unbounded'); }));
 check('правила показаны списком', (await page.$$eval('.brandtext li', l => l.map(x => x.textContent))).includes('Без канцелярита'));
+check('шрифт из закрытого хранилища запрошен по временной ссылке',
+  (await page.evaluate(() => window.__FONT_ASKED__ || null)) === 'brand/tt-fors-regular.ttf');
+const fontAdded = await page.waitForFunction(
+  // браузер отдаёт имя семейства с пробелом в кавычках
+  () => [...document.fonts].some(f => f.family.replace(/^"|"$/g, '') === 'TT Fors' && f.status === 'loaded'),
+  null, { timeout: 8000 }).then(() => true).catch(() => false);
+check('шрифт из хранилища подключается к странице', fontAdded);
 await page.screenshot({ path: path.join(OUT, 'intel-brand.png'), fullPage: true });
 
 // брендбук слайдами
