@@ -337,3 +337,7 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .cloop.head{stroke:var(--gold);stroke-dasharray:none;stroke-width:2;stroke-linejoin:round}
 .cloopname{fill:var(--muted);font-size:12px;font-family:var(--font-ui)}
 @media(max-width:860px){.mapcard{display:none}}
+
+/* --- публикация в канал --- */
+.publishrow{flex-wrap:wrap;gap:10px;align-items:center;margin-top:18px;border-top:1px solid var(--line);padding-top:16px}
+.previewbox{max-height:260px;overflow:auto;font-size:13px;line-height:1.5;background:var(--bg);margin:10px 0 0}

@@ -39,6 +39,7 @@ const fake = (seedData) => {
     tasks: seedData.tasks.map(o => ({ ...o, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' })),
     metrics: [],
     files: [],
+    publications: [],
     ai: [],
     brand: [
       { id: 'colors-base', title: 'Базовые цвета', kind: 'colors', sort: 20, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
@@ -136,6 +137,16 @@ const fake = (seedData) => {
         state.metrics = state.metrics.filter(m => m.post !== id);
       }
       if (row) log('delete', table, row);
+    },
+    async publish(payload) {
+      window.__PUBLISHED__ = payload;
+      if (window.__PUBFAIL__) throw new Error(window.__PUBFAIL__);
+      const post = state.content.find(p => p.id === payload.postId);
+      post.status = 'Опубликовано';
+      state.publications.push({ id: 'pub1', post: payload.postId, channel: payload.channel,
+        at: now(), actor: session, url: 'https://t.me/adervis/42' });
+      log('update', 'content', post);
+      return { ok: true, url: 'https://t.me/adervis/42', channel: payload.channel, at: now() };
     },
     async generate(payload) {
       window.__lastAiPayload = payload;
@@ -331,6 +342,38 @@ check('у точек есть всплывающая подсказка',
 await page.screenshot({ path: path.join(OUT, 'intel-charts.png'), fullPage: true });
 await nav('home');
 check('на главной появилась искра', (await page.$$('.metric .spark')).length === 1);
+
+// --- 5в. публикация в канал
+await nav('content');
+await page.click('article[data-p="p1"]');
+check('у черновика кнопки публикации нет', (await page.$('[data-action=publish]')) === null);
+check('вместо неё объяснение, чего не хватает',
+  (await page.textContent('#modal')).includes('когда статус будет «Утверждено»'));
+await page.selectOption('#pf select[name=status]', 'Утверждено');
+await page.click('#pf button.primary');
+await page.waitForFunction(() => !document.querySelector('#modal').open);
+await page.click('article[data-p="p1"]');
+check('у утверждённого материала кнопка появилась', (await page.$('[data-action=publish]')) !== null);
+
+await page.evaluate(() => { window.__PUBFAIL__ = 'Бот не может писать в канал. Добавьте его администратором с правом публикации.'; });
+await page.click('[data-action=publish]');
+const realBody = (await state()).content.find(p => p.id === 'p1').body;
+check('перед отправкой показывают точный текст материала',
+  (await page.textContent('.previewbox')).includes(realBody.slice(0, 40)));
+await page.click('#confirmpub');
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('администратором'));
+check('ошибка канала объясняется по-человечески', true);
+check('при ошибке статус не меняется', (await state()).content.find(p => p.id === 'p1').status === 'Утверждено');
+
+await page.evaluate(() => { window.__PUBFAIL__ = null; });
+await page.click('#confirmpub');
+await page.waitForFunction(() => window.__STATE__.publications.length === 1);
+check('в канал ушёл нужный материал', (await page.evaluate(() => window.__PUBLISHED__)).postId === 'p1');
+check('после отправки статус стал «Опубликовано»', (await state()).content.find(p => p.id === 'p1').status === 'Опубликовано');
+await page.click('article[data-p="p1"]');
+check('в карточке видна ссылка на пост', (await page.$eval('#modal .notice a', a => a.href)) === 'https://t.me/adervis/42');
+check('повторно отправить нельзя', (await page.$('#modal [data-action=publish]')) === null);
+await page.keyboard.press('Escape');
 
 // --- 6. задачи
 await nav('tasks');

@@ -120,13 +120,14 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, ai, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, publications, ai, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
         selectAll('metrics', 'measured_on'),
         selectAll('files', 'created_at'),
         selectAll('brand', 'sort'),
+        selectAll('publications', 'at'),
         sb.from('ai_usage').select('*').order('at', { ascending: false }).limit(200).then(must),
         selectAll('members', 'email'),
         sb.from('activity').select('*').order('at', { ascending: false }).limit(40).then(must)
@@ -138,7 +139,7 @@ function createApi(cfg) {
         metrics: metrics.map(r => fromRow('metrics', r)),
         files: files.map(r => fromRow('files', r)),
         brand: brand.map(r => fromRow('brand', r)),
-        ai, members, activity
+        publications, ai, members, activity
       };
     },
 
@@ -179,6 +180,16 @@ function createApi(cfg) {
 
     // Черновики пишет серверная функция: ключ AI-сервиса в браузер не попадает,
     // а факты для модели она собирает из базы сама.
+    async publish(payload) {
+      const { data, error } = await sb.functions.invoke('publish', { body: payload });
+      if (error) {
+        let message = error.message;
+        try { message = (await error.context?.json())?.error || message; } catch (e) { /* ответ без JSON */ }
+        throw new Error(message);
+      }
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
     async generate(payload) {
       const { data, error } = await sb.functions.invoke('ai-write', { body: payload });
       if (error) {
@@ -201,7 +212,7 @@ function createApi(cfg) {
 
 let api = null;
 let me = null;
-let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], ai: [], members: [], activity: [] };
+let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], publications: [], ai: [], members: [], activity: [] };
 let page = 'home', query = '', category = 'Все';
 let month = new Date().getMonth(), year = new Date().getFullYear();
 let loadedAt = 0;
@@ -1079,9 +1090,12 @@ function render() {
           <p class="muted">Ctrl / ⌘ + K — поиск. Esc — закрыть окно.</p></div></div>
       <div class="card" style="margin-top:18px"><h2>Журнал изменений</h2>${feed(40)}</div>
       <div class="card" style="margin-top:18px"><h2>Подключения</h2>
-        ${[['Supabase · база и вход', 'Подключён'], ['AI-провайдер', 'Этап 3'], ['Adervis CRM', 'Этап 5'],
-          ['Яндекс.Метрика', 'Этап 5'], ['Threads', 'Не подключён'], ['Telegram / VK', 'Не подключён']]
-          .map(([x, st]) => `<div class="row">${x}${tag(st)}</div>`).join('')}</div>`;
+        ${[['Supabase · база и вход', 'Подключён'], ['AI-провайдер', 'Подключён'],
+          ['Telegram · публикация', db.publications.some(x => x.channel === 'Telegram') ? 'Работает' : 'Готов, нужен бот'],
+          ['VK', 'Следующий на очереди'], ['Threads', 'Нужна верификация Meta'],
+          ['Яндекс.Метрика', 'Не подключена'], ['Adervis CRM', 'Не подключена']]
+          .map(([x, st]) => `<div class="row">${x}${tag(st)}</div>`).join('')}
+        <p class="muted">Публикаций отправлено: ${db.publications.length}. Telegram включается двумя секретами проекта: токен бота и адрес канала.</p></div>`;
   }
 
   $('#view').innerHTML = s;
@@ -1250,10 +1264,53 @@ function editP(id) {
     </div>
     <div class="notice">Сохранение не публикует текст. Проверьте факты и лимиты площадки.</div>
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(p._by))}, ${ago(p._at)}</p>` : ''}
+    ${exists ? publishBlock(p) : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists ? `<button type="button" class="danger" data-action="delp" data-id="${E(p.id)}">Удалить публикацию</button>` : ''}</div></form>`);
   $('#pf textarea').oninput = e => ($('#count').textContent = e.target.value.length + ' символов');
   submitForm($('#pf'), 'content', p, exists, 'Материал сохранён');
+}
+
+// Публикация в канал. Кнопка появляется только у утверждённого материала:
+// отправка необратима, поэтому черновик уйти не может.
+function publishBlock(p) {
+  const sent = db.publications.filter(x => x.post === p.id);
+  if (sent.length) {
+    return `<div class="notice">Опубликовано: ${sent.map(x => `${E(x.channel)}${x.url ? ` — <a href="${E(x.url)}" target="_blank" rel="noopener noreferrer">открыть</a>` : ''} · ${ago(x.at)}`).join('; ')}</div>`;
+  }
+  if (p.status !== 'Утверждено') {
+    return `<p class="muted">Публикация в канал станет доступна, когда статус будет «Утверждено». Сейчас: «${E(p.status)}».</p>`;
+  }
+  return `<div class="formactions publishrow">
+    <button type="button" class="primary" data-action="publish" data-id="${E(p.id)}">Опубликовать в Telegram</button>
+    <small class="muted">Отправка необратима. Проверьте текст и факты.</small></div>`;
+}
+
+function publishPost(id) {
+  const p = db.content.find(x => x.id === id);
+  if (!p) return;
+  const preview = (p.title && p.title !== p.body.split('\n')[0].trim() ? p.title + '\n\n' : '') + p.body;
+  modal(`<h2>Отправить в Telegram?</h2>
+    <p class="muted">Уйдёт ровно этот текст, ${preview.length} знаков. Отменить отправку нельзя.</p>
+    <div class="card bodytext previewbox">${E(preview)}</div>
+    <div class="formactions"><button data-action="close">Отмена</button>
+      <button class="primary" id="confirmpub">Опубликовать</button></div>`);
+
+  $('#confirmpub').onclick = async e => {
+    e.target.disabled = true;
+    e.target.textContent = 'Отправляю…';
+    try {
+      const res = await api.publish({ postId: id, channel: 'Telegram' });
+      await reload();
+      $('#modal').close();
+      render();
+      toast(res.url ? `Опубликовано: ${res.url}` : 'Опубликовано в Telegram', 9000);
+    } catch (err) {
+      toast('Не отправлено: ' + (err.message || 'ошибка канала'), 10000);
+      e.target.disabled = false;
+      e.target.textContent = 'Опубликовать';
+    }
+  };
 }
 
 function taskNew() {
@@ -1658,6 +1715,7 @@ document.addEventListener('click', async e => {
     case 'delp': delP(b.dataset.id); break;
     case 'deltask': delTask(b.dataset.id); break;
     case 'delmetric': delMetric(b.dataset.id); break;
+    case 'publish': publishPost(b.dataset.id); break;
     case 'editbrand': editBrand(b.dataset.id); break;
     case 'deckon': deck = { on: true, i: 0 }; render(); break;
     case 'deckoff':

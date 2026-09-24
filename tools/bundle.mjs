@@ -8,7 +8,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'supabase', 'functions', 'ai-write');
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'supabase', 'functions');
+const names = process.argv[2] ? [process.argv[2]]
+  : fs.readdirSync(root).filter(n => fs.existsSync(path.join(root, n, 'compose.ts')));
+
+for (const name of names) build(path.join(root, name));
+
+function build(dir) {
 const compose = fs.readFileSync(path.join(dir, 'compose.ts'), 'utf8');
 const index = fs.readFileSync(path.join(dir, 'index.ts'), 'utf8');
 
@@ -35,4 +41,5 @@ const out = [
 ].join('\n');
 
 fs.writeFileSync(path.join(dir, 'bundle.ts'), out);
-console.log('bundle.ts собран,', Buffer.byteLength(out), 'байт');
+console.log(path.basename(dir) + '/bundle.ts собран,', Buffer.byteLength(out), 'байт');
+}
