@@ -481,33 +481,69 @@ function contrastRatio(a, b) {
 // было перекрашивать: у вставленной картинки цвет не поменять.
 const MARK_PATH = 'M1580.87,1460.95c-2.86-28.37-37.65-89.84-65.61-144.16l-348.64-683.49s-16.06-36.74-39.16-57.23c-18.59-16.48-47.44-17.06-47.44-17.06,0,0-28.35-.15-46.95,16.34-23.13,20.5-39.21,57.25-39.21,57.25l-349.04,683.71c-27.99,54.33-62.82,115.83-65.68,144.21-4.06,40.31,13.99,84.78,76.91,73.39,58.44-10.57,220.37-74.81,220.18-74.86l203.79-82.04,204.09,82.48c-.19.05,161.56,64.28,219.93,74.84,62.85,11.38,80.88-33.07,76.83-73.37h0ZM1644.09,1652.56c-34.42,22.09-86.28,31.73-117.72,27.51-88.97-11.91-211.9-62.67-211.9-62.67l-234.45-93.41-234.23,92.8s-123,50.77-212.03,62.68c-31.46,4.21-83.35-5.42-117.8-27.51-132.9-85.25-70.29-244.9-65.96-256.84,4.51-12.45,442.71-865.15,453.9-885.17,11.19-20.02,40.7-52.42,81.67-73.39,43.38-22.19,94.45-24.57,94.45-24.57,6.52.47,54.47,4.74,94.75,25.36,40.94,20.95,70.44,53.35,81.62,73.37,11.18,20.02,449.11,872.59,453.62,885.04,4.33,11.94,66.89,171.57-65.93,256.8h.01Z';
 
+// Паттерны из брендбука — это не плитка со знаком, а контуры знака,
+// расходящиеся наружу, как горизонтали на карте. Истинный отступ контура
+// строится штрихом: обводка шириной 2d с круглыми стыками даёт внешнюю
+// границу ровно на расстоянии d от исходного пути. Рисуем пару «блин
+// цветом линии на d+t/2» и «блин цветом фона на d» — остаётся кольцо
+// толщиной t. Идём от дальнего кольца к ближнему, чтобы внутренние
+// перекрывали заливку внешних.
+//
+// Замеры с оригиналов (2120×1192): фон #090909, линия около двух
+// пикселей, к краю тускнеет.
+const PATTERN_BG = '#090909';
+const PATTERN_INK = '#6e6e6e';
+
+// Шаг задан долей от меньшей стороны кадра, а не в пикселях: иначе на
+// превью 320×180 помещается два кольца, а на макете 2120×1192 — сорок.
 const PATTERN_VARIANTS = [
-  { id: 'dense', title: 'Плотный', note: 'мелкий шаг, шахматкой', bg: '#141414', ink: '#1f1f1f', step: 46, size: 26, angle: 0, offset: true },
-  { id: 'sparse', title: 'Разреженный', note: 'крупный знак, много воздуха', bg: '#141414', ink: '#1c1c1c', step: 110, size: 58, angle: 0, offset: false },
-  { id: 'diagonal', title: 'Диагональный', note: 'поворот 30°, для обложек', bg: '#141414', ink: '#242424', step: 64, size: 34, angle: 30, offset: true },
-  { id: 'gold', title: 'Золотой акцент', note: 'только для крупных плашек', bg: '#141414', ink: 'rgba(246,189,58,.16)', step: 90, size: 46, angle: 0, offset: false }
+  { id: 'center', title: 'Знак в центре', note: 'контуры расходятся от знака', rings: 9, gapK: .085, grow: 1.16, rot: 0, scale: .72, cx: .5, cy: .5 },
+  { id: 'corner', title: 'Угловой', note: 'знак уведён за кадр, видны дуги', rings: 11, gapK: .08, grow: 1.14, rot: -12, scale: .95, cx: .2, cy: .1 },
+  { id: 'wide', title: 'Крупный план', note: 'для обложек и заставок', rings: 8, gapK: .12, grow: 1.13, rot: 8, scale: 1.45, cx: .72, cy: .42 },
+  { id: 'tilt', title: 'С наклоном', note: 'поворот, для вертикальных макетов', rings: 10, gapK: .082, grow: 1.15, rot: -22, scale: .85, cx: .42, cy: .56 }
 ];
 
-// Плитка паттерна: знак в масштабе 2160 → нужный размер, при необходимости
-// со смещением второй строки и поворотом.
-function patternDef(v) {
-  const k = (v.size / 2160).toFixed(5);
-  const mark = (x, y) => `<g transform="translate(${x} ${y}) scale(${k})"><path d="${MARK_PATH}" fill="${v.ink}"/></g>`;
-  const tile = v.offset
-    ? mark(0, 0) + mark(v.step / 2, v.step / 2) + mark(-v.step / 2, v.step / 2) + mark(v.step / 2, -v.step / 2) + mark(-v.step / 2, -v.step / 2)
-    : mark(v.step / 2 - v.size / 2, v.step / 2 - v.size / 2);
-  return `<pattern id="pat-${v.id}" width="${v.step}" height="${v.step}" patternUnits="userSpaceOnUse"
-    patternTransform="rotate(${v.angle})">${tile}</pattern>`;
+// Знак в своём файле нарисован в квадрате 2160; приводим к единице.
+const MARK_BOX = 2160;
+
+function contourLayers(v, w, h) {
+  const k = (v.scale * Math.min(w, h) * 0.46) / MARK_BOX;
+  const place = `translate(${(w * v.cx).toFixed(1)} ${(h * v.cy).toFixed(1)}) rotate(${v.rot})
+    scale(${k.toFixed(5)}) translate(${-MARK_BOX / 2} ${-MARK_BOX / 2})`;
+  const t = 2 / k; // толщина линии в координатах знака, чтобы на экране она была одинаковой
+  let out = '';
+  for (let i = v.rings - 1; i >= 0; i--) {
+    const d = ((v.gapK * Math.min(w, h)) / k) * Math.pow(i + 1, v.grow);
+    const fade = (0.22 + 0.5 * (1 - i / v.rings)).toFixed(2);
+    out += `<path d="${MARK_PATH}" fill="${PATTERN_INK}" fill-opacity="${fade}" stroke="${PATTERN_INK}"
+      stroke-opacity="${fade}" stroke-width="${(d * 2 + t).toFixed(1)}" stroke-linejoin="round"/>
+      <path d="${MARK_PATH}" fill="${PATTERN_BG}" stroke="${PATTERN_BG}"
+      stroke-width="${(d * 2).toFixed(1)}" stroke-linejoin="round"/>`;
+  }
+  out += `<path d="${MARK_PATH}" fill="none" stroke="${PATTERN_INK}" stroke-opacity=".72" stroke-width="${t.toFixed(1)}"/>`;
+  return `<g transform="${place}">${out}</g>`;
+}
+
+function patternSvg(v, w, h, id) {
+  return `<defs>
+      <linearGradient id="pg-${id}" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#151515"/><stop offset=".55" stop-color="${PATTERN_BG}"/>
+        <stop offset="1" stop-color="#101010"/></linearGradient>
+      <clipPath id="pc-${id}"><rect width="${w}" height="${h}" rx="${Math.min(12, w / 26)}"/></clipPath>
+    </defs>
+    <g clip-path="url(#pc-${id})">
+      <rect width="${w}" height="${h}" fill="url(#pg-${id})"/>
+      ${contourLayers(v, w, h)}
+    </g>`;
 }
 
 function patternFile(id) {
   const v = PATTERN_VARIANTS.find(x => x.id === id);
   if (!v) return;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
-  <!-- Паттерн ADERVIS «${v.title}». Собран из знака бренда. -->
-  <defs>${patternDef(v)}</defs>
-  <rect width="1600" height="900" fill="${v.bg}"/>
-  <rect width="1600" height="900" fill="url(#pat-${v.id})"/>
+  const W = 2120, H = 1192;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <!-- Паттерн ADERVIS «${v.title}». Контуры фирменного знака, знак не перерисован. -->
+  ${patternSvg(v, W, H, id)}
 </svg>`;
   download(svg, `adervis-pattern-${id}.svg`);
   toast('Паттерн сохранён файлом');
@@ -594,14 +630,12 @@ const FIGURES = {
   marks: () => `<div class="patterns">
     ${PATTERN_VARIANTS.map(v => `<figure class="patterncell">
       <svg viewBox="0 0 320 180" role="img" aria-label="Паттерн: ${E(v.title)}">
-        <defs>${patternDef(v)}</defs>
-        <rect width="320" height="180" rx="10" fill="${v.bg}"/>
-        <rect width="320" height="180" rx="10" fill="url(#pat-${v.id})"/>
+        ${patternSvg(v, 320, 180, v.id)}
       </svg>
       <figcaption><b>${E(v.title)}</b><span class="muted">${E(v.note)}</span>
         <button class="chip" data-action="patternfile" data-id="${v.id}">Скачать SVG</button></figcaption>
     </figure>`).join('')}
-    <p class="muted">Знак взят из файла и не перерисован. Паттерн — фон: поверх него должен читаться текст, поэтому контраст к фону держим низким.</p>
+    <p class="muted">Контуры строятся из настоящего знака: каждая линия — его силуэт, отодвинутый наружу. Паттерн остаётся фоном, поэтому контраст к фону держим низким.</p>
   </div>`,
 
   // Форматы площадок и безопасные зоны: где интерфейс перекрывает макет.
