@@ -628,3 +628,57 @@ html[data-theme=dark]{--g-knowledge:#f0a73b;--g-content:#4ab3ee;--g-decision:#b2
 @media(min-width:1680px){
   .main{margin-left:max(256px,calc((100vw - 1360px) / 2))}
 }
+
+/* --- Типографическая шкала --------------------------------------------
+   Размеры были выбраны на глаз: 34 / 19 / 15 / 14 / 13 / 12 / 11 / 10 —
+   восемь ступеней без системы, соседние почти неразличимы. Шкала с
+   постоянным шагом: каждая ступень заметно отличается от соседней. */
+:root{
+  --t-micro:11px;  /* надзаголовки, метки */
+  --t-small:12.5px;/* пояснения, даты */
+  --t-body:14px;   /* основной текст */
+  --t-lead:16px;   /* подзаголовок страницы, ввод */
+  --t-h3:18px;     /* заголовок внутри карточки */
+  --t-h2:22px;     /* заголовок карточки и блока */
+  --t-h1:32px;     /* заголовок страницы */
+  --t-display:40px;/* крупное число в плитке */
+}
+h1{font-size:var(--t-h1);line-height:1.08}
+h2{font-size:var(--t-h2);line-height:1.2;margin-bottom:14px}
+h3{font-size:var(--t-h3);line-height:1.3}
+.eyebrow{font-size:var(--t-micro)}
+.head > div > .muted,.subtitle{font-size:var(--t-lead)}
+.metric .value{font-size:var(--t-display)}
+.metric .eyebrow{font-size:var(--t-micro)}
+.metric small,.card small,.date,.source{font-size:var(--t-small)}
+.sectionhead{font-size:var(--t-h2)}
+
+/* --- Карточка темы брендбука ------------------------------------------
+   Тринадцать одинаковых карточек подряд, и в каждой шапке четыре кнопки
+   спорят с названием. Управление проявляется при наведении и при
+   переходе табом, а название получает надзаголовок с разделом. */
+.blockhead .blockbtns{opacity:0;transition:opacity .15s}
+.card:hover .blockhead .blockbtns,
+.blockhead .blockbtns:focus-within{opacity:1}
+@media(hover:none){.blockhead .blockbtns{opacity:1}}
+
+/* Полнота и оглавление — одной полосой вместо двух карточек. */
+.brandbar{display:grid;grid-template-columns:1.6fr 1fr;gap:24px;align-items:start}
+.brandbar .tocrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.brandbar .progress{margin:8px 0}
+.brandbar-right{border-left:1px solid var(--line);padding-left:24px}
+@media(max-width:860px){
+  .brandbar{grid-template-columns:1fr;gap:16px}
+  .brandbar-right{border-left:0;border-top:1px solid var(--line);padding:16px 0 0}
+}
+
+/* Строка «Обновил…» повторялась под каждой из тринадцати тем и читалась
+   как шум. Нужна она редко — показываем вместе с управлением. */
+.brandmeta{opacity:0;transition:opacity .15s;margin:14px 0 0;font-size:var(--t-micro)}
+.card:hover .brandmeta,.card:focus-within .brandmeta{opacity:1}
+@media(hover:none){.brandmeta{opacity:1}}
+
+/* Брендбук длиной в шесть экранов: заголовок раздела держится у верхней
+   кромки, пока раздел не кончится, — видно, где находишься. */
+.sectionhead{position:sticky;top:64px;z-index:6;background:var(--bg);
+  padding:10px 0 8px;margin:26px 0 12px;border-bottom:1px solid var(--line)}

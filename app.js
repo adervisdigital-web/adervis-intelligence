@@ -902,18 +902,6 @@ const brandEmpty = b => b.kind === 'text'
   : b.kind === 'figure' ? !FIGURES[b.data?.figure]
   : !(Array.isArray(b.data?.items) && b.data.items.length);
 
-function brandProgress() {
-  const empty = db.brand.filter(brandEmpty);
-  const done = db.brand.length - empty.length;
-  if (!db.brand.length) return '';
-  return `<div class="card progresscard">
-    <div class="head" style="margin:0 0 8px"><h2 style="margin:0">Заполнено ${done} из ${db.brand.length}</h2>
-      <div class="progress" style="width:180px"><i style="width:${Math.round(100 * done / db.brand.length)}%"></i></div></div>
-    ${empty.length
-      ? `<p class="muted">Ждут содержимого: ${empty.map(b => `<button class="chip" data-action="editbrand" data-id="${E(b.id)}">${E(b.title)}</button>`).join(' ')}</p>`
-      : '<p class="muted">Все темы заполнены.</p>'}</div>`;
-}
-
 // Темы сгруппированы по разделам, сверху — оглавление. Иначе брендбук
 // превращается в ленту из тридцати карточек, которую никто не дочитывает.
 const SECTIONS = ['Компания', 'Знак', 'Цвет', 'Шрифт и текст', 'Элементы', 'Правила', 'Материалы', 'Прочее'];
@@ -923,9 +911,25 @@ function brandSections() {
     .map(name => ({ name, items: db.brand.filter(b => (b.section || 'Прочее') === name) }))
     .filter(g => g.items.length);
 
-  const toc = `<div class="card toc"><div class="eyebrow">Разделы</div>
-    <div class="tocrow">${groups.map(g => `<a class="chip" href="#s-${encodeURIComponent(g.name)}">${E(g.name)}
-      <b>${g.items.length}</b></a>`).join('')}</div></div>`;
+  // Полнота и оглавление занимали по целой карточке ради одной полоски и
+  // одного ряда ссылок. Сведены в одну полосу над брендбуком.
+  const empty = db.brand.filter(brandEmpty);
+  const done = db.brand.length - empty.length;
+  const toc = `<div class="card brandbar">
+    <div class="brandbar-left">
+      <div class="eyebrow">Разделы</div>
+      <div class="tocrow">${groups.map(g => `<a class="chip" href="#s-${encodeURIComponent(g.name)}">${E(g.name)}
+        <b>${g.items.length}</b></a>`).join('')}</div>
+    </div>
+    <div class="brandbar-right">
+      <div class="eyebrow">Заполнено ${done} из ${db.brand.length}</div>
+      <div class="progress"><i style="width:${Math.round(100 * done / Math.max(db.brand.length, 1))}%"></i></div>
+      ${empty.length
+        ? `<small class="muted">Ждут содержимого:</small>
+           <div class="tocrow">${empty.map(b => `<button class="chip" data-action="editbrand" data-id="${E(b.id)}">${E(b.title)}</button>`).join('')}</div>`
+        : '<small class="muted">Все темы заполнены.</small>'}
+    </div>
+  </div>`;
 
   return toc + groups.map(g => `<h2 class="sectionhead" id="s-${encodeURIComponent(g.name)}">${E(g.name)}
     <small class="muted">${g.items.length}</small></h2>
@@ -936,7 +940,10 @@ function brandBlock(b) {
   // Двигаем тему внутри её раздела: иначе она уезжала бы в чужую группу.
   const order = db.brand.filter(x => (x.section || 'Прочее') === (b.section || 'Прочее')).map(x => x.id);
   const i = order.indexOf(b.id);
-  const head = `<div class="head" style="margin:0 0 14px"><h2 style="margin:0">${E(b.title)}</h2>
+  // Управление темой не спорит с её названием: кнопки проявляются при
+  // наведении и при переходе табом, но из разметки никуда не деваются.
+  const head = `<div class="head blockhead" style="margin:0 0 14px">
+    <div><div class="eyebrow">${E(b.section || 'Прочее')}</div><h2 style="margin:4px 0 0">${E(b.title)}</h2></div>
     <span class="blockbtns">
       <button class="chip" data-action="movebrand" data-id="${E(b.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Выше">↑</button>
       <button class="chip" data-action="movebrand" data-id="${E(b.id)}" data-dir="1" ${i === order.length - 1 ? 'disabled' : ''} aria-label="Ниже">↓</button>
@@ -1971,7 +1978,6 @@ function render() {
           </div>
           <p><a href="brand/logo.svg" download>Скачать logo.svg</a> · <a href="brand/icon.svg" download>icon.svg</a> · <a href="brand/logoB.svg" download>logoB.svg</a></p>
         </div>`
-      + brandProgress()
       + brandSections()
       + (record ? `<div class="card"><div class="head" style="margin:0 0 14px"><h2 style="margin:0">Файлы бренда</h2>
           <button data-k="${E(record.id)}">Добавить файлы</button></div>

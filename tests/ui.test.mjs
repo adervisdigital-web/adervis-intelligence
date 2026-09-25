@@ -877,17 +877,52 @@ check('подписи под картинками на месте',
   (await page.$$eval('.gallery figcaption', f => f.map(x => x.textContent))).join() === 'Паттерн 1,Паттерн 2');
 
 // оглавление и разделы
-check('сверху есть оглавление по разделам', (await page.$$('.toc .chip')).length >= 1);
+check('сверху есть оглавление по разделам', (await page.$$('.brandbar .tocrow .chip')).length >= 1);
+// управление темой не спорит с её названием
+check('кнопки темы спрятаны, пока на карточку не навели',
+  await page.$eval('.blockhead .blockbtns', e => getComputedStyle(e).opacity === '0'));
+await page.hover('.brandcard');
+await page.waitForTimeout(250);
+check('при наведении управление появляется',
+  await page.$eval('.brandcard .blockhead .blockbtns', e => getComputedStyle(e).opacity === '1'));
+await page.mouse.move(0, 0);
+await page.focus('.brandcard .blockhead [data-action=editbrand]');
+await page.waitForTimeout(250);
+check('до управления можно добраться табом, без мыши',
+  await page.$eval('.brandcard .blockhead .blockbtns', e => getComputedStyle(e).opacity === '1'));
+check('у темы виден её раздел', (await page.$$('.blockhead .eyebrow')).length > 0);
+// брендбук длиной в шесть экранов: заголовок раздела должен держаться у кромки
+await page.evaluate(() => window.scrollTo(0, 2200));
+await page.waitForTimeout(120);
+const sticky = await page.evaluate(() => {
+  const h = document.querySelector('.sectionhead');
+  const bar = document.querySelector('.topbar');
+  if (!h || !bar) return null;
+  const r = h.getBoundingClientRect(), b = bar.getBoundingClientRect();
+  return { top: Math.round(r.top), barBottom: Math.round(b.bottom), visible: r.top >= 0 && r.bottom <= window.innerHeight };
+});
+check('при прокрутке видно, в каком разделе находишься',
+  sticky && sticky.visible && sticky.top >= sticky.barBottom - 2, JSON.stringify(sticky));
+await page.evaluate(() => window.scrollTo(0, 0));
+// шкала размеров: соседние ступени обязаны различаться
+const steps = await page.evaluate(() => {
+  const v = n => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(n));
+  return ['--t-micro', '--t-small', '--t-body', '--t-lead', '--t-h3', '--t-h2', '--t-h1'].map(v);
+});
+check('размеры идут по шкале, без почти одинаковых соседей',
+  steps.every((x, i) => i === 0 || x - steps[i - 1] >= 1.2), steps.join(' / '));
+check('заголовок карточки крупнее основного текста',
+  await page.$eval('.brandcard h2', h => parseFloat(getComputedStyle(h).fontSize) >= 20));
 check('темы разложены по разделам', (await page.$$('.sectionhead')).length >= 1);
 check('в оглавлении видно число тем в разделе',
-  /\d/.test(await page.$eval('.toc .chip b', e => e.textContent)));
+  /\d/.test(await page.$eval('.brandbar .tocrow .chip b', e => e.textContent)));
 
 // полнота брендбука
-const progress = (await page.textContent('.progresscard')).replace(/\s+/g, ' ');
+const progress = (await page.textContent('.brandbar')).replace(/\s+/g, ' ');
 check('видно, сколько тем заполнено', /Заполнено 12 из 13/.test(progress), progress);
 check('пустая тема названа поимённо', /Ждут содержимого.*Фото и видео/.test(progress), progress);
 check('из полноты можно сразу открыть пустую тему',
-  (await page.$$('.progresscard [data-action=editbrand]')).length > 0);
+  (await page.$$('.brandbar [data-action=editbrand]')).length > 0);
 
 // состав брендбука: добавить, подвинуть, удалить тему
 const titlesBefore = await page.$$eval('.brandcard h2', h => h.map(x => x.textContent));
