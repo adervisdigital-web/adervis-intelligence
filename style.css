@@ -796,3 +796,12 @@ html[data-theme=light]{
   background:linear-gradient(90deg,var(--dir),color-mix(in srgb,var(--dir) 45%,transparent))}
 .dircard .numbermark{color:var(--dir);font-weight:800}
 .dircard:hover{border-color:color-mix(in srgb,var(--dir) 55%,var(--line))}
+
+/* Значок в метке доступа идёт перед словом и не спорит с ним по весу. */
+.tag .ic{margin-right:5px;opacity:.85;flex:none}
+/* Ключ иконки под названием — для того, кто ищет её в коде. */
+.iconcell code{display:block;font-size:9.5px;color:var(--muted);opacity:.65;margin-top:2px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+/* Клетка иконки одинаковой высоты: длинная подпись не должна её ломать. */
+.iconcell{min-height:96px;justify-content:flex-start}
+.iconcell span{line-height:1.25}

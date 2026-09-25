@@ -25,6 +25,12 @@ const ICONS = {
   money: '<path d="M9 20V5h4.5a4 4 0 0 1 0 8H9"/><path d="M6 13h7M6 16.5h7"/>',
   decisions: '<path d="M6 21V4"/><path d="M6 5h11l-2.2 3.6L17 12H6z"/>',
   leads: '<path d="M4 13h4l1.8 2.6h4.4L16 13h4"/><path d="M5.2 13 6.8 5.6h10.4L18.8 13v5.4a1 1 0 0 1-1 1H6.2a1 1 0 0 1-1-1z"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8.2 11V8.2a3.8 3.8 0 0 1 7.6 0V11"/>',
+  eye: '<path d="M2.6 12S6.2 6.2 12 6.2 21.4 12 21.4 12 17.8 17.8 12 17.8 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.9"/>',
+  check: '<path d="m4.8 12.6 4.9 4.9L19.2 7.2"/>',
+  warn: '<path d="M12 4.6 21 19.4H3z"/><path d="M12 10.2v4"/><path d="M12 16.9v.3"/>',
+  link: '<path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 1 0-5.7-5.7l-1.4 1.4"/><path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 1 0 5.7 5.7l1.4-1.4"/>',
+  download: '<path d="M12 4.2v10.6"/><path d="m7.6 10.4 4.4 4.4 4.4-4.4"/><path d="M5 19.2h14"/>',
   chain: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="m6.7 11 3.8-3.8M6.7 13l3.8 3.8M13.5 7.2 17.3 11M13.5 16.8 17.3 13"/>',
   knowledge: '<path d="M6 4h9a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z"/><path d="M6 17h11"/>',
   brand: '<path d="M12 3 21 12 12 21 3 12z"/><path d="M12 8.5 15.5 12 12 15.5 8.5 12z"/>',
@@ -57,6 +63,22 @@ const ICONS = {
   time: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
   place: '<path d="M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'
+};
+
+// Подписи иконок для брендбука. В наборе рядом живут «lead» и «leads» —
+// по ключам их не различить, поэтому имя человеческое, а ключ остаётся
+// рядом мелким: он нужен тому, кто будет искать иконку в коде.
+const ICON_RU = {
+  home: 'Обзор', money: 'Деньги', leads: 'Заявки', decisions: 'Решения', chain: 'Нейроцепочка',
+  knowledge: 'База знаний', brand: 'Брендбук', products: 'Продукты', cases: 'Кейсы',
+  content: 'Контент-студия', calendar: 'Календарь', assistant: 'AI-зона', analytics: 'Аналитика',
+  competitors: 'Конкуренты', tasks: 'Задачи', roadmap: 'Развитие', settings: 'Настройки',
+  video: 'Видео', photo: 'Фото', design: 'Дизайн', shooting: 'Съёмка', editing: 'Монтаж',
+  mic: 'Звук', estimate: 'Смета', client: 'Клиент', lead: 'Обращение', file: 'Файл',
+  time: 'Сроки', place: 'Локация',
+  plus: 'Добавить', search: 'Поиск', refresh: 'Обновить', menu: 'Меню', theme: 'Тема',
+  close: 'Закрыть', check: 'Готово', warn: 'Внимание', link: 'Ссылка', download: 'Скачать',
+  lock: 'Внутреннее', eye: 'Публичное'
 };
 
 const icon = (name, size = 20) => ICONS[name]
@@ -330,9 +352,12 @@ const TAG_TONE = {
 const DIRECTIONS_SET = new Set(['Студия', 'CRM', 'Stock', 'Медиа']);
 // Направление — не статус: у каждого продукта свой цвет, взятый из его же
 // оформления. На сайте это сделано через data-dir, здесь так же.
+// Доступ помечается ещё и значком: цвет и форма — разные каналы, и
+// значок остаётся понятным тем, кто цвет не различает.
+const TAG_ICON = { 'Внутреннее': 'lock', 'Публичное': 'eye' };
 const tag = (t, tone) => DIRECTIONS_SET.has(t)
   ? `<span class="tag" data-dir="${E(t)}">${E(t)}</span>`
-  : `<span class="tag ${tone || TAG_TONE[t] || ''}">${E(t)}</span>`;
+  : `<span class="tag ${tone || TAG_TONE[t] || ''}">${TAG_ICON[t] ? icon(TAG_ICON[t], 13) : ''}${E(t)}</span>`;
 const source = s => /^https?:\/\//.test(s)
   ? `<a class="source" href="${E(s)}" target="_blank" rel="noopener noreferrer">Источник ↗</a>`
   : `<small>${E(s)}</small>`;
@@ -743,15 +768,19 @@ const FIGURES = {
   // Набор иконок. Одна геометрия, одна толщина штриха, размеры токенами.
   icons: () => {
     const groups = [
-      ['Разделы', ['home', 'money', 'decisions', 'chain', 'knowledge', 'brand', 'products', 'cases', 'content', 'calendar', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings']],
+      ['Разделы приложения', ['home', 'money', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products', 'cases', 'content', 'calendar', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings']],
       ['Работа студии', ['video', 'photo', 'design', 'shooting', 'editing', 'mic', 'estimate', 'client', 'lead', 'file', 'time', 'place']],
-      ['Действия', ['plus', 'search', 'refresh', 'menu', 'theme', 'close']]
+      ['Действия', ['plus', 'search', 'refresh', 'menu', 'theme', 'close', 'download', 'link']],
+      ['Состояния', ['check', 'warn', 'lock', 'eye']]
     ];
     return `<div class="iconsheet">${groups.map(([title, names]) => `<div class="icongroup">
       <div class="eyebrow">${E(title)}</div>
-      <div class="icongrid">${names.map(n => `<div class="iconcell">${icon(n, 24)}<span>${E(n)}</span></div>`).join('')}</div>
+      <div class="icongrid">${names.map(n => `<div class="iconcell">${icon(n, 24)}
+        <span>${E(ICON_RU[n] || n)}</span><code>${E(n)}</code></div>`).join('')}</div>
     </div>`).join('')}
-    <p class="muted">Размеры: 16 в строке текста, 20 в меню, 24 в карточках, 32 в крупных блоках. Толщина штриха одна — 1,7. Заливкой не пользуемся: только контур.</p></div>`;
+    <p class="muted">Размеры: 16 в строке текста, 20 в меню, 24 в карточках, 32 в крупных блоках.
+    Толщина штриха одна — 1,7. Заливкой не пользуемся: только контур.
+    Мелким под названием — имя иконки в коде, по нему её находят разработчики.</p></div>`;
   },
 
   // Живые элементы интерфейса во всех состояниях — не картинка, а сами компоненты.

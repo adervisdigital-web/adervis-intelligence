@@ -858,6 +858,16 @@ check('негодное сочетание помечено отдельно',
   (await page.$$eval('.figure .fnote.bad', t => t.length)) > 0);
 // страницы элементов
 check('набор иконок показан целиком', (await page.$$('.iconcell')).length >= 30, String((await page.$$('.iconcell')).length));
+// в брендбуке иконки подписаны по-русски, а не ключами из кода
+const iconLabels = await page.$$eval('.iconcell span', ss => ss.map(x => x.textContent.trim()));
+check('иконки подписаны по-русски', iconLabels.every(t => /[а-яА-ЯёЁ]/.test(t)),
+  iconLabels.filter(t => !/[а-яА-ЯёЁ]/.test(t)).slice(0, 5).join(', '));
+check('рядом оставлен ключ для разработчика',
+  (await page.$$eval('.iconcell code', cs => cs.map(c => c.textContent))).includes('leads'));
+check('похожие имена различимы по подписи',
+  iconLabels.includes('Заявки') && iconLabels.includes('Обращение'));
+check('у каждой иконки раздела есть своя подпись',
+  (await page.$$('.iconcell')).length === iconLabels.length);
 check('у всех иконок одна толщина штриха',
   (await page.$$eval('.iconcell svg', s => [...new Set(s.map(x => x.getAttribute('stroke-width')))])).length === 1);
 check('иконки нарисованы контуром, без заливки',
@@ -964,6 +974,8 @@ for (const [name, label] of [['contrast', 'Сочетания цветов и к
   const el = await page.$(`.figure[aria-label="${label}"]`);
   if (el) await el.screenshot({ path: path.join(OUT, `figure-${name}.png`) });
 }
+const iconsFig = await page.$('.iconsheet');
+if (iconsFig) await iconsFig.screenshot({ path: path.join(OUT, 'figure-icons.png') });
 const pat = await page.$('.patterns');
 if (pat) await pat.screenshot({ path: path.join(OUT, 'figure-patterns.png') });
 // паттерн — это контуры настоящего знака, а не перерисовка
@@ -1123,6 +1135,16 @@ const kTags = await page.$$eval('article[data-k=k1] .tag', ts => ts.map(t => ({
 check('доступ отличается от достоверности с одного взгляда',
   kTags.length >= 2 && (kTags[0].bg !== kTags[1].bg || kTags[0].ring !== kTags[1].ring),
   kTags.map(t => `${t.text}:${t.bg}`).join(' | '));
+// значок доступа: цвет и форма — разные каналы, значок понятен и без цвета
+check('внутренняя запись помечена замком', await page.evaluate(() => {
+  const t = [...document.querySelectorAll('.tag')].find(x => x.textContent.trim() === 'Внутреннее');
+  return !!t && !!t.querySelector('svg');
+}));
+check('публичная помечена своим значком', await page.evaluate(() => {
+  const a = [...document.querySelectorAll('.tag')].find(x => x.textContent.trim() === 'Внутреннее');
+  const b = [...document.querySelectorAll('.tag')].find(x => x.textContent.trim() === 'Публичное');
+  return !!a && !!b && a.querySelector('svg').innerHTML !== b.querySelector('svg').innerHTML;
+}));
 check('внутренняя запись помечена иначе, чем публичная', await page.evaluate(() => {
   const find = w => [...document.querySelectorAll('.tag')].find(t => t.textContent.trim() === w);
   const a = find('Внутреннее'), b = find('Публичное');
