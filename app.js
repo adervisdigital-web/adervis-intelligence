@@ -327,7 +327,12 @@ const TAG_TONE = {
   // достоверности с одного взгляда, иначе в карточке две одинаковые метки.
   'Внутреннее': 'closed', 'Публичное': 'open'
 };
-const tag = (t, tone) => `<span class="tag ${tone || TAG_TONE[t] || ''}">${E(t)}</span>`;
+const DIRECTIONS_SET = new Set(['Студия', 'CRM', 'Stock', 'Медиа']);
+// Направление — не статус: у каждого продукта свой цвет, взятый из его же
+// оформления. На сайте это сделано через data-dir, здесь так же.
+const tag = (t, tone) => DIRECTIONS_SET.has(t)
+  ? `<span class="tag" data-dir="${E(t)}">${E(t)}</span>`
+  : `<span class="tag ${tone || TAG_TONE[t] || ''}">${E(t)}</span>`;
 const source = s => /^https?:\/\//.test(s)
   ? `<a class="source" href="${E(s)}" target="_blank" rel="noopener noreferrer">Источник ↗</a>`
   : `<small>${E(s)}</small>`;
@@ -661,6 +666,44 @@ const FIGURES = {
     ${side}
     ${fnote('Ничего важного ближе 5 мм к краю: резак гуляет, и текст уедет.', 30, 258, 88, { anchor: 'start' })}
   </svg>`;
+  },
+
+  // Цвета продуктов и услуг: взяты из самих продуктов, а не придуманы
+  // заново. Знак градиента и свечения показан как есть.
+  dirs: () => {
+    const products = [
+      { id: 'Студия', name: 'Студия', note: 'фирменное золото', c1: '#f6bd3a', c2: '#ffd673', glow: 'rgba(246,189,58,.28)' },
+      { id: 'CRM', name: 'ADERVIS CRM', note: 'градиент продукта', c1: '#6c00ff', c2: '#9b4dff', glow: 'rgba(155,77,255,.38)' },
+      { id: 'Stock', name: 'ADERVIS Stock', note: 'зелёный продукта', c1: '#87e64b', c2: '#6bb23e', glow: 'rgba(135,230,75,.30)' },
+      { id: 'Медиа', name: 'Медиа', note: 'своего цвета пока нет', c1: '#8d95a6', c2: '#5d6575', glow: 'rgba(141,149,166,.22)' }
+    ];
+    const services = [
+      ['Видео', '#f52424'], ['Дизайн', '#7733ff'], ['Фото', '#f5b72b'], ['ИИ-контент', '#22cc54']
+    ];
+    const W = 760, cw = 172, gap = 24;
+    const cards = products.map((p, i) => {
+      const x = (i % 2) * (cw * 2 + gap) + 4;
+      const y = Math.floor(i / 2) * 132 + 4;
+      return `<g>
+        <defs><linearGradient id="dg${i}" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="${p.c1}"/><stop offset="1" stop-color="${p.c2}"/></linearGradient>
+          <filter id="dgl${i}" x="-40%" y="-40%" width="180%" height="180%">
+            <feDropShadow dx="0" dy="0" stdDeviation="9" flood-color="${p.c1}" flood-opacity=".55"/></filter></defs>
+        <rect x="${x}" y="${y}" width="${cw * 2}" height="72" rx="12" fill="url(#dg${i})" filter="url(#dgl${i})"/>
+        <text class="flabel" x="${x}" y="${y + 92}">${E(p.name)}</text>
+        <text class="fnote" x="${x}" y="${y + 108}">${p.c1} → ${p.c2} · ${E(p.note)}</text>
+      </g>`;
+    }).join('');
+    const svc = services.map(([name, hex], i) => {
+      const x = i * (W / 4) + 4;
+      return `<g><rect x="${x}" y="292" width="${W / 4 - 18}" height="44" rx="10" fill="${hex}"/>
+        <text class="flabel" x="${x}" y="${356}">${E(name)}</text>
+        <text class="fnote" x="${x}" y="${372}">${hex}</text></g>`;
+    }).join('');
+    return `<svg class="figure" viewBox="0 0 ${W} 396" role="img" aria-label="Цвета продуктов и услуг">
+      ${cards}
+      <text class="flabel" x="4" y="278">Услуги студии</text>
+      ${svc}</svg>`;
   },
 
   // Набор иконок. Одна геометрия, одна толщина штриха, размеры токенами.
@@ -1016,7 +1059,7 @@ function lineChart(series, label = 'График по строкам') {
   }).join('');
 
   const lines = series.map((s, i) => {
-    const color = CHART_COLORS[i % CHART_COLORS.length];
+    const color = s.color || CHART_COLORS[i % CHART_COLORS.length];
     const pts = s.points.map(p => ({ x: px(dates.indexOf(p.x)), y: py(p.y), raw: p }));
     const d = pts.map((p, n) => `${n ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
     const last = pts[pts.length - 1];
@@ -1108,6 +1151,12 @@ function chartData() {
 // выручка, расходы, прибыль, средний чек, съёмочные дни. Ничего не
 // достраивается и не прогнозируется — иначе решения будут приняты по выдумке.
 const DIRECTIONS = ['Студия', 'CRM', 'Stock', 'Медиа'];
+// Цвета направлений живут в стилях: здесь только имя переменной, чтобы
+// тема могла их переопределить, а не два места с одним значением.
+const DIR_COLOR = {
+  'Студия': 'var(--c-studio)', 'CRM': 'var(--c-crm)',
+  'Stock': 'var(--c-stock)', 'Медиа': 'var(--c-media)'
+};
 const monthName = m => new Date(m + (m.length === 7 ? '-01' : '')).toLocaleDateString('ru', { month: 'long', year: 'numeric' });
 
 function moneyStats() {
@@ -1129,6 +1178,7 @@ function moneyStats() {
     margin: last && last.revenue ? Math.round(100 * last.profit / last.revenue) : 0,
     byDirection: DIRECTIONS.map(d => ({
       name: d,
+      color: DIR_COLOR[d],
       points: months.map(m => ({ x: m.slice(0, 7), y: sum(db.finance.filter(r => r.month === m && r.direction === d), 'revenue') }))
     })).filter(s => s.points.some(p => p.y > 0))
   };
@@ -1498,7 +1548,9 @@ function graphData() {
     }
     return id;
   };
-  const hub = (name, group) => name ? add('hub:' + group + ':' + name, 'hub', name, { group }) : null;
+  const hub = (name, group) => name
+    ? add('hub:' + group + ':' + name, 'hub', name, { group, dir: DIRECTIONS_SET.has(name) ? name : null })
+    : null;
   const link = (a, b) => { if (a && b && a !== b) edges.push({ a, b }); };
 
   for (const k of db.knowledge) {
@@ -1722,7 +1774,7 @@ function renderGraph() {
     // двум наложиться.
     const shown = fits(v.x, ly + 4, label.length * 7.4 + 12, 18);
     return `<g class="gnode ${v.kind}${dim(v.id) ? ' dim' : ''}${graph.focus === v.id ? ' focus' : ''}"
-      role="button" tabindex="0" data-node="${E(v.id)}" aria-label="${E(what)}">
+      role="button" tabindex="0" data-node="${E(v.id)}" aria-label="${E(what)}"${v.dir ? ` data-dir="${E(v.dir)}"` : ''}>
       <circle class="ghit" cx="${v.x.toFixed(1)}" cy="${v.y.toFixed(1)}" r="${hit.toFixed(1)}"/>
       <circle cx="${v.x.toFixed(1)}" cy="${v.y.toFixed(1)}" r="${r.toFixed(1)}"/>
       <text class="${shown ? '' : 'off'}" x="${v.x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle">${E(label)}</text>
@@ -2043,14 +2095,18 @@ function render() {
   }
 
   if (page === 'products') {
+    // Раздел про направления — значит цвет направления здесь главный.
     const items = [
-      ['01', 'Studio', 'Видео, фото, дизайн, сайты, анимация и ИИ для бизнеса.', 'https://adervis.ru/'],
-      ['02', 'Adervis CRM', 'Сметы, КП и проекты для студий и фрилансеров.', 'https://adervis.ru/pro'],
-      ['03', 'Adervis Stock', 'Ассеты Envato по прямой ссылке.', 'https://stock.adervis.ru/']
+      ['01', 'Studio', 'Видео, фото, дизайн, сайты, анимация и ИИ для бизнеса.', 'https://adervis.ru/', 'Студия'],
+      ['02', 'Adervis CRM', 'Сметы, КП и проекты для студий и фрилансеров.', 'https://adervis.ru/pro', 'CRM'],
+      ['03', 'Adervis Stock', 'Ассеты Envato по прямой ссылке.', 'https://stock.adervis.ru/', 'Stock']
     ];
     s = heading('Услуги и продукты', 'Три направления одной компании: студия, CRM и Stock — с отдельными аудиториями.')
-      + `<div class="grid three">${items.map(([n, t, b, u]) => `<div class="card"><div class="value numbermark">${n}</div>
-        <h2>${t}</h2><p class="muted">${b}</p>${source(u)}<p><button data-action="newp">Подготовить материал</button></p></div>`).join('')}</div>
+      + `<div class="grid three">${items.map(([n, t, b, u, dir]) => `<div class="card dircard" data-dir="${E(dir)}">
+        <div class="dirstripe"></div>
+        <div class="value numbermark">${n}</div>
+        <h2>${t}</h2><p class="muted">${b}</p>${source(u)}
+        <p><button data-action="newp">Подготовить материал</button></p></div>`).join('')}</div>
       <div class="notice">Тарифы и функции сверять перед публикацией. Сегменты аудитории — рабочее предположение.</div>
       <div class="grid three">${db.knowledge.filter(k => k.category === 'Услуги').map(kc).join('')}</div>`;
   }

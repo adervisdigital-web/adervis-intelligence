@@ -724,3 +724,75 @@ h3{font-size:var(--t-h3);line-height:1.3}
 .chip.on{background:var(--dark);color:#fff;border-color:var(--dark)}
 .chip.on b{color:#fff}
 .chip b{font-variant-numeric:tabular-nums;opacity:.7;margin-left:4px}
+
+/* --- Палитра направлений и услуг --------------------------------------
+   Значения взяты с сайта adervis.ru (css/style.css), а не придуманы:
+   у услуг там четыре собственных цвета, у CRM — градиент со свечением.
+   Приложение подхватывает их тем же способом — через data-dir. */
+:root{
+  --gold-soft:#ffd673;
+  --gold-bg:rgba(246,189,58,.10);
+  --glow-gold:0 0 48px rgba(246,189,58,.28);
+
+  --c-video:#f52424;   /* видео */
+  --c-design:#7733ff;  /* дизайн */
+  --c-photo:#f5b72b;   /* фото */
+  --c-ai:#22cc54;      /* ИИ-контент */
+
+  --c-crm-1:#6c00ff;
+  --c-crm-2:#9b4dff;
+  --crm-gradient:linear-gradient(120deg,var(--c-crm-1) 0%,var(--c-crm-2) 100%);
+  --glow-crm:0 0 48px rgba(155,77,255,.38);
+
+  /* Stock — из PremiumStok (public/index.html): свой зелёный с тёмным
+     вариантом под светлую тему. */
+  --c-stock-1:#87e64b;
+  --c-stock-2:#6bb23e;
+  --stock-gradient:linear-gradient(120deg,var(--c-stock-1) 0%,var(--c-stock-2) 100%);
+  --glow-stock:0 0 48px rgba(135,230,75,.30);
+
+  /* Направления бизнеса берут цвет своего продукта. Медиа — единственное,
+     у которого своего цвета пока нет нигде; до решения держим нейтральный
+     и не выдаём его за фирменный. */
+  --c-studio:#f6bd3a;
+  --c-crm:#9b4dff;
+  --c-stock:#87e64b;
+  --c-media:#8d95a6;
+}
+html[data-theme=light]{
+  --c-studio:#a87908;
+  --c-photo:#a8760d;
+  --c-crm:#6c00ff;
+  --c-stock:#3f7a1c;
+  --c-media:#5d6575;
+  --glow-gold:0 0 32px rgba(246,189,58,.22);
+}
+
+[data-dir="Студия"]{--dir:var(--c-studio)}
+[data-dir="CRM"]{--dir:var(--c-crm)}
+[data-dir="Stock"]{--dir:var(--c-stock)}
+[data-dir="Медиа"]{--dir:var(--c-media)}
+[data-dir="video"]{--dir:var(--c-video)}
+[data-dir="design"]{--dir:var(--c-design)}
+[data-dir="photo"]{--dir:var(--c-photo)}
+[data-dir="ai"]{--dir:var(--c-ai)}
+
+/* Метка направления окрашивается своим цветом, но остаётся читаемой:
+   заливка слабая, текст и точка — насыщенные. */
+.tag[data-dir]{background:color-mix(in srgb,var(--dir) 14%,transparent);
+  color:var(--dir);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--dir) 32%,transparent)}
+.tag[data-dir]:before{content:'';width:7px;height:7px;border-radius:50%;
+  background:var(--dir);margin-right:6px;flex:none}
+
+/* Узел направления на карте носит цвет своего продукта. */
+.gnode[data-dir] circle:not(.ghit){stroke:var(--dir)}
+.gnode[data-dir].hub circle:not(.ghit){stroke:var(--dir)}
+.gnode[data-dir] text{fill:var(--dir)}
+
+/* Карточка направления: цветная полоса сверху и цветное число. Градиент
+   только здесь, на крупной плашке — в мелочи он превращается в грязь. */
+.dircard{position:relative;overflow:hidden;padding-top:26px}
+.dirstripe{position:absolute;inset:0 0 auto;height:5px;
+  background:linear-gradient(90deg,var(--dir),color-mix(in srgb,var(--dir) 45%,transparent))}
+.dircard .numbermark{color:var(--dir);font-weight:800}
+.dircard:hover{border-color:color-mix(in srgb,var(--dir) 55%,var(--line))}

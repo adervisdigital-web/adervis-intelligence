@@ -74,6 +74,8 @@ const fake = (seedData) => {
         data: { figure: 'uikit' } },
       { id: 'spacing-scale', title: 'Шкала отступов', kind: 'figure', sort: 62, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'spacing' } },
+      { id: 'dir-colors', title: 'Цвета продуктов и услуг', kind: 'figure', sort: 34, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'dirs', body: '— Градиент только для крупных плашек' } },
       { id: 'formats', title: 'Форматы и безопасные зоны', kind: 'figure', sort: 102, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'formats', body: '— Знак и заголовок держим внутри безопасной зоны' } },
       { id: 'card-layout', title: 'Визитка: раскладка', kind: 'figure', sort: 112, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
@@ -395,6 +397,15 @@ const tones = await page.$$eval('tr[data-l] .tag', ts => ts.map(x => ({
 const toneOf = w => tones.find(t => t.text === w)?.bg;
 check('сделка и отказ различаются цветом', toneOf('Сделка') && toneOf('Отказ') && toneOf('Сделка') !== toneOf('Отказ'),
   `${toneOf('Сделка')} / ${toneOf('Отказ')}`);
+// у каждого продукта свой цвет, и метка направления его носит
+const dirTags = await page.$$eval('tr[data-l] .tag[data-dir]', ts => ts.map(t => ({
+  dir: t.dataset.dir, color: getComputedStyle(t).color
+})));
+check('метка направления окрашена цветом продукта', dirTags.length > 0 && dirTags.every(t => t.color),
+  dirTags.map(t => `${t.dir}:${t.color}`).join(' | '));
+check('студия и CRM различаются цветом',
+  new Set(dirTags.map(t => t.color)).size === new Set(dirTags.map(t => t.dir)).size,
+  dirTags.map(t => `${t.dir}:${t.color}`).join(' | '));
 check('статус отличается от нейтральной метки направления',
   toneOf('Сделка') !== toneOf('Студия'), `${toneOf('Сделка')} / ${toneOf('Студия')}`);
 check('цвет не заменяет слово', tones.every(t => t.text.length > 0));
@@ -545,6 +556,23 @@ await page.keyboard.press('Escape');
 check('по Escape карта сворачивается', (await page.$$('.graphwrap.full')).length === 0);
 check('для чтения с экрана карта продублирована списком',
   (await page.textContent('.graphlist summary')).includes('что с чем связано'));
+
+// --- 1е. цвета направлений идут по всему приложению, а не только в брендбуке
+await nav('products');
+const dirCards = await page.$$eval('.dircard', cs => cs.map(c => ({
+  dir: c.dataset.dir,
+  stripe: getComputedStyle(c.querySelector('.dirstripe')).backgroundImage,
+  num: getComputedStyle(c.querySelector('.numbermark')).color
+})));
+check('у каждого продукта своя карточка с цветом', dirCards.length === 3, String(dirCards.length));
+check('цвет числа у продуктов разный',
+  new Set(dirCards.map(c => c.num)).size === 3, dirCards.map(c => `${c.dir}:${c.num}`).join(' | '));
+check('полоса продукта нарисована градиентом',
+  dirCards.every(c => c.stripe.includes('gradient')), dirCards[0].stripe.slice(0, 40));
+await nav('money');
+const serieColors = await page.$$eval('.chart .serie path', ps => ps.map(p => p.getAttribute('stroke')));
+check('линии в деньгах окрашены по направлению, а не по порядку',
+  serieColors.every(c => c.includes('var(--c-')), serieColors.join(' | '));
 
 // --- 1д. поиск: должен находить всё, а не только записи и публикации
 await page.click('#search');
@@ -814,7 +842,7 @@ await page.keyboard.press('Escape');
 
 // --- 9б. брендбук
 await nav('brand');
-check('чертежи брендбука нарисованы', (await page.$$('.figure')).length === 6, String((await page.$$('.figure')).length));
+check('чертежи брендбука нарисованы', (await page.$$('.figure')).length === 7, String((await page.$$('.figure')).length));
 check('охранное поле показано схемой с размерами',
   (await page.$$('.figure .fdim')).length === 4 && (await page.textContent('#view')).includes('половина высоты знака'));
 check('на странице «как нельзя» шесть случаев с перечёркиванием',
@@ -838,6 +866,14 @@ check('выключенная кнопка действительно выклю
 check('поле с ошибкой отличается цветом рамки',
   await page.$eval('.uikit .uierror', i => getComputedStyle(i).borderColor.includes('214')));
 check('шкала отступов нарисована', (await page.textContent('#view')).includes('кратен четырём'));
+// цвета продуктов взяты из самих продуктов: значения обязаны совпадать
+const dirFig = await page.$eval('.figure[aria-label="Цвета продуктов и услуг"]', f => f.textContent.replace(/\s+/g, ' '));
+check('в брендбуке записан градиент CRM с сайта', /#6c00ff → #9b4dff/.test(dirFig), dirFig.slice(0, 120));
+check('в брендбуке записан зелёный Stock из портала', /#87e64b → #6bb23e/.test(dirFig), dirFig.slice(0, 160));
+check('цвета услуг перечислены', /#f52424/.test(dirFig) && /#7733ff/.test(dirFig) && /#22cc54/.test(dirFig));
+check('у Медиа честно сказано, что цвета пока нет', /своего цвета пока нет/.test(dirFig));
+check('градиенты нарисованы, а не имитированы заливкой',
+  (await page.$$('.figure[aria-label="Цвета продуктов и услуг"] linearGradient')).length === 4);
 // форматы площадок: все подписаны, безопасная зона лежит внутри кадра
 // названия переносятся под ширину своей колонки, поэтому считаем ячейки, а не строки
 check('показаны все пять форматов', (await page.$$('.figure[aria-label="Форматы площадок"] > g')).length === 5,
@@ -922,7 +958,7 @@ check('колонка содержимого не растягивается н�
 const bodyLine = await page.$eval('.card p', e => Math.round(e.getBoundingClientRect().width));
 check('строка текста не длиннее разумного', bodyLine <= 1000, String(bodyLine));
 await page.screenshot({ path: path.join(OUT, 'intel-brand-wide.png') });
-for (const [name, label] of [['contrast', 'Сочетания цветов и контраст'], ['formats', 'Форматы площадок'], ['card', 'Раскладка визитки']]) {
+for (const [name, label] of [['contrast', 'Сочетания цветов и контраст'], ['formats', 'Форматы площадок'], ['card', 'Раскладка визитки'], ['dirs', 'Цвета продуктов и услуг']]) {
   const el = await page.$(`.figure[aria-label="${label}"]`);
   if (el) await el.screenshot({ path: path.join(OUT, `figure-${name}.png`) });
 }
@@ -981,7 +1017,7 @@ check('в оглавлении видно число тем в разделе',
 
 // полнота брендбука
 const progress = (await page.textContent('.brandbar')).replace(/\s+/g, ' ');
-check('видно, сколько тем заполнено', /Заполнено 12 из 13/.test(progress), progress);
+check('видно, сколько тем заполнено', /Заполнено 13 из 14/.test(progress), progress);
 check('пустая тема названа поимённо', /Ждут содержимого.*Фото и видео/.test(progress), progress);
 check('из полноты можно сразу открыть пустую тему',
   (await page.$$('.brandbar [data-action=editbrand]')).length > 0);
@@ -1017,8 +1053,8 @@ await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
 const slideCount = await page.$$eval('.slide', s => s.length);
 // обложка + знак + 13 тем + финал
-check('слайды собраны по темам', slideCount === 16, String(slideCount));
-check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 8, String((await page.$$('.slide .sfigure')).length));
+check('слайды собраны по темам', slideCount === 17, String(slideCount));
+check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 9, String((await page.$$('.slide .sfigure')).length));
 check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
 const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
 check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));
