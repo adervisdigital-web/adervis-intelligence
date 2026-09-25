@@ -339,6 +339,30 @@ await page.waitForFunction(() => window.__STATE__.decisions[0].status === 'Ср�
 check('итог решения сохранён', (await state()).decisions[0].outcome.includes('выручка выросла'));
 check('счётчик сработавших обновился', (await page.$$eval('.metric', m => m[2].innerText)).includes('1'));
 
+// поиск по решениям появляется, когда их становится больше пяти
+check('при паре решений поиска нет', (await page.$$('#decq')).length === 0);
+for (const t of ['Нанять монтажёра на поток', 'Поднять цену съёмочного дня',
+                 'Отказаться от бартера', 'Сделать пакет для маркетплейсов']) {
+  await page.click('[data-action=newdecision]');
+  await page.fill('#df input[name=title]', t);
+  await page.click('#df button.primary');
+  await page.waitForFunction(() => !document.querySelector('#modal').open);
+}
+await page.waitForSelector('#decq');
+check('поиск появляется, когда решений становится много', (await page.$$('#decq')).length === 1);
+await page.fill('#decq', 'монтаж');
+await page.waitForFunction(() => document.querySelectorAll('.decision').length === 2);
+check('поиск идёт по названию и обоснованию', (await page.$$('.decision')).length === 2,
+  String((await page.$$('.decision')).length));
+check('видно, сколько нашлось', (await page.textContent('#view')).includes('Найдено: 2 из 5'));
+check('курсор остаётся в поле', await page.evaluate(() => document.activeElement.id === 'decq'));
+await page.fill('#decq', 'абвгд');
+await page.waitForFunction(() => document.querySelectorAll('.decision').length === 0);
+check('пустой результат объясняется, а не выглядит пустым журналом',
+  (await page.textContent('#view')).includes('Очистите поле'));
+await page.fill('#decq', '');
+await page.waitForFunction(() => document.querySelectorAll('.decision').length === 5);
+
 // --- 1б. заявки: считаем источники, а не ведём сделки
 await nav('leads');
 const leadMetrics = await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')));
@@ -408,7 +432,7 @@ await nav('decisions');
 await page.click('[data-action=newdecision]');
 await page.fill('#df input[name=title]', 'Решение без срока проверки');
 await page.click('#df button.primary');
-await page.waitForFunction(() => window.__STATE__.decisions.length === 2);
+await page.waitForFunction(() => window.__STATE__.decisions.some(d => d.title.includes('без срока')));
 check('решение без срока сохраняется', (await state()).decisions.find(d => d.title.includes('без срока')).due_on === null);
 await nav('leads');
 
@@ -1301,6 +1325,43 @@ for (const id of sections) {
 }
 check('ни один раздел не уезжает вбок на телефоне', wide.length === 0, wide.join(' | '));
 check('кнопки на телефоне не мельче 36 точек', small.length === 0, small.join(' | '));
+await m.evaluate(() => document.querySelector('#nav button[data-page=chain]').click());
+await m.waitForSelector('#graphsvg');
+await m.waitForTimeout(200);
+const mTap = await m.$$eval('.gnode .ghit', cs => {
+  const t = cs.map(c => +c.getAttribute('r') * (c.ownerSVGElement.getBoundingClientRect().width / c.ownerSVGElement.viewBox.baseVal.width) * 2);
+  return Math.round(t.sort((a, b) => a - b)[Math.floor(t.length / 2)]);
+});
+// Сотня узлов на 390 точек ширины не даёт каждому цель в 44 точки —
+// это площадь экрана, а не разметка. Открываем приближённой, дальше щипок.
+check('на телефоне карта открывается приближённой, а не бисером', mTap >= 26, String(mTap));
+check('на телефоне у карты есть список как запасной путь',
+  (await m.$$('.graphlist')).length === 1);
+// щипок: на карте это ожидаемый жест, кнопками одними обходиться нельзя
+const vbOf = () => m.$eval('#graphsvg', s => +s.getAttribute('viewBox').split(' ')[2]);
+const beforePinch = await vbOf();
+await m.evaluate(() => {
+  const view = document.querySelector('#graphview');
+  const r = view.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const send = (type, id, x, y) => view.dispatchEvent(new PointerEvent(type, {
+    pointerId: id, clientX: x, clientY: y, bubbles: true, pointerType: 'touch'
+  }));
+  send('pointerdown', 1, cx - 30, cy);
+  send('pointerdown', 2, cx + 30, cy);
+  send('pointermove', 1, cx - 90, cy);
+  send('pointermove', 2, cx + 90, cy);
+  send('pointerup', 1, cx - 90, cy);
+  send('pointerup', 2, cx + 90, cy);
+});
+await m.waitForTimeout(150);
+const afterPinch = await vbOf();
+check('щипок приближает карту', afterPinch < beforePinch, `${beforePinch} → ${afterPinch}`);
+check('панель карты помещается по ширине телефона', await m.$eval('.graphbar', e => {
+  const r = e.getBoundingClientRect();
+  return r.left >= -1 && r.right <= window.innerWidth + 1;
+}));
+await m.screenshot({ path: path.join(OUT, 'mobile-graph.png') });
 await m.evaluate(() => document.querySelector('#nav button[data-page=home]').click());
 await m.waitForTimeout(150);
 await m.screenshot({ path: path.join(OUT, 'mobile-home.png'), fullPage: true });

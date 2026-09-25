@@ -1141,10 +1141,16 @@ function moneyStats() {
 const DECISION_STATUS = ['Думаем', 'Делаем', 'Проверяем', 'Сработало', 'Не сработало', 'Отменено'];
 const today = () => new Date().toISOString().slice(0, 10);
 
+let decisionQuery = '';
+
 function renderDecisions() {
-  const open = db.decisions.filter(d => ['Думаем', 'Делаем', 'Проверяем'].includes(d.status));
+  const dq = decisionQuery.toLowerCase();
+  const all = dq
+    ? db.decisions.filter(d => `${d.title} ${d.why} ${d.measure} ${d.outcome}`.toLowerCase().includes(dq))
+    : db.decisions;
+  const open = all.filter(d => ['Думаем', 'Делаем', 'Проверяем'].includes(d.status));
   const due = open.filter(d => d.due_on && d.due_on <= today());
-  const done = db.decisions.filter(d => !['Думаем', 'Делаем', 'Проверяем'].includes(d.status));
+  const done = all.filter(d => !['Думаем', 'Делаем', 'Проверяем'].includes(d.status));
   const worked = done.filter(d => d.status === 'Сработало').length;
 
   const card = d => `<article class="card click decision" tabindex="0" role="button" data-d="${E(d.id)}">
@@ -1156,8 +1162,17 @@ function renderDecisions() {
     ${d.outcome ? `<p class="outcome"><b>Вышло:</b> ${E(d.outcome.slice(0, 160))}</p>` : ''}
   </article>`;
 
+  // Шестнадцать решений уже не просматриваются глазами: нужен поиск по
+  // тексту, а не только разбивка по статусу.
+  const finder = db.decisions.length > 4
+    ? `<div class="toolbar"><input class="input" id="decq" placeholder="Что искать в решениях…"
+        value="${E(decisionQuery)}" aria-label="Поиск по решениям">
+        ${dq ? `<small class="muted">Найдено: ${all.length} из ${db.decisions.length}</small>` : ''}</div>`
+    : '';
+
   return heading('Решения', 'Что решили, почему и как поймём, что сработало.',
     `<button class="primary" data-action="newdecision">+ Решение</button>`)
+    + finder
     + (db.decisions.length ? `<div class="grid metrics">${[
         ['В работе', open.length, 'думаем, делаем, проверяем'],
         ['Пора проверить', due.length, due.length ? 'срок подошёл' : 'просроченных нет'],
@@ -1169,6 +1184,7 @@ function renderDecisions() {
     + (open.length ? `<div class="head"><h2>В работе</h2></div><div class="grid three">${open.filter(d => !due.includes(d)).map(card).join('') || '<div class="empty">Всё в проверке.</div>'}</div>` : '')
     + (done.length ? `<div class="head"><h2>Завершённые</h2><small class="muted">опыт компании</small></div>
         <div class="grid three">${done.map(card).join('')}</div>` : '')
+    + (db.decisions.length && !all.length ? `<div class="card empty">По запросу ничего не нашлось. Очистите поле — вернётся весь журнал.</div>` : '')
     + (!db.decisions.length ? `<div class="card empty"><h2>Журнал пуст</h2>
         <p>Записывайте сюда решения: нанимать ли монтажёра, поднимать ли цены, брать ли клиента.
         Через полгода будет видно, какие из них оказались верными.</p></div>` : '');
@@ -1622,7 +1638,7 @@ function renderGraph() {
   // узлов с областью касания в 44 точки на телефон физически не влезает,
   // поэтому там ходят по карте, а полный охват даёт список под ней.
   if (!graph.scale) {
-    graph.scale = innerWidth <= 720 ? 2.4 : 1;
+    graph.scale = innerWidth <= 720 ? 3 : 1;
     graph.ox = GRAPH_W * (1 - 1 / graph.scale) / 2;
     graph.oy = GRAPH_H * (1 - 1 / graph.scale) / 2;
   }
@@ -1701,7 +1717,10 @@ function renderGraph() {
     const label = v.label.length > 24 ? v.label.slice(0, 23) + '…' : v.label;
     const what = v.kind === 'hub' ? `${v.group}: ${v.label} · записей ${d}` : `${GRAPH_KIND[v.kind]}: ${v.label}`;
     const ly = v.y + r + 15;
-    const shown = fits(v.x, ly + 3, label.length * 6.6 + 6, 15);
+    // Ширина считается по числу знаков: кириллица шире латиницы, поэтому
+    // запас взят с перебором — лучше спрятать лишнюю подпись, чем дать
+    // двум наложиться.
+    const shown = fits(v.x, ly + 4, label.length * 7.4 + 12, 18);
     return `<g class="gnode ${v.kind}${dim(v.id) ? ' dim' : ''}${graph.focus === v.id ? ' focus' : ''}"
       role="button" tabindex="0" data-node="${E(v.id)}" aria-label="${E(what)}">
       <circle class="ghit" cx="${v.x.toFixed(1)}" cy="${v.y.toFixed(1)}" r="${hit.toFixed(1)}"/>
@@ -1772,14 +1791,38 @@ function bindGraph() {
     svg.querySelectorAll('.faded').forEach(n => n.classList.remove('faded'));
   };
 
+  // На карте щипок — ожидаемый жест. Без него на телефоне масштаб
+  // меняется только кнопками, а там всё мелко по определению.
   let drag = null;
+  const touches = new Map();
+  let pinch = null;
+  const spread = () => {
+    const [a, b] = [...touches.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+
   view.onpointerdown = e => {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) {
+      drag = null;
+      pinch = { start: spread(), scale: graph.scale };
+      return;
+    }
     if (e.target.closest('g[data-node]')) return;
     drag = { x: e.clientX, y: e.clientY, ox: graph.ox, oy: graph.oy };
     view.setPointerCapture(e.pointerId);
     view.classList.add('grabbing');
   };
   view.onpointermove = e => {
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && touches.size === 2) {
+      const now = spread();
+      if (pinch.start > 0) {
+        const want = Math.max(0.55, Math.min(4, pinch.scale * (now / pinch.start)));
+        if (Math.abs(want - graph.scale) > 0.02) graphZoom(want / graph.scale);
+      }
+      return;
+    }
     if (!drag) return;
     const r = view.getBoundingClientRect();
     const unit = (GRAPH_W / graph.scale) / r.width;
@@ -1787,9 +1830,15 @@ function bindGraph() {
     graph.oy = clampPan(drag.oy - (e.clientY - drag.y) * unit, GRAPH_H / graph.scale, GRAPH_H);
     svg.setAttribute('viewBox', `${graph.ox} ${graph.oy} ${GRAPH_W / graph.scale} ${GRAPH_H / graph.scale}`);
   };
-  const stop = () => { drag = null; view.classList.remove('grabbing'); };
+  const stop = e => {
+    if (e && touches.has(e.pointerId)) touches.delete(e.pointerId);
+    if (touches.size < 2) pinch = null;
+    drag = null;
+    view.classList.remove('grabbing');
+  };
   view.onpointerup = stop;
   view.onpointercancel = stop;
+  view.onpointerleave = stop;
 
   view.onwheel = e => {
     e.preventDefault();
@@ -2200,6 +2249,15 @@ function render() {
     map.onclick = jump;
     map.onkeydown = jump;
   }
+
+  const dqi = $('#decq');
+  if (dqi) dqi.oninput = e => {
+    const pos = e.target.selectionStart;
+    decisionQuery = e.target.value;
+    render();
+    const again = $('#decq');
+    if (again) { again.focus(); again.setSelectionRange(pos, pos); }
+  };
 
   const lq = $('#leadq');
   if (lq) lq.oninput = e => {
