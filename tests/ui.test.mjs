@@ -502,6 +502,24 @@ check('по Escape карта сворачивается', (await page.$$('.grap
 check('для чтения с экрана карта продублирована списком',
   (await page.textContent('.graphlist summary')).includes('что с чем связано'));
 
+// --- 1д. поиск: должен находить всё, а не только записи и публикации
+await page.click('#search');
+await page.waitForSelector('#global');
+await page.fill('#global', 'белазарь');
+const leadHit = await page.textContent('#results');
+check('поиск находит заявку', /Белазарь/.test(leadHit) && /Заявка/.test(leadHit), leadHit.slice(0, 80));
+await page.fill('#global', 'поднять цены');
+const decHit = await page.textContent('#results');
+check('поиск находит решение', /Решение/.test(decHit), decHit.slice(0, 80));
+await page.fill('#global', 'охранное');
+const brandHit = await page.textContent('#results');
+check('поиск находит тему брендбука', /Брендбук/.test(brandHit), brandHit.slice(0, 80));
+await page.click('#results .result');
+await page.waitForSelector('#bf');
+check('из поиска открывается сама тема, а не раздел',
+  (await page.inputValue('#bf input[name=title]')).includes('Охранное'));
+await page.click('#modal [data-action=close]');
+
 // --- 1а. фирменная графика
 const navCount = (await page.$$('#nav button')).length;
 check('у каждого раздела своя иконка', (await page.$$('#nav button svg')).length === navCount, String(navCount));
@@ -995,8 +1013,42 @@ check('изменение попало в журнал', (await state()).activit
 
 // --- 10а. файлы в записях
 await nav('knowledge');
+// в карточке две метки: достоверность и доступ. Одинаковыми они быть не должны
+const kTags = await page.$$eval('article[data-k=k1] .tag', ts => ts.map(t => ({
+  text: t.textContent.trim(), bg: getComputedStyle(t).backgroundColor, ring: getComputedStyle(t).boxShadow
+})));
+check('доступ отличается от достоверности с одного взгляда',
+  kTags.length >= 2 && (kTags[0].bg !== kTags[1].bg || kTags[0].ring !== kTags[1].ring),
+  kTags.map(t => `${t.text}:${t.bg}`).join(' | '));
+check('внутренняя запись помечена иначе, чем публичная', await page.evaluate(() => {
+  const find = w => [...document.querySelectorAll('.tag')].find(t => t.textContent.trim() === w);
+  const a = find('Внутреннее'), b = find('Публичное');
+  return !!a && !!b && getComputedStyle(a).backgroundColor !== getComputedStyle(b).backgroundColor;
+}));
+// метки прижаты к низу, поэтому карточки в ряду выглядят ровными
+check('метки выровнены по низу карточки', await page.evaluate(() => {
+  const rows = [...document.querySelectorAll('.knowledge-grid article, .grid.three article[data-k]')].slice(0, 3);
+  if (rows.length < 2) return true;
+  const gaps = rows.map(a => {
+    const tr = a.querySelector('.tagrow');
+    return tr ? Math.round(a.getBoundingClientRect().bottom - tr.getBoundingClientRect().bottom) : null;
+  }).filter(x => x !== null);
+  return gaps.length > 1 && Math.max(...gaps) - Math.min(...gaps) <= 2;
+}));
+await page.screenshot({ path: path.join(OUT, 'intel-knowledge.png') });
 await page.click('article[data-k=k1]');
 check('в записи есть раздел файлов', (await page.textContent('#filelist')).includes('Файлов пока нет'));
+// системная кнопка выбора файла подписана языком браузера — у неё своя подпись
+check('кнопка выбора файла подписана по-русски',
+  (await page.textContent('.filebtn')).trim() === 'Добавить файлы');
+check('системная кнопка не видна, но остаётся доступной',
+  await page.$eval('#fileinput', i => i.getBoundingClientRect().width <= 1 && !i.disabled));
+check('нажатие на подпись открывает выбор файла',
+  await page.$eval('.filebtn', l => l.getAttribute('for') === 'fileinput'));
+// источник виден в своём поле; дублировать его строкой ниже незачем — ссылкой он не является
+check('источник стоит в поле', (await page.inputValue('#kf input[name=source]')) === 'Сообщения руководителей');
+check('источник без ссылки не повторяется под полем',
+  !(await page.$eval('#kf', f => f.innerText)).includes('Сообщения руководителей'));
 await page.setInputFiles('#fileinput', { name: 'брендбук.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 проверка') });
 await page.waitForFunction(() => window.__STATE__.files.length === 1);
 check('файл попал в хранилище', (await page.evaluate(() => window.__STORAGE__.length)) === 1);

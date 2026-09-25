@@ -322,7 +322,10 @@ const TAG_TONE = {
   'Требует проверки': 'warn',
   'В работе': 'work', 'Делаем': 'work', 'Проверяем': 'work', 'На проверке': 'work',
   'Новое': 'idle', 'Думаем': 'idle', 'Идея': 'idle', 'Черновик': 'idle',
-  'Отменено': 'off'
+  'Отменено': 'off',
+  // Доступ — не статус, а ограничение: «Внутреннее» должно отличаться от
+  // достоверности с одного взгляда, иначе в карточке две одинаковые метки.
+  'Внутреннее': 'closed', 'Публичное': 'open'
 };
 const tag = (t, tone) => `<span class="tag ${tone || TAG_TONE[t] || ''}">${E(t)}</span>`;
 const source = s => /^https?:\/\//.test(s)
@@ -338,7 +341,7 @@ function kc(k) {
   return `<article class="card click" tabindex="0" role="button" data-k="${E(k.id)}"><div class="eyebrow">${E(k.category)}</div>
     <h2 style="margin-top:10px">${E(k.title)}</h2>
     <p class="muted">${E(k.body.slice(0, 145))}${k.body.length > 145 ? '…' : ''}</p>
-    ${tag(k.status)}${tag(k.access)}${attached ? tag('Файлов: ' + attached) : ''}</article>`;
+    <div class="tagrow">${tag(k.status)}${tag(k.access)}${attached ? tag('Файлов: ' + attached) : ''}</div></article>`;
 }
 
 const ENTITY_ICON = { 'image/': '🖼', 'video/': '▶', 'audio/': '♪' };
@@ -2271,10 +2274,11 @@ function editK(id) {
       <div><label>Статус</label><select name="status">${opts(['Черновик', 'Со слов команды', 'Публичный источник', 'Подтверждено', 'Требует проверки'], k.status)}</select></div>
       <div><label>Источник</label><input name="source" maxlength="1000" value="${E(k.source)}"></div>
     </div>
-    <p>${source(k.source)}</p>
+    ${/^https?:\/\//.test(k.source) ? `<p>${source(k.source)}</p>` : ''}
     ${exists ? `<div class="filesblock"><h3>Файлы</h3>
         <div id="filelist">${fileList(k.id)}</div>
-        <p><input type="file" id="fileinput" multiple>
+        <p class="fileadd"><input type="file" id="fileinput" multiple class="offscreen">
+        <label class="filebtn" for="fileinput">Добавить файлы</label>
         <small class="muted" id="filestatus"></small></p>
       </div>` : '<div class="notice">Файлы можно будет приложить после сохранения записи.</div>'}
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(k._by))}, ${ago(k._at)}</p>` : ''}
@@ -2812,13 +2816,19 @@ function search() {
   modal('<h2>Поиск по ADERVIS</h2><input id="global" aria-label="Глобальный поиск" placeholder="Кейс, услуга, публикация, раздел…"><div id="results"></div>');
   const fill = () => {
     const q = $('#global').value.toLowerCase();
+    // Поиск знал только про записи, публикации и разделы. Решения,
+    // заявки и темы брендбука в него не попадали — а их уже больше, чем
+    // всего остального вместе.
     const all = [
-      ...sections.map(([id, icon, title]) => ({ id, title, body: 'Раздел', kind: 'page' })),
-      ...db.knowledge.map(k => ({ ...k, kind: 'k' })),
-      ...db.content.map(p => ({ ...p, kind: 'p' }))
+      ...sections.map(([id, , title]) => ({ id, title, body: 'Раздел', kind: 'page', note: 'Раздел' })),
+      ...db.knowledge.map(k => ({ ...k, kind: 'k', note: k.category + ' · ' + k.access })),
+      ...db.content.map(p => ({ ...p, kind: 'p', note: 'Публикация · ' + p.status })),
+      ...db.decisions.map(d => ({ ...d, body: d.why || '', kind: 'd', note: 'Решение · ' + d.status })),
+      ...db.leads.map(l => ({ ...l, title: l.name, body: l.request || '', kind: 'l', note: 'Заявка · ' + l.source })),
+      ...db.brand.map(b => ({ ...b, body: b.data?.body || '', kind: 'brand', note: 'Брендбук · ' + (b.section || 'Прочее') }))
     ].filter(x => (x.title + ' ' + x.body).toLowerCase().includes(q)).slice(0, 25);
     $('#results').innerHTML = all.map(x => `<button class="result" data-result="${x.kind}" data-id="${E(x.id)}">${E(x.title)}
-      <small>${x.kind === 'k' ? E(x.category + ' · ' + x.access) : x.kind === 'p' ? 'Публикация' : 'Раздел'}</small></button>`).join('')
+      <small>${E(x.note)}</small></button>`).join('')
       || '<p>Совпадений нет.</p>';
   };
   $('#global').oninput = fill;
@@ -3094,9 +3104,16 @@ document.addEventListener('click', async e => {
   if (b.dataset.l) { editLead(b.dataset.l); return; }
   if (b.dataset.result) {
     $('#modal').close();
-    if (b.dataset.result === 'page') go(b.dataset.id);
-    else if (b.dataset.result === 'k') editK(b.dataset.id);
-    else editP(b.dataset.id);
+    const id = b.dataset.id;
+    const open = {
+      page: () => go(id),
+      k: () => editK(id),
+      p: () => editP(id),
+      d: () => { go('decisions'); editDecision(id); },
+      l: () => { go('leads'); editLead(id); },
+      brand: () => { go('brand'); editBrand(id); }
+    };
+    (open[b.dataset.result] || open.p)();
     return;
   }
   switch (b.dataset.action) {
