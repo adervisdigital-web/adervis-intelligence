@@ -483,6 +483,22 @@ check('журнал показывает мои действия', rows.some(r =
 check('журнал показывает удаление', rows.some(r => /Удалил запись/.test(r)));
 await page.screenshot({ path: path.join(OUT, 'intel-settings.png') });
 
+// резервная копия: в файл должны попасть все разделы, а не только те,
+// что понимает локальная версия
+const [dl] = await Promise.all([
+  page.waitForEvent('download'),
+  page.click('[data-action=export]')
+]);
+const backup = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
+check('копия называется по дате', /^adervis-backup-\d{4}-\d{2}-\d{2}\.json$/.test(dl.suggestedFilename()), dl.suggestedFilename());
+check('локальная версия по-прежнему прочитает копию', backup.version === 2);
+const missing = ['knowledge', 'content', 'tasks', 'metrics', 'brand', 'decisions', 'finance', 'economics', 'files', 'publications']
+  .filter(t => !Array.isArray(backup[t]));
+check('в копию попали все разделы', missing.length === 0, missing.join(', '));
+check('брендбук лежит в копии, а не теряется', backup.brand.some(b => b.id === 'clearspace') && backup.brand.length >= 10,
+  String(backup.brand.length));
+check('в копии нет служебных полей', backup.knowledge.every(o => !('_at' in o) && !('_by' in o)));
+
 // --- 8. перенос данных из локальной версии
 await page.setInputFiles('#importfile', SEEDFILE);
 await page.waitForSelector('#confirm');

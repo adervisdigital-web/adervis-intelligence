@@ -1642,7 +1642,9 @@ function render() {
           <p class="muted">Данные хранятся на сервере и доступны обоим руководителям. Экспорт нужен для резервной копии и для переноса в локальную версию.</p>
           <button class="primary" data-action="export">Экспорт JSON</button> <button data-action="import">Импорт JSON</button>
           <div class="notice">Импорт добавляет записи из файла и обновляет совпадающие по номеру. Ничего не удаляется.</div>
-          <p class="muted">Приложенные файлы (${db.files.length}) хранятся отдельно и в выгрузку JSON не входят.</p></div>
+          <p class="muted">В выгрузку входят все разделы: база знаний, публикации, задачи, замеры, брендбук, решения, деньги и экономика.
+          Обратно импорт принимает четыре первых — остальное в локальной версии не открывается.
+          Сами приложенные файлы (${db.files.length}) лежат в хранилище, в JSON попадают только их описания.</p></div>
         <div class="card"><h2>Вход и оформление</h2>
           <p>Вы вошли как <b>${E(me?.email || '')}</b>.</p>
           <p>Доступ выдан: ${db.members.map(m => E(m.name)).join(', ') || '—'}</p>
@@ -2341,10 +2343,16 @@ function exportJson() {
     delete copy._at; delete copy._by;
     return copy;
   });
+  // Первые четыре раздела идут в том же виде, что понимает локальная
+  // версия 0.3, — поэтому version остаётся вторым. Остальные добавлены
+  // ниже: без них «резервная копия» теряла брендбук и журнал решений.
   download(JSON.stringify({
     version: 2,
     knowledge: strip(db.knowledge), content: strip(db.content),
-    tasks: strip(db.tasks), metrics: strip(db.metrics)
+    tasks: strip(db.tasks), metrics: strip(db.metrics),
+    brand: strip(db.brand), decisions: strip(db.decisions),
+    finance: strip(db.finance), economics: strip(db.economics),
+    files: strip(db.files), publications: strip(db.publications)
   }, null, 2), 'adervis-backup-' + new Date().toISOString().slice(0, 10) + '.json');
 }
 
