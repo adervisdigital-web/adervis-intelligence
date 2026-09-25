@@ -516,3 +516,12 @@ html[data-theme=dark]{--red:#4a2b33;--ink-good:#8fe0ac;--ink-bad:#ffb3b3;--ink-w
 .tag.work{background:var(--blue);color:var(--ink-work)}
 .tag.idle{background:var(--bg);color:var(--muted);box-shadow:inset 0 0 0 1px var(--line)}
 .tag.off{background:transparent;color:var(--muted);box-shadow:inset 0 0 0 1px var(--line)}
+
+/* Цифры в колонках и плитках — табличные, иначе разряды не встают друг
+   под другом и столбец читается рвано. */
+.table td,.metric .value,.chart .value,.chart .axis{font-variant-numeric:tabular-nums}
+
+/* Пороги безубыточности занимали узкую плитку слева и полкарточки
+   пустоты справа: сетка была жёстко на три колонки при одном направлении.
+   Теперь плитки растягиваются по числу направлений. */
+.bezgrid{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}

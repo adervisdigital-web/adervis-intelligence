@@ -947,7 +947,7 @@ function niceMax(v) {
 }
 
 // Линии: как менялись просмотры от замера к замеру.
-function lineChart(series) {
+function lineChart(series, label = 'График по строкам') {
   if (!series.length) return '';
   // Справа оставлено место под подписи линий: они читаются лучше легенды,
   // но обязаны помещаться, иначе съезжают за край.
@@ -977,9 +977,18 @@ function lineChart(series) {
     </g>`;
   }).join('');
 
-  const xLabels = dates.map((d, i) => `<text class="axis" x="${px(i).toFixed(1)}" y="${H - 10}" text-anchor="middle">${E(d.slice(5))}</text>`).join('');
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Просмотры по замерам">
+  const xLabels = dates.map((d, i) => `<text class="axis" x="${px(i).toFixed(1)}" y="${H - 10}" text-anchor="middle">${E(xTick(d))}</text>`).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${E(label)}">
     ${grid}<line class="axisline" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/>${xLabels}${lines}</svg>`;
+}
+
+// «07» на оси — это не месяц. Для месяцев подписываем словом, для дат —
+// днём и месяцем в привычном порядке.
+const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+function xTick(d) {
+  const [y, m, day] = d.split('-');
+  if (!day) return `${MONTHS_SHORT[Number(m) - 1] || m} ${String(y).slice(2)}`;
+  return `${day}.${m}`;
 }
 
 // Столбцы: сколько лидов принесла каждая публикация.
@@ -1156,7 +1165,7 @@ function renderBreakEven() {
       <p class="muted">Задайте постоянные расходы и средний чек по направлению — покажу, сколько клиентов в месяц нужно, чтобы выйти в ноль.</p></div>`;
   }
   return `<div class="card"><div class="head" style="margin:0 0 12px"><h2 style="margin:0">Точка безубыточности</h2>${add}</div>
-    <div class="grid three">${rows.map(r => `<div class="bezone ${r.ok ? 'ok' : 'under'}">
+    <div class="grid bezgrid">${rows.map(r => `<div class="bezone ${r.ok ? 'ok' : 'under'}">
       <div class="eyebrow">${E(r.direction)}</div>
       <div class="value">${r.need}<small> клиентов до нуля</small></div>
       <p class="muted">Постоянные ${num(r.fixed_costs)} ₽ · чек ${num(r.price)} ₽</p>
@@ -1238,7 +1247,7 @@ function renderMoney() {
     ? `<div class="card chartcard" style="margin-bottom:16px"><div class="head" style="margin:0 0 6px">
         <h2 style="margin:0">Выручка по направлениям</h2><small class="muted">направлений: ${s.byDirection.length}</small></div>
         <p class="muted chartnote">Каждая линия — направление. Видно, что кормит, а что забирает время.</p>
-        ${lineChart(s.byDirection)}</div>`
+        ${lineChart(s.byDirection, 'Выручка по направлениям')}</div>`
     : '';
 
   return head
@@ -1635,7 +1644,7 @@ function render() {
           blocks.push(`<div class="card chartcard"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Просмотры от замера к замеру</h2>
             <small class="muted">${c.series.length === 1 ? 'одна публикация' : 'публикаций: ' + c.series.length}</small></div>
             <p class="muted chartnote">Каждая линия — одна публикация. Сравнивайте на одинаковом возрасте: например, через 48 часов после выхода.</p>
-            ${lineChart(c.series)}</div>`);
+            ${lineChart(c.series, 'Просмотры от замера к замеру')}</div>`);
         } else {
           blocks.push(`<div class="card chartcard"><h2>Динамики пока нет</h2>
             <p class="muted">Линии появятся, когда у публикации будет хотя бы два замера в разные дни.</p></div>`);

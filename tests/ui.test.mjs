@@ -284,7 +284,14 @@ check('рост к прошлому месяцу посчитан', /\+38% к п
 check('прибыль и маржа посчитаны', /365\s?000 ₽/.test(tiles[1]) && /маржа 66%/.test(tiles[1]), tiles[1]);
 check('средний чек посчитан по проектам', /110\s?000 ₽/.test(tiles[2]), tiles[2]);
 check('график по направлениям нарисован', (await page.$$('.chart .serie')).length === 2);
+const axis = await page.$$eval('.chart .axis', t => t.map(x => x.textContent));
+check('месяцы на оси подписаны словом, а не номером', axis.includes('июл 26') && axis.includes('авг 26'), axis.join(' '));
+check('порог безубыточности занимает всю карточку', await page.$eval('.bezone', e => {
+  const tile = e.getBoundingClientRect(), card = e.closest('.card').getBoundingClientRect();
+  return tile.width > card.width * 0.7;
+}));
 check('в таблице все внесённые строки', (await page.$$('.table tbody tr')).length === 3);
+await page.screenshot({ path: path.join(OUT, 'intel-money.png'), fullPage: true });
 const repeat = async () => {
   await page.click('[data-action=newmonth]');
   await page.fill('#mo input[name=month]', '2026-08');
