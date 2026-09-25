@@ -505,6 +505,27 @@ function patternFile(id) {
   toast('Паттерн сохранён файлом');
 }
 
+// В SVG текст сам не переносится: длинное пояснение уезжает за край
+// чертежа и ложится на соседние подписи. Режем по словам под заданную
+// ширину в знаках и отдаём готовые строки.
+function wrapText(text, maxChars) {
+  const lines = [];
+  let line = '';
+  for (const word of String(text).split(' ')) {
+    if (!line) line = word;
+    else if ((line + ' ' + word).length <= maxChars) line += ' ' + word;
+    else { lines.push(line); line = word; }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function fnote(text, x, y, maxChars, { anchor = 'middle', cls = 'fnote', lh = 17 } = {}) {
+  return wrapText(text, maxChars)
+    .map((l, i) => `<text class="${cls}" x="${x}" y="${y + i * lh}" text-anchor="${anchor}">${E(l)}</text>`)
+    .join('');
+}
+
 const FIGURES = {
   // Охранное поле: вокруг знака свободно не меньше его половины.
   clearspace: () => `<svg class="figure" viewBox="0 0 640 300" role="img" aria-label="Охранное поле знака">
@@ -517,7 +538,7 @@ const FIGURES = {
     <text class="flabel" x="480" y="140" text-anchor="middle">X</text>
     <text class="flabel" x="336" y="80" text-anchor="start">X</text>
     <text class="flabel" x="336" y="230" text-anchor="start">X</text>
-    <text class="fnote" x="320" y="285" text-anchor="middle">X — половина высоты знака. Ближе этого расстояния не ставим ничего: ни текст, ни другие логотипы, ни край макета.</text>
+    ${fnote('X — половина высоты знака. Ближе этого расстояния не ставим ничего: ни текст, ни другие логотипы, ни край макета.', 320, 278, 62)}
   </svg>`,
 
   // Минимальные размеры: меньше — знак перестаёт читаться.
@@ -530,7 +551,7 @@ const FIGURES = {
         <text class="flabel" x="${x}" y="150">${title}</text>
         <text class="fnote" x="${x}" y="170">${note}</text>
       </g>`).join('')}
-    <text class="fnote" x="320" y="205" text-anchor="middle">Ниже этих размеров знак не воспроизводят: тонкие линии слипаются в печати и на экране.</text>
+    ${fnote('Ниже этих размеров знак не воспроизводят: тонкие линии слипаются в печати и на экране.', 320, 200, 62)}
   </svg>`,
 
   // Неправильное использование — показано, а не описано.
@@ -549,7 +570,7 @@ const FIGURES = {
         <rect width="18" height="18" fill="#3c6ea5"/><circle cx="9" cy="9" r="5" fill="#d05a3a"/>
         <rect x="0" y="0" width="18" height="4" fill="#e7c948"/></pattern></defs>
       ${cases.map(([kind, label], i) => {
-        const x = (i % 3) * (cell + gap) + 8, y = Math.floor(i / 3) * 150 + 6;
+        const x = (i % 3) * (cell + gap) + 8, y = Math.floor(i / 3) * 165 + 6;
         return `<g class="fbad">
           <rect class="fcell ${kind}" x="${x}" y="${y}" width="${cell}" height="104" rx="10"/>
           <image class="fimg ${kind}" href="brand/icon.svg" x="${x + 70}" y="${y + 28}" width="60" height="48" preserveAspectRatio="xMidYMid meet"/>
@@ -584,40 +605,60 @@ const FIGURES = {
       { w: 88, h: 110, title: 'Пост в ленте', size: '4:5 · 1080×1350', safe: null },
       { w: 160, h: 60, title: 'Обложка сообщества', size: '≈ 2:1', safe: { x: 0.8, y: 0.66 } }
     ];
-    const W = 640, gap = 18;
+    // Подпись переносится под ширину своей ячейки: у вертикальных
+    // форматов колонка узкая, и одной строкой название налезало на соседа.
+    const W = 760, gap = 26, top = 116;
     let x = 0;
+    let labelLines = 1;
     const cells = items.map(it => {
-      const g = `<g transform="translate(${x} 0)">
+      const room = Math.max(9, Math.floor((it.w + gap - 6) / 6.6));
+      const title = wrapText(it.title, room);
+      labelLines = Math.max(labelLines, title.length);
+      const g = `<g transform="translate(${x} ${top - it.h})">
         <rect x="0" y="0" width="${it.w}" height="${it.h}" rx="6" fill="var(--bg)" stroke="var(--line)"/>
         ${it.safe ? `<rect x="${(it.w * (1 - it.safe.x) / 2).toFixed(1)}" y="${(it.h * (1 - it.safe.y) / 2).toFixed(1)}"
           width="${(it.w * it.safe.x).toFixed(1)}" height="${(it.h * it.safe.y).toFixed(1)}" rx="4"
           fill="var(--gold-bg)" stroke="var(--gold)" stroke-dasharray="5 4"/>` : ''}
-        <text class="flabel" x="0" y="${it.h + 18}">${it.title}</text>
-        <text class="fnote" x="0" y="${it.h + 34}">${it.size}</text></g>`;
+        ${title.map((l, i) => `<text class="flabel" x="0" y="${it.h + 18 + i * 17}">${E(l)}</text>`).join('')}
+        <text class="fnote" x="0" y="${it.h + 18 + title.length * 17 + 3}">${E(it.size)}</text></g>`;
       x += it.w + gap;
       return g;
     }).join('');
-    return `<svg class="figure" viewBox="0 0 ${W} 180" role="img" aria-label="Форматы площадок">${cells}
-      <text class="fnote" x="0" y="172">Золотым отмечена безопасная зона: за её пределами макет обрезают или перекрывают кнопки. Главное — знак и заголовок — держим внутри.</text>
+    const noteY = top + 18 + labelLines * 17 + 30;
+    return `<svg class="figure" viewBox="0 0 ${W} ${noteY + 34}" role="img" aria-label="Форматы площадок">${cells}
+      ${fnote('Золотым отмечена безопасная зона: за её пределами макет обрезают или перекрывают кнопки. Главное — знак и заголовок — держим внутри.', 0, noteY, 100, { anchor: 'start' })}
     </svg>`;
   },
 
   // Визитка: поля, вылеты и где что стоит.
-  card: () => `<svg class="figure" viewBox="0 0 640 260" role="img" aria-label="Раскладка визитки">
+  card: () => {
+    // Пояснения ставятся друг под другом с учётом переносов: при жёстком
+    // шаге двухстрочная подпись наезжала на следующую.
+    const notes = [
+      '90 × 50 мм — стандартный размер',
+      '3 мм — вылет под обрез (золотая рамка)',
+      '5 мм — поле до реза (сплошная)',
+      'Пунктир — зона, где стоит текст',
+      'Знак слева сверху, контакты снизу',
+      'Для типографии — CMYK и кривые'
+    ];
+    let ny = 58;
+    const side = notes.map(t => {
+      const out = fnote(t, 412, ny, 32, { anchor: 'start' });
+      ny += wrapText(t, 32).length * 17 + 8;
+      return out;
+    }).join('');
+    return `<svg class="figure" viewBox="0 0 640 276" role="img" aria-label="Раскладка визитки">
     <rect x="30" y="20" width="360" height="200" rx="6" fill="#141414" stroke="var(--gold)" stroke-dasharray="6 5"/>
     <rect x="42" y="32" width="336" height="176" rx="4" fill="none" stroke="var(--line)"/>
     <rect x="66" y="56" width="288" height="128" rx="3" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/>
     <image href="brand/logo.svg" x="76" y="70" width="150" height="40" preserveAspectRatio="xMinYMid meet"/>
     <text x="76" y="150" fill="#fdfdfd" font-size="13" font-weight="600">Артём Никитин</text>
     <text x="76" y="168" fill="#9a9a9a" font-size="11">Дизайн, графика, ИИ · adervis.ru</text>
-    <text class="fnote" x="420" y="60">90 × 50 мм — стандартный размер</text>
-    <text class="fnote" x="420" y="82">3 мм — вылет под обрез (золотая рамка)</text>
-    <text class="fnote" x="420" y="104">5 мм — поле до реза (сплошная)</text>
-    <text class="fnote" x="420" y="126">Пунктир — зона, где стоит текст</text>
-    <text class="fnote" x="420" y="148">Знак слева сверху, контакты снизу</text>
-    <text class="fnote" x="420" y="170">Для типографии — CMYK и кривые</text>
-    <text class="fnote" x="30" y="248">Ничего важного ближе 5 мм к краю: резак гуляет, и текст уедет.</text>
-  </svg>`,
+    ${side}
+    ${fnote('Ничего важного ближе 5 мм к краю: резак гуляет, и текст уедет.', 30, 258, 88, { anchor: 'start' })}
+  </svg>`;
+  },
 
   // Набор иконок. Одна геометрия, одна толщина штриха, размеры токенами.
   icons: () => {
@@ -684,7 +725,7 @@ const FIGURES = {
       ['#fdfdfd', '#f6bd3a', 'Белый на золоте']
     ];
     const W = 640, cell = 200, gap = 12;
-    return `<svg class="figure" viewBox="0 0 ${W} 300" role="img" aria-label="Сочетания цветов и контраст">
+    return `<svg class="figure" viewBox="0 0 ${W} 330" role="img" aria-label="Сочетания цветов и контраст">
       ${pairs.map(([fg, bg, label], i) => {
         const ratio = contrastRatio(fg, bg);
         const ok = ratio >= 4.5;
@@ -693,8 +734,9 @@ const FIGURES = {
           <rect x="${x}" y="${y}" width="${cell}" height="104" rx="10" fill="${bg}" stroke="rgba(128,128,128,.35)"/>
           <text x="${x + 16}" y="${y + 46}" fill="${fg}" font-size="22" font-weight="700">ADERVIS</text>
           <text x="${x + 16}" y="${y + 74}" fill="${fg}" font-size="13">Текст примера</text>
-          <text class="fnote ${ok ? 'good' : 'bad'}" x="${x + cell / 2}" y="${y + 126}" text-anchor="middle">
-            ${ratio.toFixed(1)}:1 — ${ok ? 'годится' : 'только крупным текстом'} · ${label}</text>
+          <text class="fnote ${ok ? 'good' : 'bad'}" x="${x + cell / 2}" y="${y + 124}" text-anchor="middle"
+            >${ratio.toFixed(1)}:1 — ${ok ? 'годится' : 'только крупным'}</text>
+          ${fnote(label, x + cell / 2, y + 140, 26)}
         </g>`;
       }).join('')}
     </svg>`;

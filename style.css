@@ -611,3 +611,20 @@ html[data-theme=dark]{--g-knowledge:#f0a73b;--g-content:#4ab3ee;--g-decision:#b2
 .gnode text.off{opacity:0}
 .gnode:hover text.off,.gnode:focus-visible text.off{opacity:1}
 .gnode:hover text,.gnode:focus-visible text{paint-order:stroke;stroke:var(--bg);stroke-width:4px;font-weight:700}
+
+/* Чертёж тянулся на всю ширину карточки: на широком мониторе текст в нём
+   раздувался вдвое и вылезал за край. Ограничиваем ширину — рисунок
+   остаётся в своём кегле и читается одинаково на любом экране. */
+.figure{max-width:880px;margin-left:auto;margin-right:auto}
+.sfigure .figure{max-width:none}
+
+/* --- Ширина колонки содержимого --------------------------------------
+   На широком мониторе колонка растягивалась на 1660 точек: строки
+   становились непрочитываемо длинными, а карточки — разреженными.
+   Ограничиваем и центрируем, полотно карты этим не связано. */
+@media(min-width:1051px){
+  .main{max-width:1360px;margin-right:auto}
+}
+@media(min-width:1680px){
+  .main{margin-left:max(256px,calc((100vw - 1360px) / 2))}
+}

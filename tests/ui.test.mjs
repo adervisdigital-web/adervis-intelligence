@@ -777,8 +777,9 @@ check('поле с ошибкой отличается цветом рамки',
   await page.$eval('.uikit .uierror', i => getComputedStyle(i).borderColor.includes('214')));
 check('шкала отступов нарисована', (await page.textContent('#view')).includes('кратен четырём'));
 // форматы площадок: все подписаны, безопасная зона лежит внутри кадра
-check('показаны все пять форматов', (await page.$$('.figure[aria-label="Форматы площадок"] .flabel')).length === 5,
-  String((await page.$$('.figure[aria-label="Форматы площадок"] .flabel')).length));
+// названия переносятся под ширину своей колонки, поэтому считаем ячейки, а не строки
+check('показаны все пять форматов', (await page.$$('.figure[aria-label="Форматы площадок"] > g')).length === 5,
+  String((await page.$$('.figure[aria-label="Форматы площадок"] > g')).length));
 const safeZones = await page.$$eval('.figure[aria-label="Форматы площадок"] g', gs => gs
   .filter(g => g.querySelectorAll('rect').length === 2)
   .map(g => {
@@ -822,6 +823,49 @@ const fontAdded = await page.waitForFunction(
   null, { timeout: 8000 }).then(() => true).catch(() => false);
 check('шрифт из хранилища подключается к странице', fontAdded);
 await page.screenshot({ path: path.join(OUT, 'intel-brand.png'), fullPage: true });
+
+// --- 9в. чертежи на широком экране
+// Чертёж тянется вместе с карточкой, и текст в нём растёт пропорционально.
+// На широком мониторе подписи вылезали за край и налезали друг на друга.
+await page.setViewportSize({ width: 1920, height: 1080 });
+await nav('home'); await nav('brand');
+await page.waitForSelector('.figure');
+const figureTrouble = await page.$$eval('.figure', figs => {
+  const bad = [];
+  for (const svg of figs) {
+    const box = svg.getBoundingClientRect();
+    const texts = [...svg.querySelectorAll('text')].map(t => ({ t: t.textContent.trim().slice(0, 28), r: t.getBoundingClientRect() }))
+      .filter(x => x.r.width > 0);
+    for (const x of texts) {
+      if (x.r.left < box.left - 2 || x.r.right > box.right + 2) bad.push('за краем: ' + x.t);
+    }
+    for (let i = 0; i < texts.length; i++) {
+      for (let j = i + 1; j < texts.length; j++) {
+        const a = texts[i].r, b = texts[j].r;
+        if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) {
+          bad.push(`наложение: ${texts[i].t} / ${texts[j].t}`);
+        }
+      }
+    }
+  }
+  return bad;
+});
+check('на широком экране подписи чертежей не вылезают и не налезают',
+  figureTrouble.length === 0, figureTrouble.slice(0, 4).join(' | '));
+const figureType = await page.$eval('.figure .fnote', t => parseFloat(getComputedStyle(t).fontSize));
+check('текст чертежа не раздувается на широком экране', figureType <= 19, String(figureType));
+// на широком мониторе строки становились непрочитываемо длинными
+const mainW = await page.$eval('.main', e => Math.round(e.getBoundingClientRect().width));
+check('колонка содержимого не растягивается на весь монитор', mainW <= 1370, String(mainW));
+const bodyLine = await page.$eval('.card p', e => Math.round(e.getBoundingClientRect().width));
+check('строка текста не длиннее разумного', bodyLine <= 1000, String(bodyLine));
+await page.screenshot({ path: path.join(OUT, 'intel-brand-wide.png') });
+for (const [name, label] of [['contrast', 'Сочетания цветов и контраст'], ['formats', 'Форматы площадок'], ['card', 'Раскладка визитки']]) {
+  const el = await page.$(`.figure[aria-label="${label}"]`);
+  if (el) await el.screenshot({ path: path.join(OUT, `figure-${name}.png`) });
+}
+await page.setViewportSize({ width: 1440, height: 900 });
+await nav('home'); await nav('brand');
 
 // галереи материалов
 await page.waitForFunction(() => document.querySelectorAll('.gallery img[src]').length === 2);
