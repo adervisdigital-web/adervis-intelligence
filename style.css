@@ -535,3 +535,79 @@ html[data-theme=dark]{--red:#4a2b33;--ink-good:#8fe0ac;--ink-bad:#ffb3b3;--ink-w
 .createitem b{display:block;font-size:14px}
 .createitem small{color:var(--muted)}
 .createitem.here{border-color:#9278ff;box-shadow:inset 3px 0 0 #9278ff}
+
+/* --- Карта связей ------------------------------------------------------
+   Цвета узлов заданы токенами: на светлом нужны тёмные, на тёмном
+   светлые, иначе кружки пропадают в фоне. */
+:root{--g-knowledge:#b45309;--g-content:#0369a1;--g-decision:#6d28d9;--g-lead:#b91c1c;
+  --g-brand:#0f766e;--g-money:#4d5666;--g-hub:#9278ff}
+html[data-theme=dark]{--g-knowledge:#f0a73b;--g-content:#4ab3ee;--g-decision:#b291ff;
+  --g-lead:#ff8a8a;--g-brand:#4fd6c3;--g-money:#aab3c4;--g-hub:#b9a7ff}
+
+.graphwrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow);padding:14px 16px 16px}
+.graphwrap.full{position:fixed;inset:0;z-index:60;border-radius:0;border:0;
+  display:flex;flex-direction:column;padding:14px 18px 10px}
+.graphbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.glegends{display:flex;gap:6px;flex-wrap:wrap}
+.glegend{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);
+  padding:4px 9px;border-radius:999px;background:var(--bg);border:1px solid var(--line)}
+.glegend:before{content:'';width:9px;height:9px;border-radius:50%;background:currentColor}
+.glegend b{color:var(--ink);font-variant-numeric:tabular-nums}
+.glegend.knowledge{color:var(--g-knowledge)}.glegend.content{color:var(--g-content)}
+.glegend.decision{color:var(--g-decision)}.glegend.lead{color:var(--g-lead)}
+.glegend.brand{color:var(--g-brand)}.glegend.money{color:var(--g-money)}
+.glegend.hub{color:var(--g-hub)}
+.gtools{display:flex;gap:6px}
+.gtools button{min-width:44px;min-height:38px;padding:8px 12px;border-radius:9px;
+  background:var(--bg);border:1px solid var(--line);color:var(--ink)}
+.gtools button:hover{border-color:#9278ff}
+
+.graphview{height:min(66vh,680px);overflow:hidden;border-radius:11px;background:var(--bg);
+  cursor:grab;touch-action:none}
+.graphwrap.full .graphview{flex:1;height:auto}
+.graphview.grabbing{cursor:grabbing}
+.graphview svg{width:100%;height:100%;display:block}
+
+.glink{stroke:var(--line);stroke-width:1.4}
+.glink.lit{stroke:var(--g-hub);stroke-width:2.2}
+.glink.dim,.glink.faded{stroke-opacity:.18}
+.gnode{cursor:pointer}
+.gnode circle:not(.ghit){stroke:var(--panel);stroke-width:2.5}
+.gnode text{font-size:13px;fill:var(--ink);font-family:var(--font-ui),inherit;pointer-events:none}
+.gnode.knowledge circle:not(.ghit){fill:var(--g-knowledge)}
+.gnode.content circle:not(.ghit){fill:var(--g-content)}
+.gnode.decision circle:not(.ghit){fill:var(--g-decision)}
+.gnode.lead circle:not(.ghit){fill:var(--g-lead)}
+.gnode.brand circle:not(.ghit){fill:var(--g-brand)}
+.gnode.money circle:not(.ghit){fill:var(--g-money)}
+.gnode.hub circle:not(.ghit){fill:none;stroke:var(--g-hub);stroke-width:2.5}
+.gnode.hub text{font-weight:700}
+.gnode:hover circle:not(.ghit),.gnode:focus-visible circle:not(.ghit){stroke:#9278ff;stroke-width:3.5}
+.gnode:focus-visible{outline:none}
+.gnode.dim,.gnode.faded{opacity:.2}
+.gnode.focus circle:not(.ghit){stroke:#9278ff;stroke-width:4}
+.graphnote{margin:10px 0 0;font-size:13px}
+.graphlist{margin-top:8px;font-size:13px}
+.graphlist summary{cursor:pointer;color:var(--muted);min-height:44px;display:flex;align-items:center}
+.graphlist ul{margin:0;padding-left:18px;max-height:220px;overflow:auto}
+.graphlist li{margin-bottom:6px}
+
+@media(max-width:720px){
+  .graphview{height:58vh}
+  .gnode text{font-size:17px}
+  .graphbar{gap:8px}
+}
+
+/* Кружок в 8 точек пальцем не берётся: под каждым узлом лежит прозрачная
+   область попадания, поэтому промахнуться сложно и на телефоне. */
+.gnode circle.ghit{fill:transparent;stroke:none}
+.gnode circle:not(.ghit){pointer-events:none}
+/* Липкая верхняя панель перекрывала то, к чему проматывали. */
+.graphwrap,.card,.head{scroll-margin-top:84px}
+
+/* Подпись, которой не хватило места, ждёт наведения — иначе в скоплениях
+   надписи налезают друг на друга и не читается ни одна. */
+.gnode text.off{opacity:0}
+.gnode:hover text.off,.gnode:focus-visible text.off{opacity:1}
+.gnode:hover text,.gnode:focus-visible text{paint-order:stroke;stroke:var(--bg);stroke-width:4px;font-weight:700}

@@ -1401,6 +1401,381 @@ function chainMap(s) {
   </svg>`;
 }
 
+// ------------------------------------------------------- карта связей
+//
+// Все записи компании одним полотном. Связь рисуется только там, где она
+// есть в данных: общий раздел, направление, канал, источник, статус —
+// плюс настоящие ссылки файлов на записи и замеров на публикации.
+// Ничего не додумывается: если линии нет, значит записи ничем не связаны.
+
+let graph = { open: false, focus: null, sig: '', pos: null, scale: 0, ox: 0, oy: 0 };
+
+const GRAPH_KIND = {
+  knowledge: 'Знания', brand: 'Брендбук', content: 'Публикации',
+  decision: 'Решения', lead: 'Заявки', money: 'Деньги', hub: 'Признак'
+};
+
+function graphData() {
+  const nodes = [], edges = [], byId = new Map();
+  const add = (id, kind, label, extra = {}) => {
+    if (!byId.has(id)) {
+      const node = { id, kind, label: label || 'Без названия', ...extra };
+      nodes.push(node);
+      byId.set(id, node);
+    }
+    return id;
+  };
+  const hub = (name, group) => name ? add('hub:' + group + ':' + name, 'hub', name, { group }) : null;
+  const link = (a, b) => { if (a && b && a !== b) edges.push({ a, b }); };
+
+  for (const k of db.knowledge) {
+    const id = add('k:' + k.id, 'knowledge', k.title, { ref: k.id, open: 'k' });
+    link(id, hub(k.category, 'Раздел базы'));
+    link(id, hub(k.status, 'Достоверность'));
+  }
+  for (const b of db.brand) {
+    const id = add('b:' + b.id, 'brand', b.title, { ref: b.id, open: 'brand' });
+    link(id, hub(b.section || 'Прочее', 'Раздел брендбука'));
+  }
+  for (const p of db.content) {
+    const id = add('p:' + p.id, 'content', p.title, { ref: p.id, open: 'p' });
+    link(id, hub(p.product, 'Направление'));
+    link(id, hub(p.channel, 'Канал'));
+  }
+  for (const d of db.decisions) {
+    const id = add('d:' + d.id, 'decision', d.title, { ref: d.id, open: 'd' });
+    link(id, hub(d.status, 'Статус решения'));
+  }
+  for (const l of db.leads) {
+    const id = add('l:' + l.id, 'lead', l.name, { ref: l.id, open: 'l' });
+    link(id, hub(l.source, 'Источник'));
+    link(id, hub(l.direction, 'Направление'));
+  }
+  for (const d of DIRECTIONS) {
+    const rows = db.finance.filter(r => r.direction === d);
+    if (!rows.length) continue;
+    const revenue = rows.reduce((n, r) => n + Number(r.revenue || 0), 0);
+    link(add('m:' + d, 'money', `Деньги: ${d} · ${num(revenue)} ₽`, { open: 'money' }), hub(d, 'Направление'));
+  }
+  // настоящие ссылки между записями
+  for (const f of db.files) link('k:' + f.record, hub('С файлами', 'Материалы'));
+  for (const m of db.metrics) link('p:' + m.post, hub('С замерами', 'Результат'));
+
+  const real = edges.filter(e => byId.has(e.a) && byId.has(e.b));
+  // признак, к которому прицепилась одна запись, ничего не связывает
+  const deg = new Map();
+  for (const e of real) {
+    deg.set(e.a, (deg.get(e.a) || 0) + 1);
+    deg.set(e.b, (deg.get(e.b) || 0) + 1);
+  }
+  const drop = new Set(nodes.filter(n => n.kind === 'hub' && (deg.get(n.id) || 0) < 2).map(n => n.id));
+  return {
+    nodes: nodes.filter(n => !drop.has(n.id)),
+    edges: real.filter(e => !drop.has(e.a) && !drop.has(e.b))
+  };
+}
+
+// Расстановка по Фрухтерману — Рейнгольду: связанные притягиваются,
+// все прочие отталкиваются. Старт по кругу, поэтому картинка одинакова
+// при каждом открытии, а не пляшет.
+function graphLayout(nodes, edges, W, H) {
+  const n = nodes.length;
+  if (!n) return;
+  const byId = new Map(nodes.map(v => [v.id, v]));
+  nodes.forEach((v, i) => {
+    const a = (i / n) * Math.PI * 2;
+    v.x = W / 2 + Math.cos(a) * W * 0.33;
+    v.y = H / 2 + Math.sin(a) * H * 0.33;
+  });
+  const k = Math.sqrt((W * H) / n) * 0.58;
+  const far2 = (k * 4) ** 2;
+  const steps = n > 160 ? 160 : 260;
+  for (let step = 0; step < steps; step++) {
+    const cool = 1 - step / steps;
+    for (const v of nodes) { v.dx = 0; v.dy = 0; }
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+        if (d2 < 0.01) { dx = ((i % 5) - 2) || 1; dy = ((j % 3) - 1) || 1; d2 = dx * dx + dy * dy; }
+        // Далёкие пары друг друга уже не расталкивают: иначе одиночки
+        // улетают и сжимают всё остальное в комок при вписывании.
+        if (d2 > far2) continue;
+        const f = (k * k) / d2;
+        a.dx += dx * f; a.dy += dy * f;
+        b.dx -= dx * f; b.dy -= dy * f;
+      }
+    }
+    for (const e of edges) {
+      const a = byId.get(e.a), b = byId.get(e.b);
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const f = Math.sqrt(dx * dx + dy * dy) / k;
+      a.dx -= dx * f; a.dy -= dy * f;
+      b.dx += dx * f; b.dy += dy * f;
+    }
+    for (const v of nodes) {
+      v.dx += (W / 2 - v.x) * 0.02;
+      v.dy += (H / 2 - v.y) * 0.02;
+      const m = Math.hypot(v.dx, v.dy) || 1;
+      const lim = Math.min(m, 26 * cool + 1.5);
+      v.x += v.dx / m * lim;
+      v.y += v.dy / m * lim;
+    }
+  }
+  fitToCanvas(nodes, W, H);
+}
+
+// Раньше координаты обрезались по краю на каждом шаге — и узлы
+// выстраивались полосами вдоль границ, а середина пустовала. Теперь
+// расчёт идёт свободно, а готовая раскладка вписывается в полотно
+// целиком, с равными полями и без искажения пропорций.
+function fitToCanvas(nodes, W, H, pad = 52) {
+  const xs = nodes.map(v => v.x), ys = nodes.map(v => v.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const scale = Math.min((W - pad * 2) / Math.max(maxX - minX, 1), (H - pad * 2) / Math.max(maxY - minY, 1));
+  const offX = (W - (maxX - minX) * scale) / 2, offY = (H - (maxY - minY) * scale) / 2;
+  for (const v of nodes) {
+    v.x = offX + (v.x - minX) * scale;
+    v.y = offY + (v.y - minY) * scale;
+  }
+}
+
+// Полотно вытянуто под пропорции окна карты: при 1600×980 внутри широкой
+// коробки оставались пустые поля по бокам, и узлы жались к середине.
+const GRAPH_W = 1600, GRAPH_H = 820;
+
+function graphPositions() {
+  const data = graphData();
+  const sig = data.nodes.length + ':' + data.edges.length + ':' + data.nodes.map(n => n.id).join('|');
+  if (graph.sig !== sig) {
+    graphLayout(data.nodes, data.edges, GRAPH_W, GRAPH_H);
+    graph.sig = sig;
+    graph.pos = new Map(data.nodes.map(v => [v.id, { x: v.x, y: v.y }]));
+  }
+  for (const v of data.nodes) {
+    const p = graph.pos.get(v.id);
+    v.x = p.x; v.y = p.y;
+  }
+  return data;
+}
+
+function renderGraph() {
+  // На узком экране карта открывается приближённой и по центру: сотня
+  // узлов с областью касания в 44 точки на телефон физически не влезает,
+  // поэтому там ходят по карте, а полный охват даёт список под ней.
+  if (!graph.scale) {
+    graph.scale = innerWidth <= 720 ? 2.4 : 1;
+    graph.ox = GRAPH_W * (1 - 1 / graph.scale) / 2;
+    graph.oy = GRAPH_H * (1 - 1 / graph.scale) / 2;
+  }
+  const { nodes, edges } = graphPositions();
+  if (!nodes.length) {
+    return `<div class="card empty"><h2>Связывать пока нечего</h2>
+      <p>Карта рисуется по записям: база знаний, брендбук, публикации, решения и заявки.
+      Добавьте несколько — и станет видно, что с чем связано.</p></div>`;
+  }
+  const near = new Set();
+  if (graph.focus) {
+    near.add(graph.focus);
+    for (const e of edges) {
+      if (e.a === graph.focus) near.add(e.b);
+      if (e.b === graph.focus) near.add(e.a);
+    }
+  }
+  const dim = id => graph.focus && !near.has(id);
+  const byId = new Map(nodes.map(v => [v.id, v]));
+  const deg = new Map();
+  for (const e of edges) {
+    deg.set(e.a, (deg.get(e.a) || 0) + 1);
+    deg.set(e.b, (deg.get(e.b) || 0) + 1);
+  }
+
+  const lines = edges.map(e => {
+    const a = byId.get(e.a), b = byId.get(e.b);
+    const lit = graph.focus && (e.a === graph.focus || e.b === graph.focus);
+    return `<line class="glink${lit ? ' lit' : dim(e.a) || dim(e.b) ? ' dim' : ''}"
+      x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"/>`;
+  }).join('');
+
+  // Область попадания не должна залезать на соседа: крупный признак
+  // иначе воровал щелчки у записей рядом. Берём половину расстояния до
+  // ближайшего узла, но не меньше самого кружка.
+  const nearest = new Map();
+  for (const a of nodes) {
+    let min = Infinity;
+    for (const b of nodes) {
+      if (a === b) continue;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < min) min = d;
+    }
+    nearest.set(a.id, min);
+  }
+  // Признаки рисуются первыми, записи поверх: при равном наложении
+  // выигрывает то, ради чего на карту и заходят.
+  const order = [...nodes].sort((a, b) => (a.kind === 'hub' ? 0 : 1) - (b.kind === 'hub' ? 0 : 1));
+
+  // Подписи ставим по очереди и пропускаем те, что налезли бы на уже
+  // поставленные: в скоплениях они сливались в кашу. Пропущенная подпись
+  // не теряется — она появляется при наведении и есть в списке внизу.
+  const radius = new Map(nodes.map(v => {
+    const cap = nearest.get(v.id) / 2 - 1;
+    const want = v.kind === 'hub' ? Math.min(11 + (deg.get(v.id) || 0) * 1.6, 30) : 8;
+    return [v.id, Math.min(want, Math.max(5, cap - 2))];
+  }));
+  // Кружки тоже занимают место: подпись не должна ложиться поверх узла.
+  const placed = nodes.map(v => {
+    const r = radius.get(v.id);
+    return { x: v.x - r, y: v.y - r, w: r * 2, h: r * 2 };
+  });
+  const fits = (x, y, w, h) => {
+    const box = { x: x - w / 2, y: y - h, w, h };
+    const clash = placed.some(p => box.x < p.x + p.w && box.x + box.w > p.x && box.y < p.y + p.h && box.y + box.h > p.y);
+    if (!clash) placed.push(box);
+    return !clash;
+  };
+
+  const dots = order.map(v => {
+    const d = deg.get(v.id) || 0;
+    // В тесноте кружок ужимается вместе с областью попадания — иначе
+    // крупный признак накрывает соседа и забирает его щелчок себе.
+    const r = radius.get(v.id);
+    const hit = Math.max(r + 1, Math.min(34, nearest.get(v.id) / 2 - 1));
+    const label = v.label.length > 24 ? v.label.slice(0, 23) + '…' : v.label;
+    const what = v.kind === 'hub' ? `${v.group}: ${v.label} · записей ${d}` : `${GRAPH_KIND[v.kind]}: ${v.label}`;
+    const ly = v.y + r + 15;
+    const shown = fits(v.x, ly + 3, label.length * 6.6 + 6, 15);
+    return `<g class="gnode ${v.kind}${dim(v.id) ? ' dim' : ''}${graph.focus === v.id ? ' focus' : ''}"
+      role="button" tabindex="0" data-node="${E(v.id)}" aria-label="${E(what)}">
+      <circle class="ghit" cx="${v.x.toFixed(1)}" cy="${v.y.toFixed(1)}" r="${hit.toFixed(1)}"/>
+      <circle cx="${v.x.toFixed(1)}" cy="${v.y.toFixed(1)}" r="${r.toFixed(1)}"/>
+      <text class="${shown ? '' : 'off'}" x="${v.x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle">${E(label)}</text>
+      <title>${E(what)}</title></g>`;
+  }).join('');
+
+  const legend = Object.entries(GRAPH_KIND).map(([kind, name]) => {
+    const count = nodes.filter(n => n.kind === kind).length;
+    return count ? `<span class="glegend ${kind}">${name}<b>${count}</b></span>` : '';
+  }).join('');
+
+  const focusNode = graph.focus ? byId.get(graph.focus) : null;
+
+  return `<div class="graphwrap${graph.open ? ' full' : ''}">
+    <div class="graphbar">
+      <div class="glegends">${legend}</div>
+      <div class="gtools">
+        ${focusNode ? `<button data-action="graphclear">Показать всё</button>` : ''}
+        <button data-action="graphzoom" data-z="out" aria-label="Отдалить">−</button>
+        <button data-action="graphzoom" data-z="in" aria-label="Приблизить">+</button>
+        <button data-action="graphfull">${graph.open ? 'Свернуть' : 'Во весь экран'}</button>
+      </div>
+    </div>
+    <div class="graphview" id="graphview">
+      <svg id="graphsvg" viewBox="${graph.ox} ${graph.oy} ${(GRAPH_W / graph.scale).toFixed(0)} ${(GRAPH_H / graph.scale).toFixed(0)}"
+        role="group" aria-label="Карта связей между записями">${lines}${dots}</svg>
+    </div>
+    <p class="muted graphnote">${focusNode
+      ? `Показано окружение: <b>${E(focusNode.label)}</b>. Связей — ${(deg.get(focusNode.id) || 0)}.`
+      : 'Линия значит общий признак: раздел, направление, канал, источник или статус. Нажмите на кружок признака — останется только его окружение, на запись — откроется сама запись.'}</p>
+    <details class="graphlist"><summary>Списком: что с чем связано</summary>
+      <ul>${nodes.filter(n => n.kind === 'hub').sort((a, b) => (deg.get(b.id) || 0) - (deg.get(a.id) || 0)).map(h => {
+        const kids = edges.filter(e => e.a === h.id || e.b === h.id)
+          .map(e => byId.get(e.a === h.id ? e.b : e.a)).filter(Boolean);
+        return `<li><b>${E(h.group)}: ${E(h.label)}</b> — ${kids.length}: ${kids.map(x => E(x.label)).join(', ')}</li>`;
+      }).join('')}</ul></details>
+  </div>`;
+}
+
+// Полотно таскают мышью и пальцем, а колесо приближает к курсору.
+// Подсветка соседей делается классами на месте: перерисовывать всю
+// карту на каждое движение мыши слишком дорого.
+function bindGraph() {
+  const svg = $('#graphsvg');
+  if (!svg) return;
+  const view = $('#graphview');
+
+  const neighbours = id => {
+    const { edges } = graphPositions();
+    const set = new Set([id]);
+    for (const e of edges) {
+      if (e.a === id) set.add(e.b);
+      if (e.b === id) set.add(e.a);
+    }
+    return set;
+  };
+  svg.onpointerover = e => {
+    const g = e.target.closest('g[data-node]');
+    if (!g || graph.focus) return;
+    const near = neighbours(g.dataset.node);
+    svg.querySelectorAll('g[data-node]').forEach(n => n.classList.toggle('faded', !near.has(n.dataset.node)));
+    svg.querySelectorAll('.glink').forEach(l => l.classList.add('faded'));
+  };
+  svg.onpointerout = e => {
+    if (e.relatedTarget && svg.contains(e.relatedTarget)) return;
+    svg.querySelectorAll('.faded').forEach(n => n.classList.remove('faded'));
+  };
+
+  let drag = null;
+  view.onpointerdown = e => {
+    if (e.target.closest('g[data-node]')) return;
+    drag = { x: e.clientX, y: e.clientY, ox: graph.ox, oy: graph.oy };
+    view.setPointerCapture(e.pointerId);
+    view.classList.add('grabbing');
+  };
+  view.onpointermove = e => {
+    if (!drag) return;
+    const r = view.getBoundingClientRect();
+    const unit = (GRAPH_W / graph.scale) / r.width;
+    graph.ox = clampPan(drag.ox - (e.clientX - drag.x) * unit, GRAPH_W / graph.scale, GRAPH_W);
+    graph.oy = clampPan(drag.oy - (e.clientY - drag.y) * unit, GRAPH_H / graph.scale, GRAPH_H);
+    svg.setAttribute('viewBox', `${graph.ox} ${graph.oy} ${GRAPH_W / graph.scale} ${GRAPH_H / graph.scale}`);
+  };
+  const stop = () => { drag = null; view.classList.remove('grabbing'); };
+  view.onpointerup = stop;
+  view.onpointercancel = stop;
+
+  view.onwheel = e => {
+    e.preventDefault();
+    const r = view.getBoundingClientRect();
+    graphZoom(e.deltaY < 0 ? 1.18 : 1 / 1.18, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  };
+}
+
+// Масштаб меняется через viewBox, а не через transform: подписи тогда
+// не размываются и остаются того же размера, что и в кегле интерфейса.
+function graphZoom(factor, cx, cy) {
+  const before = graph.scale;
+  graph.scale = Math.max(0.55, Math.min(4, graph.scale * factor));
+  const wBefore = GRAPH_W / before, wAfter = GRAPH_W / graph.scale;
+  const hBefore = GRAPH_H / before, hAfter = GRAPH_H / graph.scale;
+  const fx = cx === undefined ? 0.5 : cx, fy = cy === undefined ? 0.5 : cy;
+  graph.ox = clampPan(graph.ox + (wBefore - wAfter) * fx, wAfter, GRAPH_W);
+  graph.oy = clampPan(graph.oy + (hBefore - hAfter) * fy, hAfter, GRAPH_H);
+  render();
+}
+
+// Отдалили сильнее полотна — показываем его целиком по центру;
+// приблизили — не даём уехать за край.
+const clampPan = (v, size, total) => size >= total ? (total - size) / 2 : Math.max(0, Math.min(v, total - size));
+
+// Узел ведёт туда, где запись правится. Признак не открывается, он
+// оставляет на полотне только своё окружение.
+function graphOpen(id) {
+  const node = graphData().nodes.find(n => n.id === id);
+  if (!node) return;
+  if (node.kind === 'hub') {
+    graph.focus = graph.focus === id ? null : id;
+    render();
+    return;
+  }
+  if (node.open === 'k') { go('knowledge'); editK(node.ref); }
+  else if (node.open === 'p') { go('content'); editP(node.ref); }
+  else if (node.open === 'd') { go('decisions'); editDecision(node.ref); }
+  else if (node.open === 'l') { go('leads'); editLead(node.ref); }
+  else if (node.open === 'brand') { graph.open = false; go('brand'); editBrand(node.ref); }
+  else if (node.open === 'money') { graph.open = false; go('money'); }
+}
+
 function renderChain() {
   const s = chainStats();
   const gaps = chainGaps(s);
@@ -1432,8 +1807,14 @@ function renderChain() {
     ], s.result.posts ? 'ok' : 'empty')
   ];
 
-  return heading('Нейроцепочка', 'Как знания компании превращаются в результат. Числа живые, звенья кликабельны.')
-    + `<div class="card mapcard">${chainMap(s)}</div>
+  if (graph.open) return renderGraph();
+
+  return heading('Нейроцепочка', 'Все записи компании одним полотном и путь от знания к результату.')
+    + `<div class="head" style="margin:0 0 12px"><h2 style="margin:0">Карта связей</h2>
+        <small class="muted">записей на карте: ${graphData().nodes.filter(n => n.kind !== 'hub').length}</small></div>
+      ${renderGraph()}
+      <div class="head"><h2>Путь от знания к результату</h2></div>
+      <div class="card mapcard">${chainMap(s)}</div>
       <div class="chain">${links.join('<span class="chainarrow" aria-hidden="true">→</span>')}</div>
       <div class="head"><h2>Где цепочка рвётся</h2><small class="muted">${gaps.length ? 'Найдено мест: ' + gaps.length : 'Разрывов нет'}</small></div>
       ${gaps.length
@@ -1752,6 +2133,7 @@ function render() {
 
   $('#view').innerHTML = s;
   if (page === 'brand' && deck.on) bindDeckSwipe();
+  if (page === 'chain') bindGraph();
   // Узлы схемы — часть рисунка, поэтому обработчик отдельный.
   const map = $('#chainmap');
   if (map) {
@@ -2654,8 +3036,9 @@ document.addEventListener('click', async e => {
     document.body.classList.remove('menu');
     return;
   }
-  const b = e.target.closest('button,article[data-k],article[data-p],article[data-d],tr[data-l]');
+  const b = e.target.closest('button,article[data-k],article[data-p],article[data-d],tr[data-l],g[data-node]');
   if (!b) return;
+  if (b.dataset.node) { graphOpen(b.dataset.node); return; }
   if (b.dataset.page) { go(b.dataset.page); return; }
   if (b.dataset.k) { editK(b.dataset.k); return; }
   if (b.dataset.p) { editP(b.dataset.p); return; }
@@ -2681,6 +3064,9 @@ document.addEventListener('click', async e => {
     case 'deldecision': delDecision(b.dataset.id); break;
     case 'newlead': editLead(); break;
     case 'dellead': delLead(b.dataset.id); break;
+    case 'graphfull': graph.open = !graph.open; render(); break;
+    case 'graphclear': graph.focus = null; render(); break;
+    case 'graphzoom': graphZoom(b.dataset.z === 'in' ? 1.3 : 1 / 1.3); break;
     case 'brief': brief(); break;
     case 'write': await write(); break;
     case 'rewrite': await rewriteDraft(Number(b.dataset.id), b.dataset.preset, ''); break;
@@ -2763,8 +3149,12 @@ document.addEventListener('keydown', e => {
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && !$('#shell').hidden) { e.preventDefault(); search(); }
   if (e.key === 'Escape') document.body.classList.remove('menu');
-  if (e.key === 'Enter' && e.target.matches('[role=button]:is(article,tr)')) e.target.click();
-  if (e.key === ' ' && e.target.matches('[role=button]:is(article,tr)')) { e.preventDefault(); e.target.click(); }
+  if (e.key === 'Enter' && e.target.matches('[role=button]:is(article,tr,g)')) e.target.dispatchEvent(new Event('click', { bubbles: true }));
+  if (e.key === ' ' && e.target.matches('[role=button]:is(article,tr,g)')) {
+    e.preventDefault();
+    e.target.dispatchEvent(new Event('click', { bubbles: true }));
+  }
+  if (e.key === 'Escape' && graph.open && !$('#modal').open) { graph.open = false; render(); }
 });
 
 // Второй руководитель мог что-то поменять, пока вкладка была не видна.

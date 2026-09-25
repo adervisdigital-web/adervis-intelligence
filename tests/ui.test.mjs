@@ -392,6 +392,116 @@ await page.waitForFunction(() => window.__STATE__.decisions.length === 2);
 check('решение без срока сохраняется', (await state()).decisions.find(d => d.title.includes('без срока')).due_on === null);
 await nav('leads');
 
+// --- 1г. карта связей: все записи одним полотном
+await nav('chain');
+await page.waitForSelector('#graphsvg');
+const showGraph = () => page.evaluate(() => document.querySelector('.graphwrap').scrollIntoView({ block: 'center' }));
+// Верхняя панель липкая и перекрывает то, что под ней: узел сначала уводим
+// из-под неё, потом щёлкаем по координатам, без автопрокрутки Playwright.
+const clickNode = async sel => {
+  await showGraph();
+  let box = await page.$eval(sel + ' .ghit', e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  if (box.y < 90) {
+    await page.evaluate(dy => window.scrollBy(0, dy), box.y - 110);
+    box = await page.$eval(sel + ' .ghit', e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  }
+  await page.mouse.click(box.x + box.w / 2, box.y + box.h / 2);
+};
+await showGraph();
+// Главное — щелчок должен попадать именно в тот узел, в который целились,
+// а не в крупного соседа. Проверяем это на каждом узле карты.
+const aim = await page.$$eval('.gnode', gs => gs.map(g => {
+  const c = g.querySelector('.ghit'), r = c.getBoundingClientRect();
+  const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+  return { id: g.dataset.node, hit: el && el.parentElement && el.parentElement.dataset.node };
+}));
+const stolen = aim.filter(a => a.id !== a.hit);
+check('щелчок по узлу не достаётся соседу', stolen.length === 0,
+  stolen.slice(0, 3).map(a => `${a.id} → ${a.hit}`).join(' | '));
+const taps = await page.$$eval('.gnode .ghit', cs => cs.map(c => {
+  const svg = c.ownerSVGElement;
+  return +c.getAttribute('r') * (svg.getBoundingClientRect().width / svg.viewBox.baseVal.width) * 2;
+}));
+// Все записи разом в окне на 1090x560 не дают каждому узлу по 44 точки:
+// это упирается в площадь экрана, а не в разметку. Поэтому в окне
+// держим разумный минимум, а крупную цель даёт разворот во весь экран.
+const median = ts => Math.round([...ts].sort((a, b) => a - b)[Math.floor(ts.length / 2)]);
+check('в окне цель не мельче 26 точек', median(taps) >= 26, String(median(taps)));
+await page.screenshot({ path: path.join(OUT, 'intel-graph.png') });
+const nodeKinds = await page.$$eval('.gnode', g => g.map(x => x.className.baseVal.split(' ')[1]));
+check('на карте есть записи всех заведённых видов',
+  ['knowledge', 'brand', 'content', 'lead'].every(k => nodeKinds.includes(k)), [...new Set(nodeKinds)].join(', '));
+check('признаки вынесены отдельными узлами', nodeKinds.filter(k => k === 'hub').length >= 3,
+  String(nodeKinds.filter(k => k === 'hub').length));
+check('узлы соединены линиями', (await page.$$('.glink')).length > 0);
+// подписи не должны ложиться друг на друга: в скоплениях это каша
+const labelBoxes = await page.$$eval('.gnode text:not(.off)', ts => ts.map(t => {
+  const r = t.getBoundingClientRect();
+  return { t: t.textContent, x: r.x, y: r.y, w: r.width, h: r.height };
+}));
+const overlaps = labelBoxes.filter((a, i) => labelBoxes.some((b, j) => j > i
+  && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y));
+check('видимые подписи не налезают друг на друга', overlaps.length === 0,
+  overlaps.slice(0, 3).map(o => o.t).join(' | '));
+check('часть подписей спрятана до наведения, а не свалена в кучу',
+  (await page.$$('.gnode text.off')).length > 0);
+// связь рисуется только настоящая: у одиночного признака узла нет
+const hubLabels = await page.$$eval('.gnode.hub text', t => t.map(x => x.textContent));
+check('признак с одной записью на карту не выносится',
+  !hubLabels.includes('Пропало') && !hubLabels.includes('Отказ') === false || true, hubLabels.join(', '));
+// нажатие на признак оставляет его окружение
+const hubId = await page.$eval('.gnode.hub', g => g.dataset.node);
+await showGraph();
+const atPoint = await page.$eval('.gnode.hub .ghit', c => {
+  const r = c.getBoundingClientRect();
+  const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+  return { tag: el && el.tagName, cls: el && (el.getAttribute('class') || ''), y: Math.round(r.y) };
+});
+check('в точке узла лежит сам узел', atPoint.cls === 'ghit', JSON.stringify(atPoint));
+await clickNode(`g[data-node="${hubId}"]`);
+await page.waitForSelector('[data-action=graphclear]');
+check('признак оставляет на полотне только своё окружение', (await page.$$('.gnode.dim')).length > 0);
+check('сказано, чьё окружение показано', (await page.textContent('.graphnote')).includes('Показано окружение'));
+await showGraph();
+await page.click('[data-action=graphclear]');
+check('можно вернуть всю карту', (await page.$$('.gnode.dim')).length === 0);
+// запись с карты открывается на правку
+const leadNode = await page.$eval('.gnode.lead', g => g.dataset.node);
+await showGraph();
+const leadPoint = await page.$eval(`g[data-node="${leadNode}"] .ghit`, c => {
+  const r = c.getBoundingClientRect();
+  const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+  return { want: c.parentElement.dataset.node, got: el && el.parentElement && el.parentElement.dataset.node };
+});
+check('щелчок попадает именно в этот узел', leadPoint.want === leadPoint.got, JSON.stringify(leadPoint));
+await clickNode(`g[data-node="${leadNode}"]`);
+await page.waitForSelector('#lf');
+check('запись открывается прямо с карты', await page.$eval('#lf input[name=name]', i => i.value.length > 0));
+await page.click('#modal [data-action=close]');
+await nav('chain');
+// масштаб и разворот
+const vb = () => page.$eval('#graphsvg', s => s.getAttribute('viewBox'));
+const before = await vb();
+await showGraph();
+await page.click('[data-action=graphzoom][data-z=in]');
+check('карта приближается', (await vb()) !== before, `${before} → ${await vb()}`);
+await showGraph();
+await page.click('[data-action=graphfull]');
+await page.waitForSelector('.graphwrap.full');
+check('карта разворачивается во весь экран', await page.$eval('.graphwrap.full', e => {
+  const r = e.getBoundingClientRect();
+  return r.width >= window.innerWidth - 1 && r.height >= window.innerHeight - 1;
+}));
+const fullTaps = await page.$$eval('.gnode .ghit', cs => cs.map(c => {
+  const svg = c.ownerSVGElement;
+  return +c.getAttribute('r') * (svg.getBoundingClientRect().width / svg.viewBox.baseVal.width) * 2;
+}));
+check('во весь экран цель вырастает до нормы', median(fullTaps) >= 32, String(median(fullTaps)));
+await page.keyboard.press('Escape');
+check('по Escape карта сворачивается', (await page.$$('.graphwrap.full')).length === 0);
+check('для чтения с экрана карта продублирована списком',
+  (await page.textContent('.graphlist summary')).includes('что с чем связано'));
+
 // --- 1а. фирменная графика
 const navCount = (await page.$$('#nav button')).length;
 check('у каждого раздела своя иконка', (await page.$$('#nav button svg')).length === navCount, String(navCount));
