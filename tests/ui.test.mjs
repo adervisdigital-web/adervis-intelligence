@@ -66,6 +66,10 @@ const fake = (seedData) => {
         data: { figure: 'uikit' } },
       { id: 'spacing-scale', title: 'Шкала отступов', kind: 'figure', sort: 62, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'spacing' } },
+      { id: 'formats', title: 'Форматы и безопасные зоны', kind: 'figure', sort: 102, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'formats', body: '— Знак и заголовок держим внутри безопасной зоны' } },
+      { id: 'card-layout', title: 'Визитка: раскладка', kind: 'figure', sort: 112, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'card', body: '— 90 × 50 мм, вылет под обрез 3 мм' } },
       { id: 'voice', title: 'Как мы говорим', kind: 'text', sort: 90, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { body: 'Пишем живо и просто.\n— Без канцелярита\n— Без выдуманных цифр' } }
     ],
@@ -509,7 +513,7 @@ await page.keyboard.press('Escape');
 
 // --- 9б. брендбук
 await nav('brand');
-check('чертежи брендбука нарисованы', (await page.$$('.figure')).length === 4, String((await page.$$('.figure')).length));
+check('чертежи брендбука нарисованы', (await page.$$('.figure')).length === 6, String((await page.$$('.figure')).length));
 check('охранное поле показано схемой с размерами',
   (await page.$$('.figure .fdim')).length === 4 && (await page.textContent('#view')).includes('половина высоты знака'));
 check('на странице «как нельзя» шесть случаев с перечёркиванием',
@@ -533,6 +537,32 @@ check('выключенная кнопка действительно выклю
 check('поле с ошибкой отличается цветом рамки',
   await page.$eval('.uikit .uierror', i => getComputedStyle(i).borderColor.includes('214')));
 check('шкала отступов нарисована', (await page.textContent('#view')).includes('кратен четырём'));
+// форматы площадок: все подписаны, безопасная зона лежит внутри кадра
+check('показаны все пять форматов', (await page.$$('.figure[aria-label="Форматы площадок"] .flabel')).length === 5,
+  String((await page.$$('.figure[aria-label="Форматы площадок"] .flabel')).length));
+const safeZones = await page.$$eval('.figure[aria-label="Форматы площадок"] g', gs => gs
+  .filter(g => g.querySelectorAll('rect').length === 2)
+  .map(g => {
+    const [f, s] = [...g.querySelectorAll('rect')].map(r => ({
+      x: +r.getAttribute('x'), y: +r.getAttribute('y'),
+      w: +r.getAttribute('width'), h: +r.getAttribute('height'), dash: r.getAttribute('stroke-dasharray')
+    }));
+    return { inside: s.x > f.x && s.y > f.y && s.x + s.w < f.x + f.w && s.y + s.h < f.y + f.h, dashed: !!s.dash };
+  }));
+check('безопасные зоны отмечены и не выходят за кадр',
+  safeZones.length === 3 && safeZones.every(z => z.inside && z.dashed), JSON.stringify(safeZones));
+// визитка: вылет, поле и текстовая зона вложены друг в друга
+const cardFrames = await page.$$eval('.figure[aria-label="Раскладка визитки"] rect', rs => rs.map(r => ({
+  x: +r.getAttribute('x'), y: +r.getAttribute('y'), w: +r.getAttribute('width'), h: +r.getAttribute('height')
+})));
+check('на визитке вылет, поле и текст вложены по порядку',
+  cardFrames.length === 3 && cardFrames.every((r, i) => i === 0 || (
+    r.x > cardFrames[i - 1].x && r.y > cardFrames[i - 1].y &&
+    r.x + r.w < cardFrames[i - 1].x + cardFrames[i - 1].w &&
+    r.y + r.h < cardFrames[i - 1].y + cardFrames[i - 1].h)), JSON.stringify(cardFrames));
+check('на визитке стоит настоящий логотип',
+  (await page.getAttribute('.figure[aria-label="Раскладка визитки"] image', 'href')) === 'brand/logo.svg');
+check('размер визитки подписан', (await page.textContent('#view')).includes('90 × 50 мм'));
 check('брендбук показывает логотипы', (await page.$$('.logoframe img')).length === 3);
 const logosDrawn = await page.waitForFunction(
   () => { const i = [...document.querySelectorAll('.logoframe img')]; return i.length === 3 && i.every(x => x.complete && x.naturalWidth > 0); },
@@ -571,7 +601,7 @@ check('в оглавлении видно число тем в разделе',
 
 // полнота брендбука
 const progress = (await page.textContent('.progresscard')).replace(/\s+/g, ' ');
-check('видно, сколько тем заполнено', /Заполнено 10 из 11/.test(progress), progress);
+check('видно, сколько тем заполнено', /Заполнено 12 из 13/.test(progress), progress);
 check('пустая тема названа поимённо', /Ждут содержимого.*Фото и видео/.test(progress), progress);
 check('из полноты можно сразу открыть пустую тему',
   (await page.$$('.progresscard [data-action=editbrand]')).length > 0);
@@ -606,9 +636,9 @@ check('тему можно удалить', !(await page.$$eval('.brandcard h2',
 await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
 const slideCount = await page.$$eval('.slide', s => s.length);
-// обложка + знак + 11 тем + финал
-check('слайды собраны по темам', slideCount === 14, String(slideCount));
-check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 6, String((await page.$$('.slide .sfigure')).length));
+// обложка + знак + 13 тем + финал
+check('слайды собраны по темам', slideCount === 16, String(slideCount));
+check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 8, String((await page.$$('.slide .sfigure')).length));
 check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
 const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
 check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));

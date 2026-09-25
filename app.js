@@ -544,6 +544,50 @@ const FIGURES = {
     <p class="muted">Знак взят из файла и не перерисован. Паттерн — фон: поверх него должен читаться текст, поэтому контраст к фону держим низким.</p>
   </div>`,
 
+  // Форматы площадок и безопасные зоны: где интерфейс перекрывает макет.
+  formats: () => {
+    const items = [
+      { w: 96, h: 96, title: 'Аватар', size: '1:1 · от 400×400', safe: null },
+      { w: 160, h: 90, title: 'Обложка YouTube', size: '16:9 · 2560×1440', safe: { x: 0.6, y: 0.29 } },
+      { w: 62, h: 110, title: 'Сторис и вертикаль', size: '9:16 · 1080×1920', safe: { x: 0.92, y: 0.72 } },
+      { w: 88, h: 110, title: 'Пост в ленте', size: '4:5 · 1080×1350', safe: null },
+      { w: 160, h: 60, title: 'Обложка сообщества', size: '≈ 2:1', safe: { x: 0.8, y: 0.66 } }
+    ];
+    const W = 640, gap = 18;
+    let x = 0;
+    const cells = items.map(it => {
+      const g = `<g transform="translate(${x} 0)">
+        <rect x="0" y="0" width="${it.w}" height="${it.h}" rx="6" fill="var(--bg)" stroke="var(--line)"/>
+        ${it.safe ? `<rect x="${(it.w * (1 - it.safe.x) / 2).toFixed(1)}" y="${(it.h * (1 - it.safe.y) / 2).toFixed(1)}"
+          width="${(it.w * it.safe.x).toFixed(1)}" height="${(it.h * it.safe.y).toFixed(1)}" rx="4"
+          fill="var(--gold-bg)" stroke="var(--gold)" stroke-dasharray="5 4"/>` : ''}
+        <text class="flabel" x="0" y="${it.h + 18}">${it.title}</text>
+        <text class="fnote" x="0" y="${it.h + 34}">${it.size}</text></g>`;
+      x += it.w + gap;
+      return g;
+    }).join('');
+    return `<svg class="figure" viewBox="0 0 ${W} 180" role="img" aria-label="Форматы площадок">${cells}
+      <text class="fnote" x="0" y="172">Золотым отмечена безопасная зона: за её пределами макет обрезают или перекрывают кнопки. Главное — знак и заголовок — держим внутри.</text>
+    </svg>`;
+  },
+
+  // Визитка: поля, вылеты и где что стоит.
+  card: () => `<svg class="figure" viewBox="0 0 640 260" role="img" aria-label="Раскладка визитки">
+    <rect x="30" y="20" width="360" height="200" rx="6" fill="#141414" stroke="var(--gold)" stroke-dasharray="6 5"/>
+    <rect x="42" y="32" width="336" height="176" rx="4" fill="none" stroke="var(--line)"/>
+    <rect x="66" y="56" width="288" height="128" rx="3" fill="none" stroke="var(--line)" stroke-dasharray="4 4"/>
+    <image href="brand/logo.svg" x="76" y="70" width="150" height="40" preserveAspectRatio="xMinYMid meet"/>
+    <text x="76" y="150" fill="#fdfdfd" font-size="13" font-weight="600">Артём Никитин</text>
+    <text x="76" y="168" fill="#9a9a9a" font-size="11">Дизайн, графика, ИИ · adervis.ru</text>
+    <text class="fnote" x="420" y="60">90 × 50 мм — стандартный размер</text>
+    <text class="fnote" x="420" y="82">3 мм — вылет под обрез (золотая рамка)</text>
+    <text class="fnote" x="420" y="104">5 мм — поле до реза (сплошная)</text>
+    <text class="fnote" x="420" y="126">Пунктир — зона, где стоит текст</text>
+    <text class="fnote" x="420" y="148">Знак слева сверху, контакты снизу</text>
+    <text class="fnote" x="420" y="170">Для типографии — CMYK и кривые</text>
+    <text class="fnote" x="30" y="248">Ничего важного ближе 5 мм к краю: резак гуляет, и текст уедет.</text>
+  </svg>`,
+
   // Набор иконок. Одна геометрия, одна толщина штриха, размеры токенами.
   icons: () => {
     const groups = [
