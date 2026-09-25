@@ -319,6 +319,13 @@ await page.waitForFunction(() => !document.querySelector('#modal').open);
 check('решение записано', (await state()).decisions.length === 1);
 check('просроченное решение попало в «пора проверить»', (await page.textContent('#view')).includes('Пора проверить'));
 check('признак успеха виден в карточке', (await page.textContent('.decision .measure')).includes('одного клиента из пяти'));
+// дело важнее содержимого: просроченное решение обязано всплыть на обзоре выше кейсов без файлов
+await nav('home');
+const firstGap = await page.$eval('.gapcard', c => c.innerText.replace(/\s+/g, ' '));
+check('просроченное решение выходит на обзор первым', /Решений с подошедшим сроком: 1/.test(firstGap), firstGap);
+check('в подсказке названо само решение', /Поднять цены на монтаж/.test(firstGap), firstGap);
+check('с подсказки попадаешь в решения', await page.$eval('.gapcard', c => c.dataset.page === 'decisions'));
+await nav('decisions');
 await page.click('.decision');
 await page.fill('#df textarea[name=outcome]', 'Потеряли одного, выручка выросла на 15%.');
 await page.selectOption('#df select[name=status]', 'Сработало');

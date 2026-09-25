@@ -1297,6 +1297,40 @@ function chainStats() {
   };
 }
 
+// Что мешает делу, а не цепочке контента. На обзоре эти пункты идут
+// первыми: незаполненный кейс подождёт, просроченное решение — нет.
+function businessGaps() {
+  const gaps = [];
+  const overdue = db.decisions.filter(d => ['Думаем', 'Делаем', 'Проверяем'].includes(d.status)
+    && d.due_on && d.due_on <= today());
+  if (overdue.length) {
+    const first = [...overdue].sort((a, b) => a.due_on.localeCompare(b.due_on))[0];
+    gaps.push(['decisions', `Решений с подошедшим сроком: ${overdue.length}`,
+      `Ближайшее — «${first.title.slice(0, 60)}${first.title.length > 60 ? '…' : ''}». Решение без проверки становится забытым намерением.`]);
+  }
+
+  const prev = new Date();
+  prev.setDate(1);
+  prev.setMonth(prev.getMonth() - 1);
+  const prevKey = prev.toISOString().slice(0, 7);
+  if (db.finance.length && !db.finance.some(r => String(r.month).slice(0, 7) === prevKey)) {
+    gaps.push(['money', 'Прошлый месяц не внесён',
+      `${monthName(prevKey)} без цифр — сравнивать этот месяц не с чем.`]);
+  }
+
+  if (!db.leads.length) {
+    gaps.push(['leads', 'Обращения не записываются',
+      'Пока нет ни одной заявки, ни одно решение про каналы проверить нельзя.']);
+  }
+
+  const noFixed = db.economics.filter(e => !e.fixed_costs);
+  if (noFixed.length) {
+    gaps.push(['money', 'Постоянные расходы не заданы',
+      `Без них не посчитать, сколько клиентов нужно до нуля: ${noFixed.map(e => e.direction).join(', ')}.`]);
+  }
+  return gaps;
+}
+
 function chainGaps(s) {
   const gaps = [];
   const published = db.content.filter(p => p.status === 'Опубликовано');
@@ -1461,7 +1495,7 @@ function render() {
       <div class="grid metrics">${cards.map(([a, b, c, to, extra]) => `<button class="card metric click" data-page="${to}">
         <div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small>${extra}</button>`).join('')}</div>
       ${(() => {
-        const top = chainGaps(chainStats()).slice(0, 3);
+        const top = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
         if (!top.length) return '';
         return `<div class="head" style="margin:20px 0 12px"><h2 style="margin:0">Что мешает прямо сейчас</h2>
             <button data-page="chain">Вся цепочка →</button></div>
