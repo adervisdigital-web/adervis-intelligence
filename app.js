@@ -2866,7 +2866,24 @@ $('#create').innerHTML = `${icon('plus', 17)}<span>Создать</span>`;
 $('#theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 $('#menu').onclick = () => document.body.classList.toggle('menu');
 $('#search').onclick = search;
-$('#create').onclick = () => modal('<h2>Что создаём?</h2><div class="list"><button data-action="newk">Запись базы знаний</button><button data-action="newp">Публикацию</button><button data-action="newtask">Задачу</button></div>');
+// Главная кнопка знала только про три вещи из шестнадцати разделов.
+// Теперь перечислены все, что заводятся руками, а первым идёт то, что
+// относится к открытому разделу: чаще всего создают именно его.
+const CREATE_ITEMS = [
+  ['newlead', 'Заявку', 'кто обратился и откуда узнал', 'leads'],
+  ['newdecision', 'Решение', 'что решили, почему и как проверим', 'decisions'],
+  ['newmonth', 'Месяц в деньги', 'выручка и расходы по направлению', 'money'],
+  ['newk', 'Запись базы знаний', 'факт о компании с источником', 'knowledge'],
+  ['newp', 'Публикацию', 'материал для канала', 'content'],
+  ['newtask', 'Задачу', 'общий список для обоих руководителей', 'tasks']
+];
+
+$('#create').onclick = () => {
+  const items = [...CREATE_ITEMS].sort((a, b) => (b[3] === page) - (a[3] === page));
+  modal(`<h2>Что создаём?</h2><div class="createlist">${items.map(([act, title, hint, sec]) =>
+    `<button data-action="${act}" class="createitem${sec === page ? ' here' : ''}">
+      <b>${title}</b><small>${hint}</small></button>`).join('')}</div>`);
+};
 $('#refresh').onclick = async () => {
   try { await reload(); render(); toast('Данные обновлены'); }
   catch (err) { handleError(err); }

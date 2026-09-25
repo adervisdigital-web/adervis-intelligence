@@ -525,3 +525,13 @@ html[data-theme=dark]{--red:#4a2b33;--ink-good:#8fe0ac;--ink-bad:#ffb3b3;--ink-w
    пустоты справа: сетка была жёстко на три колонки при одном направлении.
    Теперь плитки растягиваются по числу направлений. */
 .bezgrid{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+
+/* Меню «Создать»: подпись объясняет, что это, чтобы не открывать форму
+   ради выяснения. Пункт текущего раздела помечен и стоит первым. */
+.createlist{display:grid;gap:8px;margin-top:6px}
+.createitem{display:block;text-align:left;width:100%;padding:12px 14px;border-radius:11px;
+  background:var(--bg);border:1px solid var(--line);color:var(--ink);min-height:44px}
+.createitem:hover{border-color:#9278ff}
+.createitem b{display:block;font-size:14px}
+.createitem small{color:var(--muted)}
+.createitem.here{border-color:#9278ff;box-shadow:inset 3px 0 0 #9278ff}

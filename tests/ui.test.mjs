@@ -373,6 +373,15 @@ await page.selectOption('#lf select[name=source]', 'Яндекс.Карты');
 await page.click('#lf button.primary');
 await page.waitForFunction(() => window.__STATE__.leads.length === 4);
 check('новая заявка по умолчанию новая', (await state()).leads.find(l => l.name === 'Белазарь').status === 'Новое');
+// главная кнопка знает про все разделы, а не про три
+await page.click('#create');
+await page.waitForSelector('.createlist');
+const createItems = await page.$$eval('.createitem', b => b.map(x => x.dataset.action));
+check('в «Создать» есть заявка, решение и месяц',
+  ['newlead', 'newdecision', 'newmonth'].every(a => createItems.includes(a)), createItems.join(', '));
+check('первым стоит то, что относится к открытому разделу', createItems[0] === 'newlead', createItems[0]);
+check('пункт текущего раздела помечен', await page.$eval('.createitem', b => b.classList.contains('here')));
+await page.click('#modal [data-action=close]');
 check('сумма ушла числом, а не строкой', (await state()).leads.find(l => l.name === 'Белазарь').amount === 0);
 // пустая дата не должна уходить на сервер пустой строкой: такую не примет ни одна колонка типа date
 await nav('decisions');
