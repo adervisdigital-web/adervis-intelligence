@@ -330,6 +330,16 @@ check('в работе только незакрытые', /в работе 1/i.
 const srcRows = await page.$$eval('.table tr', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ')));
 check('источники сведены в таблицу', srcRows.some(r => /Рекомендация 2 1 50%/.test(r)), srcRows.slice(0, 5).join(' | '));
 check('источник без сделок показан честно', srcRows.some(r => /2ГИС 1 0 0%/.test(r)));
+// статус видно взглядом, но слово остаётся — цвет не единственный носитель смысла
+const tones = await page.$$eval('tr[data-l] .tag', ts => ts.map(x => ({
+  text: x.textContent.trim(), bg: getComputedStyle(x).backgroundColor
+})));
+const toneOf = w => tones.find(t => t.text === w)?.bg;
+check('сделка и отказ различаются цветом', toneOf('Сделка') && toneOf('Отказ') && toneOf('Сделка') !== toneOf('Отказ'),
+  `${toneOf('Сделка')} / ${toneOf('Отказ')}`);
+check('статус отличается от нейтральной метки направления',
+  toneOf('Сделка') !== toneOf('Студия'), `${toneOf('Сделка')} / ${toneOf('Студия')}`);
+check('цвет не заменяет слово', tones.every(t => t.text.length > 0));
 // обращение открывается прямо из списка и правится
 await page.click('tr[data-l=l3]');
 await page.waitForSelector('#lf');
@@ -934,8 +944,8 @@ check('на телефоне меню поверх верхней панели',
 
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
-const sections = ['home', 'leads', 'knowledge', 'brand', 'products', 'cases', 'content', 'calendar',
-  'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
+const sections = ['home', 'money', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
+  'cases', 'content', 'calendar', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {
   await m.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);
@@ -945,7 +955,7 @@ for (const id of sections) {
     const over = [...document.querySelectorAll('.main *')]
       .filter(e => e.getBoundingClientRect().right > window.innerWidth + 1)
       .map(e => e.className || e.tagName).slice(0, 3);
-    const tap = [...document.querySelectorAll('.main button')]
+    const tap = [...document.querySelectorAll('.main button, .main label.task')]
       .filter(b => b.getBoundingClientRect().height > 0 && b.getBoundingClientRect().height < 36).length;
     return { scroll: doc.scrollWidth > window.innerWidth + 1, over, tap };
   });
@@ -954,6 +964,9 @@ for (const id of sections) {
 }
 check('ни один раздел не уезжает вбок на телефоне', wide.length === 0, wide.join(' | '));
 check('кнопки на телефоне не мельче 36 точек', small.length === 0, small.join(' | '));
+await m.evaluate(() => document.querySelector('#nav button[data-page=home]').click());
+await m.waitForTimeout(150);
+await m.screenshot({ path: path.join(OUT, 'mobile-home.png'), fullPage: true });
 
 // слайды листаются пальцем
 await m.evaluate(() => document.querySelector('#nav button[data-page=brand]').click());
