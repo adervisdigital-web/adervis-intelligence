@@ -1005,6 +1005,17 @@ const svgText = fs.readFileSync(await svgFile.path(), 'utf8');
 check('паттерн сохраняется как SVG', /^<svg[^>]+xmlns=/.test(svgText.trim()) && svgText.includes('2120'),
   svgFile.suggestedFilename());
 check('в файле лежит тот же знак', svgText.includes('M1580.87,1460.95'));
+// выгруженный файл должен открываться и рисоваться сам по себе
+const probe = await ctx.newPage();
+await probe.setViewportSize({ width: 1060, height: 596 });
+await probe.setContent(`<body style="margin:0">${svgText.replace('width="2120" height="1192"', 'width="1060" height="596"')}</body>`);
+const drawn = await probe.$eval('svg', s => ({
+  paths: s.querySelectorAll('path').length,
+  w: Math.round(s.getBoundingClientRect().width)
+}));
+check('выгруженный SVG рисуется без приложения', drawn.paths >= 20 && drawn.w === 1060, JSON.stringify(drawn));
+await probe.screenshot({ path: path.join(OUT, 'pattern-export.png') });
+await probe.close();
 await page.setViewportSize({ width: 1440, height: 900 });
 await nav('home'); await nav('brand');
 

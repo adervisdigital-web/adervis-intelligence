@@ -522,10 +522,10 @@ const PATTERN_INK = '#6e6e6e';
 // Шаг задан долей от меньшей стороны кадра, а не в пикселях: иначе на
 // превью 320×180 помещается два кольца, а на макете 2120×1192 — сорок.
 const PATTERN_VARIANTS = [
-  { id: 'center', title: 'Знак в центре', note: 'контуры расходятся от знака', rings: 9, gapK: .085, grow: 1.16, rot: 0, scale: .72, cx: .5, cy: .5 },
-  { id: 'corner', title: 'Угловой', note: 'знак уведён за кадр, видны дуги', rings: 11, gapK: .08, grow: 1.14, rot: -12, scale: .95, cx: .2, cy: .1 },
-  { id: 'wide', title: 'Крупный план', note: 'для обложек и заставок', rings: 8, gapK: .12, grow: 1.13, rot: 8, scale: 1.45, cx: .72, cy: .42 },
-  { id: 'tilt', title: 'С наклоном', note: 'поворот, для вертикальных макетов', rings: 10, gapK: .082, grow: 1.15, rot: -22, scale: .85, cx: .42, cy: .56 }
+  { id: 'center', title: 'Знак в центре', note: 'как в оригинале: знак крупно, контуры уходят за край', rings: 10, gapK: .098, grow: 1.05, rot: 0, scale: 2.3, cx: .5, cy: .5 },
+  { id: 'corner', title: 'Угловой', note: 'знак уведён за кадр, видны дуги', rings: 11, gapK: .1, grow: 1.05, rot: -12, scale: 2.6, cx: .14, cy: .04 },
+  { id: 'wide', title: 'Крупный план', note: 'сильное приближение, для обложек', rings: 9, gapK: .13, grow: 1.05, rot: 8, scale: 3.8, cx: .72, cy: .44 },
+  { id: 'tilt', title: 'С наклоном', note: 'поворот, для вертикальных макетов', rings: 10, gapK: .1, grow: 1.05, rot: -22, scale: 2.2, cx: .44, cy: .54 }
 ];
 
 // Знак в своём файле нарисован в квадрате 2160; приводим к единице.
@@ -535,25 +535,28 @@ function contourLayers(v, w, h) {
   const k = (v.scale * Math.min(w, h) * 0.46) / MARK_BOX;
   const place = `translate(${(w * v.cx).toFixed(1)} ${(h * v.cy).toFixed(1)}) rotate(${v.rot})
     scale(${k.toFixed(5)}) translate(${-MARK_BOX / 2} ${-MARK_BOX / 2})`;
-  const t = 2 / k; // толщина линии в координатах знака, чтобы на экране она была одинаковой
+  // Толщина тоже доля кадра, а не пиксели: в оригинале это волосок в два
+  // пикселя на 2120, то есть меньше промилле ширины. Фиксированные два
+  // пикселя на превью выглядели бы втрое жирнее оригинала.
+  const t = Math.max(0.55, w * 0.00094) / k;
   let out = '';
   for (let i = v.rings - 1; i >= 0; i--) {
     const d = ((v.gapK * Math.min(w, h)) / k) * Math.pow(i + 1, v.grow);
-    const fade = (0.22 + 0.5 * (1 - i / v.rings)).toFixed(2);
+    const fade = (0.34 + 0.4 * (1 - i / v.rings)).toFixed(2);
     out += `<path d="${MARK_PATH}" fill="${PATTERN_INK}" fill-opacity="${fade}" stroke="${PATTERN_INK}"
       stroke-opacity="${fade}" stroke-width="${(d * 2 + t).toFixed(1)}" stroke-linejoin="round"/>
       <path d="${MARK_PATH}" fill="${PATTERN_BG}" stroke="${PATTERN_BG}"
       stroke-width="${(d * 2).toFixed(1)}" stroke-linejoin="round"/>`;
   }
-  out += `<path d="${MARK_PATH}" fill="none" stroke="${PATTERN_INK}" stroke-opacity=".72" stroke-width="${t.toFixed(1)}"/>`;
+  out += `<path d="${MARK_PATH}" fill="none" stroke="${PATTERN_INK}" stroke-opacity=".8" stroke-width="${t.toFixed(1)}"/>`;
   return `<g transform="${place}">${out}</g>`;
 }
 
 function patternSvg(v, w, h, id) {
   return `<defs>
       <linearGradient id="pg-${id}" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#151515"/><stop offset=".55" stop-color="${PATTERN_BG}"/>
-        <stop offset="1" stop-color="#101010"/></linearGradient>
+        <stop offset="0" stop-color="#121212"/><stop offset=".55" stop-color="${PATTERN_BG}"/>
+        <stop offset="1" stop-color="#0c0c0c"/></linearGradient>
       <clipPath id="pc-${id}"><rect width="${w}" height="${h}" rx="${Math.min(12, w / 26)}"/></clipPath>
     </defs>
     <g clip-path="url(#pc-${id})">
