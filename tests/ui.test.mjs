@@ -43,6 +43,14 @@ const fake = (seedData) => {
     finance: [],
     economics: [{ direction: 'Stock', fixed_costs: 4685, price: 449, note: 'Envato и сервер', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }],
     decisions: [],
+    leads: [
+      { id: 'l1', came_on: '2026-09-10', name: 'Графсил', source: 'Рекомендация', direction: 'Студия',
+        request: 'Брендбук', amount: 90000, status: 'Сделка', note: '', _at: '2026-09-10T10:00:00Z', _by: 'artem@adervis.ru' },
+      { id: 'l2', came_on: '2026-09-12', name: 'МАМА CAR', source: 'Рекомендация', direction: 'Студия',
+        request: 'Ролик', amount: 0, status: 'Отказ', note: 'Дорого', _at: '2026-09-12T10:00:00Z', _by: 'artem@adervis.ru' },
+      { id: 'l3', came_on: '2026-09-18', name: 'Студия из Казани', source: '2ГИС', direction: 'CRM',
+        request: 'Спросили про сметы', amount: 0, status: 'Новое', note: '', _at: '2026-09-18T10:00:00Z', _by: 'artem@adervis.ru' }
+    ],
     ai: [],
     brand: [
       { id: 'colors-base', title: 'Базовые цвета', kind: 'colors', sort: 20, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
@@ -286,6 +294,45 @@ await page.click('#df button.primary');
 await page.waitForFunction(() => window.__STATE__.decisions[0].status === 'Сработало');
 check('итог решения сохранён', (await state()).decisions[0].outcome.includes('выручка выросла'));
 check('счётчик сработавших обновился', (await page.$$eval('.metric', m => m[2].innerText)).includes('1'));
+
+// --- 1б. заявки: считаем источники, а не ведём сделки
+await nav('leads');
+const leadMetrics = await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')));
+check('видно число сделок', /сделок 1/i.test(leadMetrics[2]), leadMetrics[2]);
+check('конверсия считается только по закрытым', /50% из закрытых/.test(leadMetrics[2]), leadMetrics[2]);
+check('сумма считается только по сделкам', /заработано 90 ?000/i.test(leadMetrics[3].replace(/ /g, ' ')), leadMetrics[3]);
+check('в работе только незакрытые', /в работе 1/i.test(leadMetrics[1]), leadMetrics[1]);
+const srcRows = await page.$$eval('.table tr', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ')));
+check('источники сведены в таблицу', srcRows.some(r => /Рекомендация 2 1 50%/.test(r)), srcRows.slice(0, 5).join(' | '));
+check('источник без сделок показан честно', srcRows.some(r => /2ГИС 1 0 0%/.test(r)));
+// обращение открывается прямо из списка и правится
+await page.click('tr[data-l=l3]');
+await page.waitForSelector('#lf');
+check('в форме подставлен источник обращения',
+  await page.$eval('#lf select[name=source]', s => s.value === '2ГИС'));
+await page.selectOption('#lf select[name=status]', 'Сделка');
+await page.fill('#lf input[name=amount]', '15000');
+await page.click('#lf button.primary');
+await page.waitForFunction(() => window.__STATE__.leads.find(l => l.id === 'l3').status === 'Сделка');
+check('сделка по 2ГИС записалась', (await state()).leads.find(l => l.id === 'l3').amount === 15000);
+check('доля источника пересчиталась',
+  (await page.$$eval('.table tr', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ')))).some(r => /2ГИС 1 1 100%/.test(r)));
+// новая заявка
+await page.click('[data-action=newlead]');
+await page.fill('#lf input[name=name]', 'Белазарь');
+await page.selectOption('#lf select[name=source]', 'Яндекс.Карты');
+await page.click('#lf button.primary');
+await page.waitForFunction(() => window.__STATE__.leads.length === 4);
+check('новая заявка по умолчанию новая', (await state()).leads.find(l => l.name === 'Белазарь').status === 'Новое');
+check('сумма ушла числом, а не строкой', (await state()).leads.find(l => l.name === 'Белазарь').amount === 0);
+// пустая дата не должна уходить на сервер пустой строкой: такую не примет ни одна колонка типа date
+await nav('decisions');
+await page.click('[data-action=newdecision]');
+await page.fill('#df input[name=title]', 'Решение без срока проверки');
+await page.click('#df button.primary');
+await page.waitForFunction(() => window.__STATE__.decisions.length === 2);
+check('решение без срока сохраняется', (await state()).decisions.find(d => d.title.includes('без срока')).due_on === null);
+await nav('leads');
 
 // --- 1а. фирменная графика
 const navCount = (await page.$$('#nav button')).length;
@@ -854,7 +901,7 @@ check('на телефоне меню поверх верхней панели',
 
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
-const sections = ['home', 'knowledge', 'brand', 'products', 'cases', 'content', 'calendar',
+const sections = ['home', 'leads', 'knowledge', 'brand', 'products', 'cases', 'content', 'calendar',
   'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {

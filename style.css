@@ -444,3 +444,8 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .patterncell svg{width:100%;height:auto;display:block;border-radius:10px;border:1px solid var(--line)}
 .patterncell figcaption{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:12px}
 .patterncell figcaption b{font-size:13px}
+
+/* Кликабельная строка таблицы: заявки открываются прямо из списка. */
+.table tr.clickrow{cursor:pointer}
+.table tr.clickrow:hover td{background:var(--purple)}
+.table tr.clickrow:focus-visible{outline:3px solid #9278ff;outline-offset:-3px}

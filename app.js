@@ -24,6 +24,7 @@ const ICONS = {
   home: '<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z"/>',
   money: '<path d="M9 20V5h4.5a4 4 0 0 1 0 8H9"/><path d="M6 13h7M6 16.5h7"/>',
   decisions: '<path d="M6 21V4"/><path d="M6 5h11l-2.2 3.6L17 12H6z"/>',
+  leads: '<path d="M4 13h4l1.8 2.6h4.4L16 13h4"/><path d="M5.2 13 6.8 5.6h10.4L18.8 13v5.4a1 1 0 0 1-1 1H6.2a1 1 0 0 1-1-1z"/>',
   chain: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="m6.7 11 3.8-3.8M6.7 13l3.8 3.8M13.5 7.2 17.3 11M13.5 16.8 17.3 13"/>',
   knowledge: '<path d="M6 4h9a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z"/><path d="M6 17h11"/>',
   brand: '<path d="M12 3 21 12 12 21 3 12z"/><path d="M12 8.5 15.5 12 12 15.5 8.5 12z"/>',
@@ -88,7 +89,8 @@ const FIELDS = {
   brand: ['id', 'title', 'kind', 'sort', 'data', 'section'],
   finance: ['id', 'month', 'direction', 'revenue', 'costs', 'projects', 'shoot_days', 'note'],
   economics: ['direction', 'fixed_costs', 'price', 'note'],
-  decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on']
+  decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
+  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 
@@ -138,7 +140,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, finance, economics, decisions, publications, ai, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, finance, economics, decisions, leads, publications, ai, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -148,6 +150,7 @@ function createApi(cfg) {
         selectAll('finance', 'month'),
         selectAll('economics', 'direction'),
         selectAll('decisions', 'decided_on'),
+        selectAll('leads', 'came_on'),
         selectAll('publications', 'at'),
         sb.from('ai_usage').select('*').order('at', { ascending: false }).limit(200).then(must),
         selectAll('members', 'email'),
@@ -163,6 +166,7 @@ function createApi(cfg) {
         finance: finance.map(r => fromRow('finance', r)),
         economics: economics.map(r => fromRow('economics', r)),
         decisions: decisions.map(r => fromRow('decisions', r)),
+        leads: leads.map(r => fromRow('leads', r)),
         publications, ai, members, activity
       };
     },
@@ -236,7 +240,11 @@ function createApi(cfg) {
 
 let api = null;
 let me = null;
-let db = { knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], finance: [], economics: [], decisions: [], publications: [], ai: [], members: [], activity: [] };
+const emptyDb = () => ({
+  knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], finance: [],
+  economics: [], decisions: [], leads: [], publications: [], ai: [], members: [], activity: []
+});
+let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
 let month = new Date().getMonth(), year = new Date().getFullYear();
 let loadedAt = 0;
@@ -252,7 +260,7 @@ let ai = {
 };
 
 const sections = [
-  ['home', '⌂', 'Обзор'], ['money', '₽', 'Деньги'], ['decisions', '⚑', 'Решения'],
+  ['home', '⌂', 'Обзор'], ['money', '₽', 'Деньги'], ['leads', '☏', 'Заявки'], ['decisions', '⚑', 'Решения'],
   ['chain', '⛓', 'Нейроцепочка'],
   ['knowledge', '▦', 'База знаний'], ['brand', '◈', 'Брендбук'],
   ['products', '◇', 'Услуги и продукты'],
@@ -286,8 +294,10 @@ function handleError(e) {
   else toast('Не сохранено: ' + msg, 8000);
 }
 
+// Ответ сервера накладывается на пустой набор, а не заменяет его целиком:
+// иначе раздел, которого сервер ещё не отдал, роняет отрисовку целой страницы.
 async function reload() {
-  db = await api.load();
+  db = { ...emptyDb(), ...await api.load() };
   loadedAt = Date.now();
 }
 
@@ -1438,6 +1448,7 @@ function render() {
   }
 
   if (page === 'money') s = renderMoney();
+  if (page === 'leads') s = renderLeads();
   if (page === 'decisions') s = renderDecisions();
   if (page === 'chain') s = renderChain();
   if (page === 'brand') { loadBrandFonts(); setTimeout(loadShots, 0); }
@@ -1712,6 +1723,14 @@ function submitForm(form, table, original, exists, okText) {
     const label = btn.textContent;
     btn.disabled = true; btn.textContent = 'Сохраняю…';
     const o = { ...original, ...Object.fromEntries(new FormData(form)) };
+    // Форма отдаёт всё строками. Пустую строку сервер не примет ни в число,
+    // ни в дату, поэтому приводим здесь, один раз для всех форм.
+    for (const el of form.querySelectorAll('input[type=number],input[type=date]')) {
+      if (!el.name) continue;
+      o[el.name] = el.value === ''
+        ? (el.type === 'number' ? 0 : null)
+        : (el.type === 'number' ? Number(el.value) : el.value);
+    }
     try {
       const saved = exists ? await api.update(table, o) : await api.insert(table, o);
       upsertLocal(table, saved);
@@ -1948,6 +1967,113 @@ function delDecision(id) {
     await api.remove('decisions', id);
     db.decisions = db.decisions.filter(x => x.id !== id);
     noteLocal('delete', 'decisions', d);
+  });
+}
+
+// ------------------------------------------------------------------ заявки
+//
+// Решения меряются обращениями: завели карточку в 2ГИС — сколько оттуда
+// пришло. Поэтому здесь важнее всего поле «откуда узнали», а не сделка:
+// сделки ведутся в CRM, тут считаются источники.
+
+const LEAD_STATUS = ['Новое', 'В работе', 'Сделка', 'Отказ', 'Пропало'];
+const LEAD_SOURCES = ['Сайт', 'Рекомендация', 'Повторный клиент', 'Behance', 'Telegram',
+  'ВКонтакте', 'Яндекс.Карты', '2ГИС', 'Личный контакт', 'Не знаем'];
+
+function leadStats() {
+  const from = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const won = db.leads.filter(l => l.status === 'Сделка');
+  const closed = db.leads.filter(l => ['Сделка', 'Отказ', 'Пропало'].includes(l.status));
+  const bySource = [...new Set(db.leads.map(l => l.source))].map(name => {
+    const all = db.leads.filter(l => l.source === name);
+    const deals = all.filter(l => l.status === 'Сделка');
+    return {
+      name, all: all.length, deals: deals.length,
+      amount: deals.reduce((n, l) => n + Number(l.amount || 0), 0)
+    };
+  }).sort((a, b) => b.all - a.all || b.amount - a.amount);
+  return {
+    bySource, won, closed,
+    recent: db.leads.filter(l => l.came_on >= from).length,
+    inWork: db.leads.filter(l => ['Новое', 'В работе'].includes(l.status)).length,
+    amount: won.reduce((n, l) => n + Number(l.amount || 0), 0),
+    rate: closed.length ? Math.round(100 * won.length / closed.length) : null
+  };
+}
+
+function renderLeads() {
+  const st = leadStats();
+  const rows = [...db.leads].sort((a, b) => b.came_on.localeCompare(a.came_on));
+
+  const head = heading('Заявки', 'Кто обратился и откуда узнал. Отсюда видно, какие решения принесли деньги, а какие только время.',
+    `<button class="primary" data-action="newlead">+ Заявка</button>`);
+
+  if (!db.leads.length) {
+    return head + `<div class="card empty"><h2>Обращений пока не записано</h2>
+      <p>Записывайте каждое: звонок, письмо, сообщение в директ. Главное поле — откуда узнали.</p>
+      <p>Без него нельзя проверить ни одно решение: карточка в 2ГИС, оживлённый Telegram, знакомства
+      через амбассадоров — всё это меряется только заявками.</p></div>`;
+  }
+
+  const metrics = `<div class="grid metrics">${[
+    ['За 30 дней', st.recent, 'новых обращений'],
+    ['В работе', st.inWork, 'ждут ответа или решения'],
+    ['Сделок', st.won.length, st.rate === null ? 'ещё ничего не закрыто' : `${st.rate}% из закрытых`],
+    ['Заработано', num(st.amount), 'по состоявшимся сделкам']
+  ].map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small></div>`).join('')}</div>`;
+
+  const sources = `<div class="head"><h2>Откуда приходят</h2><small class="muted">за всё время</small></div>
+    <div class="card tablewrap"><table class="table">
+      <thead><tr><th>Источник</th><th>Обращений</th><th>Сделок</th><th>Доля</th><th>Сумма</th></tr></thead>
+      <tbody>${st.bySource.map(s => `<tr><td><b>${E(s.name)}</b></td><td>${s.all}</td><td>${s.deals}</td>
+        <td>${s.all ? Math.round(100 * s.deals / s.all) + '%' : '—'}</td><td>${num(s.amount)}</td></tr>`).join('')}
+      </tbody></table></div>`;
+
+  const list = `<div class="head"><h2>Все обращения</h2><small class="muted">свежие сверху</small></div>
+    <div class="card tablewrap"><table class="table">
+      <thead><tr><th>Когда</th><th>Кто</th><th>Откуда</th><th>Направление</th><th>Чего хотел</th><th>Сумма</th><th>Статус</th></tr></thead>
+      <tbody>${rows.map(l => `<tr class="clickrow" tabindex="0" role="button" data-l="${E(l.id)}">
+        <td class="date">${E(l.came_on)}</td><td><b>${E(l.name)}</b></td><td>${E(l.source)}</td>
+        <td>${tag(l.direction)}</td><td>${E((l.request || '').slice(0, 60))}${(l.request || '').length > 60 ? '…' : ''}</td>
+        <td>${l.amount ? num(l.amount) : '—'}</td><td>${tag(l.status)}</td></tr>`).join('')}
+      </tbody></table></div>`;
+
+  return head + metrics + sources + list;
+}
+
+function editLead(id) {
+  const exists = db.leads.some(l => l.id === id);
+  const l = db.leads.find(l => l.id === id) || {
+    id: uid(), came_on: today(), name: '', source: 'Не знаем', direction: 'Студия',
+    request: '', amount: 0, status: 'Новое', note: ''
+  };
+  modal(`<h2>Обращение</h2><form id="lf">
+    <label>Кто обратился</label>
+    <input name="name" required maxlength="200" value="${E(l.name)}" placeholder="Имя или название компании">
+    <div class="formgrid">
+      <div><label>Когда</label><input type="date" name="came_on" value="${E(l.came_on)}"></div>
+      <div><label>Откуда узнали</label><select name="source">${opts(LEAD_SOURCES, l.source)}</select></div>
+      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, l.direction)}</select></div>
+      <div><label>Статус</label><select name="status">${opts(LEAD_STATUS, l.status)}</select></div>
+    </div>
+    <label>Чего хотел</label>
+    <input name="request" maxlength="1000" value="${E(l.request)}" placeholder="Ролик для маркетплейса, смета на съёмку">
+    <label>Сумма, ₽ — если дошло до денег</label>
+    <input type="number" name="amount" min="0" step="1" value="${E(String(l.amount || 0))}">
+    <label>Заметка</label><textarea name="note" maxlength="1000">${E(l.note)}</textarea>
+    ${exists ? `<p class="muted">Последняя правка: ${E(memberName(l._by))}, ${ago(l._at)}</p>` : ''}
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${exists ? `<button type="button" class="danger" data-action="dellead" data-id="${E(l.id)}">Удалить</button>` : ''}</div></form>`);
+  submitForm($('#lf'), 'leads', l, exists, 'Обращение записано');
+}
+
+function delLead(id) {
+  const l = db.leads.find(x => x.id === id);
+  if (!l) return;
+  askDelete('Удалить обращение?', `«${E(l.name)}» исчезнет вместе с источником, по которому считается канал.`, async () => {
+    await api.remove('leads', id);
+    db.leads = db.leads.filter(x => x.id !== id);
+    noteLocal('delete', 'leads', l);
   });
 }
 
@@ -2351,7 +2477,7 @@ function exportJson() {
     knowledge: strip(db.knowledge), content: strip(db.content),
     tasks: strip(db.tasks), metrics: strip(db.metrics),
     brand: strip(db.brand), decisions: strip(db.decisions),
-    finance: strip(db.finance), economics: strip(db.economics),
+    finance: strip(db.finance), economics: strip(db.economics), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications)
   }, null, 2), 'adervis-backup-' + new Date().toISOString().slice(0, 10) + '.json');
 }
@@ -2449,12 +2575,13 @@ document.addEventListener('click', async e => {
     document.body.classList.remove('menu');
     return;
   }
-  const b = e.target.closest('button,article[data-k],article[data-p],article[data-d]');
+  const b = e.target.closest('button,article[data-k],article[data-p],article[data-d],tr[data-l]');
   if (!b) return;
   if (b.dataset.page) { go(b.dataset.page); return; }
   if (b.dataset.k) { editK(b.dataset.k); return; }
   if (b.dataset.p) { editP(b.dataset.p); return; }
   if (b.dataset.d) { editDecision(b.dataset.d); return; }
+  if (b.dataset.l) { editLead(b.dataset.l); return; }
   if (b.dataset.result) {
     $('#modal').close();
     if (b.dataset.result === 'page') go(b.dataset.id);
@@ -2473,6 +2600,8 @@ document.addEventListener('click', async e => {
     case 'delmonth': delMonth(b.dataset.id); break;
     case 'newdecision': editDecision(); break;
     case 'deldecision': delDecision(b.dataset.id); break;
+    case 'newlead': editLead(); break;
+    case 'dellead': delLead(b.dataset.id); break;
     case 'brief': brief(); break;
     case 'write': await write(); break;
     case 'rewrite': await rewriteDraft(Number(b.dataset.id), b.dataset.preset, ''); break;
@@ -2555,8 +2684,8 @@ document.addEventListener('keydown', e => {
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && !$('#shell').hidden) { e.preventDefault(); search(); }
   if (e.key === 'Escape') document.body.classList.remove('menu');
-  if (e.key === 'Enter' && e.target.matches('article[role=button]')) e.target.click();
-  if (e.key === ' ' && e.target.matches('article[role=button]')) { e.preventDefault(); e.target.click(); }
+  if (e.key === 'Enter' && e.target.matches('[role=button]:is(article,tr)')) e.target.click();
+  if (e.key === ' ' && e.target.matches('[role=button]:is(article,tr)')) { e.preventDefault(); e.target.click(); }
 });
 
 // Второй руководитель мог что-то поменять, пока вкладка была не видна.
