@@ -227,7 +227,32 @@ await login();
 await page.waitForSelector('#shell:not([hidden])');
 check('свой вошёл', await page.isVisible('#shell'));
 check('в боковом меню его имя', (await page.textContent('#myname')) === 'Артём');
-check('на главной 24 записи', (await page.$$eval('.metric .value', v => v[0].textContent)) === '24');
+// На обзоре — состояние дела, а не объём базы: пока денег не внесли, стоит прочерк с подсказкой.
+const homeCards = await page.$$eval('.metric', c => c.map(x => x.innerText.replace(/\s+/g, ' ')));
+check('обзор начинается с выручки', /выручка за месяц/i.test(homeCards[0]), homeCards[0]);
+check('пустые деньги объясняют, что внести', /внесите месяцы/i.test(homeCards[0]), homeCards[0]);
+check('обзор показывает заявки и решения',
+  /заявки за 30 дней/i.test(homeCards[2]) && /решения к проверке/i.test(homeCards[3]), homeCards.join(' | '));
+check('с плитки можно уйти в её раздел',
+  await page.$eval('.metric.click', b => b.dataset.page === 'money'));
+// меню сгруппировано, иначе семнадцать пунктов не читаются
+const groups = await page.$$eval('#nav .navgroup', g => g.map(x => x.textContent));
+check('меню разбито на группы', groups.join(',') === 'Дело,Знание компании,Работа,Система', groups.join(','));
+check('все разделы остались в меню', (await page.$$('#nav button')).length === 17,
+  String((await page.$$('#nav button')).length));
+// Меню длиннее экрана — прокручивается само, а не срезается краем.
+check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
+  const nav = document.querySelector('#nav');
+  nav.scrollTop = nav.scrollHeight;
+  const b = nav.querySelector('button:last-of-type').getBoundingClientRect();
+  const n = nav.getBoundingClientRect();
+  return b.bottom <= n.bottom + 1 && b.top >= n.top - 1;
+}));
+check('имя пользователя остаётся на виду', await page.evaluate(() => {
+  const u = document.querySelector('.bottom').getBoundingClientRect();
+  return u.bottom <= window.innerHeight + 1 && u.height > 0;
+}));
+await page.evaluate(() => { document.querySelector('#nav').scrollTop = 0; });
 await page.screenshot({ path: path.join(OUT, 'intel-home.png') });
 
 // --- 1в. деньги
@@ -433,8 +458,8 @@ for (const [date, views, leads] of [['2026-09-10', 500, 1], ['2026-09-12', 1200,
   await page.waitForFunction(() => !document.querySelector('#modal').open);
 }
 await nav('home');
-const card = await page.$$eval('.metric', c => c[3].innerText.replace(/\s+/g, ' '));
-check('карточка лидов считает последний замер', /ЛИДЫ 3 Просмотры: 1\s?200 · публикаций: 1/.test(card), card);
+const card = await page.$$eval('.metric', c => c[2].innerText.replace(/\s+/g, ' '));
+check('обзор считает заявки, а не замеры публикаций', /заявки за 30 дней/i.test(card), card);
 await nav('content');
 await page.click(`article[data-p="${postId}"]`);
 await page.click('#modal [data-action=delp]');
@@ -460,6 +485,14 @@ await nav('analytics');
 await page.waitForSelector('.chart');
 check('линии нарисованы по каждой публикации', (await page.$$('.chart .serie')).length === 3);
 check('у каждой линии подпись рядом с концом', (await page.$$('.chart .serielabel')).length === 3);
+const serieLabels = await page.$$eval('.chart .serielabel', t => t.map(x => x.textContent));
+check('названия публикаций читаются целиком, а не до многоточия',
+  serieLabels.includes('Один ролик для всех экранов') && serieLabels.includes('ИИ: что осталось за кадром'),
+  serieLabels.join(' | '));
+const barLabels = await page.$$eval('.chart .rowlabel', t => t.map(x => x.textContent));
+check('в столбчатой подписи не обрезаны',
+  barLabels.every(t => !t.endsWith('…')) && barLabels.includes('Смета не заканчивается на сумме'),
+  barLabels.join(' | '));
 check('есть столбцы по лидам', (await page.$$('.chart rect')).length > 0);
 check('подписи набраны цветом текста, а не цветом линии',
   await page.$$eval('.chart .serielabel', t => t.every(x => {

@@ -259,15 +259,25 @@ let ai = {
   records: [] // пусто — берём все проверенные публичные
 };
 
-const sections = [
-  ['home', '⌂', 'Обзор'], ['money', '₽', 'Деньги'], ['leads', '☏', 'Заявки'], ['decisions', '⚑', 'Решения'],
-  ['chain', '⛓', 'Нейроцепочка'],
-  ['knowledge', '▦', 'База знаний'], ['brand', '◈', 'Брендбук'],
-  ['products', '◇', 'Услуги и продукты'],
-  ['cases', '▤', 'Кейсы'], ['content', '✎', 'Контент-студия'], ['calendar', '▣', 'Календарь'],
-  ['assistant', '✦', 'AI-рабочая зона'], ['analytics', '⌁', 'Аналитика'], ['competitors', '◎', 'Конкуренты'],
-  ['tasks', '✓', 'Задачи и рост'], ['roadmap', '↗', 'Развитие системы'], ['settings', '⚙', 'Настройки']
+// Семнадцать пунктов подряд не читают — их сканируют каждый раз заново.
+// Группы отвечают на вопрос «зачем я сюда иду»: вести дело, вспомнить,
+// сделать работу, настроить. Внутри группы — по частоте обращения.
+const SECTION_TITLE = {
+  home: 'Обзор', money: 'Деньги', leads: 'Заявки', decisions: 'Решения',
+  knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
+  cases: 'Кейсы', competitors: 'Конкуренты',
+  content: 'Контент-студия', calendar: 'Календарь', assistant: 'AI-рабочая зона', analytics: 'Аналитика',
+  chain: 'Нейроцепочка', tasks: 'Задачи и рост', roadmap: 'Развитие системы', settings: 'Настройки'
+};
+
+const NAV = [
+  ['Дело', ['home', 'money', 'leads', 'decisions']],
+  ['Знание компании', ['knowledge', 'brand', 'products', 'cases', 'competitors']],
+  ['Работа', ['content', 'calendar', 'assistant', 'analytics']],
+  ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
 ];
+
+const sections = NAV.flatMap(([, ids]) => ids).map(id => [id, '', SECTION_TITLE[id]]);
 
 const memberName = email => db.members.find(m => m.email === email)?.name || email || 'кто-то';
 
@@ -930,8 +940,8 @@ function lineChart(series) {
   if (!series.length) return '';
   // Справа оставлено место под подписи линий: они читаются лучше легенды,
   // но обязаны помещаться, иначе съезжают за край.
-  const W = 760, H = 280, L = 52, R = 172, T = 18, B = 34;
-  const short = s => s.length > 18 ? s.slice(0, 17).trimEnd() + '…' : s;
+  const W = 760, H = 280, L = 52, R = 236, T = 18, B = 34;
+  const short = s => s.length > 28 ? s.slice(0, 27).trimEnd() + '…' : s;
   const dates = [...new Set(series.flatMap(s => s.points.map(p => p.x)))].sort();
   const max = niceMax(Math.max(...series.flatMap(s => s.points.map(p => p.y)), 1));
   const px = i => L + (dates.length < 2 ? (W - L - R) / 2 : i * (W - L - R) / (dates.length - 1));
@@ -962,20 +972,22 @@ function lineChart(series) {
 }
 
 // Столбцы: сколько лидов принесла каждая публикация.
-function barChart(rows) {
+// Подпись стоит над полосой, а не слева от неё: в боковой колонке длинные
+// названия обрезались на полуслове, а справа от коротких полос пустовала
+// половина карточки. Сверху подпись помещается целиком и всегда одна строка.
+function barChart(rows, label = 'Сравнение по строкам') {
   if (!rows.length) return '';
-  const W = 760, barH = 26, gap = 12, L = 210, R = 56, T = 8;
-  const H = T + rows.length * (barH + gap);
+  const W = 760, barH = 22, rowH = 46, R = 64, T = 4;
+  const H = T + rows.length * rowH;
   const max = niceMax(Math.max(...rows.map(r => r.value), 1));
-  const width = v => Math.max(2, (v / max) * (W - L - R));
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Лиды по публикациям">
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${E(label)}">
     ${rows.map((r, i) => {
-      const y = T + i * (barH + gap);
-      const w = width(r.value);
-      return `<g><text class="axis rowlabel" x="${L - 12}" y="${y + barH / 2 + 4}" text-anchor="end">${E(r.name.slice(0, 26))}</text>
-        <rect x="${L}" y="${y}" width="${w.toFixed(1)}" height="${barH}" rx="4" fill="${CHART_COLORS[0]}">
+      const y = T + i * rowH;
+      const w = Math.max(3, (r.value / max) * (W - R));
+      return `<g><text class="axis rowlabel" x="0" y="${y + 11}">${E(r.name)}</text>
+        <rect x="0" y="${y + 18}" width="${w.toFixed(1)}" height="${barH}" rx="4" fill="${CHART_COLORS[0]}">
           <title>${E(r.name)} · ${num(r.value)}</title></rect>
-        <text class="value" x="${(L + w + 10).toFixed(1)}" y="${y + barH / 2 + 4}">${num(r.value)}</text></g>`;
+        <text class="value" x="${(w + 10).toFixed(1)}" y="${y + 18 + barH / 2 + 4}">${num(r.value)}</text></g>`;
     }).join('')}</svg>`;
 }
 
@@ -1401,20 +1413,33 @@ function render() {
   let s = '';
 
   if (page === 'home') {
-    const t = totals();
+    // На главной — состояние дела, а не объём содержимого. Сколько в базе
+    // записей, видно в самой базе; отсюда нужно понять, как идут деньги.
+    const m = moneyStats();
+    const ls = leadStats();
+    const overdue = db.decisions.filter(d => ['Думаем', 'Делаем', 'Проверяем'].includes(d.status)
+      && d.due_on && d.due_on <= today()).length;
+    const delta = m.last && m.prev && m.prev.revenue
+      ? Math.round(100 * (m.last.revenue - m.prev.revenue) / m.prev.revenue) : null;
+
     const cards = [
-      ['Записей в базе', db.knowledge.length, 'С источниками'],
-      ['Материалов', db.content.length, 'В общей базе'],
-      ['Задачи', db.tasks.filter(x => x.done).length + ' / ' + db.tasks.length, 'Подготовка к росту'],
-      ['Лиды', t.posts ? t.leads : '—', t.posts ? `Просмотры: ${t.views.toLocaleString('ru')} · публикаций: ${t.posts}` : 'Нет загруженных данных']
+      ['Выручка за месяц', m.last ? num(m.last.revenue) : '—',
+        m.last ? `${monthName(m.last.month)}${delta === null ? '' : ` · ${delta >= 0 ? '+' : ''}${delta}% к прошлому`}` : 'Внесите месяцы в «Деньгах»',
+        'money', sparkline(chartData().spark)],
+      ['Прибыль за месяц', m.last ? num(m.last.profit) : '—',
+        m.last ? 'выручка минус расходы' : 'считается по внесённым месяцам', 'money', ''],
+      ['Заявки за 30 дней', db.leads.length ? ls.recent : '—',
+        db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads', ''],
+      ['Решения к проверке', overdue, overdue ? 'срок подошёл' : 'просроченных нет', 'decisions', '']
     ];
-    const spark = sparkline(chartData().spark);
-    s = `<div class="hero"><div class="eyebrow">Знания → контент → результат</div>
-      <h1>Рабочий центр ADERVIS</h1>
-      <p>Все знания компании и маркетинговая работа в одном месте. Студия, CRM и Stock — с отдельными задачами и общим опытом.</p>
-      <button data-page="knowledge">Открыть базу знаний ↗</button> <button data-page="cases">Кейсы</button> <button data-page="competitors">Конкурентная карта</button></div>
-      <div class="grid metrics">${cards.map(([a, b, c], i) => `<div class="card metric"><div class="eyebrow">${a}</div>
-        <div class="value">${b}</div><small>${c}</small>${i === 3 ? spark : ''}</div>`).join('')}</div>
+
+    s = `<div class="hero compact">
+      <div><div class="eyebrow">ADERVIS DIGITAL</div>
+      <h1>Обзор</h1>
+      <p>Студия, CRM и Stock в одном месте. Ниже — то, что требует внимания сегодня.</p></div>
+      <div class="heroactions"><button data-page="leads">+ Заявка</button><button data-page="money">Деньги →</button></div></div>
+      <div class="grid metrics">${cards.map(([a, b, c, to, extra]) => `<button class="card metric click" data-page="${to}">
+        <div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small>${extra}</button>`).join('')}</div>
       ${(() => {
         const top = chainGaps(chainStats()).slice(0, 3);
         if (!top.length) return '';
@@ -1438,7 +1463,7 @@ function render() {
 
   if (page === 'knowledge' || page === 'cases') {
     const ks = db.knowledge.filter(k => page !== 'cases' || k.category === 'Кейсы');
-    s = heading(page === 'cases' ? 'Кейсы ADERVIS' : 'Память компании',
+    s = heading(page === 'cases' ? 'Кейсы' : 'База знаний',
       'Источники, статусы и возможность дополнить каждую запись.',
       `<button class="primary" data-action="newk">+ Запись</button>`)
       + filters([...new Set(ks.map(k => k.category))])
@@ -1456,7 +1481,7 @@ function render() {
 
   if (page === 'brand' && !deck.on) {
     const record = db.knowledge.find(k => k.category === 'Бренд' && /фирменн/i.test(k.title));
-    s = heading('Брендбук ADERVIS', 'Знак, цвета, шрифты и правила. Всё правится прямо здесь — брендбук не устаревает в день выпуска.',
+    s = heading('Брендбук', 'Знак, цвета, шрифты и правила. Всё правится прямо здесь — брендбук не устаревает в день выпуска.',
       `<button class="primary" data-action="deckon">Показать слайдами</button>
        <button data-action="newbrand">+ Тема</button>`)
       + `<div class="card brandlogo">
@@ -1483,7 +1508,7 @@ function render() {
       ['02', 'Adervis CRM', 'Сметы, КП и проекты для студий и фрилансеров.', 'https://adervis.ru/pro'],
       ['03', 'Adervis Stock', 'Ассеты Envato по прямой ссылке.', 'https://stock.adervis.ru/']
     ];
-    s = heading('Три направления. Одна компания.', 'Услуги студии и цифровые продукты с отдельными аудиториями.')
+    s = heading('Услуги и продукты', 'Три направления одной компании: студия, CRM и Stock — с отдельными аудиториями.')
       + `<div class="grid three">${items.map(([n, t, b, u]) => `<div class="card"><div class="value numbermark">${n}</div>
         <h2>${t}</h2><p class="muted">${b}</p>${source(u)}<p><button data-action="newp">Подготовить материал</button></p></div>`).join('')}</div>
       <div class="notice">Тарифы и функции сверять перед публикацией. Сегменты аудитории — рабочее предположение.</div>
@@ -1502,7 +1527,7 @@ function render() {
   if (page === 'calendar') {
     const start = (new Date(year, month, 1).getDay() + 6) % 7;
     const count = new Date(year, month + 1, 0).getDate();
-    s = heading('Редакционный календарь', 'Назначьте дату в публикации — она появится в календаре.',
+    s = heading('Календарь', 'Редакционный план. Назначьте дату в публикации — она появится здесь.',
       `<button data-action="newp" class="primary">+ Публикация</button>`)
       + `<div class="head"><button data-action="prev">←</button><h2>${new Date(year, month).toLocaleDateString('ru', { month: 'long', year: 'numeric' })}</h2><button data-action="next">→</button></div>
       <div class="calendar">${['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'].map(x => '<small>' + x + '</small>').join('')}
@@ -1589,7 +1614,7 @@ function render() {
   }
 
   if (page === 'analytics') {
-    s = heading('Измерять реальные результаты', 'Ручные замеры. Новая строка — отдельный снимок, а не добавка к предыдущему.',
+    s = heading('Аналитика', 'Ручные замеры реальных результатов. Новая строка — отдельный снимок, а не добавка к предыдущему.',
       `<button class="primary" data-action="newmetric">+ Результат</button>`)
       + (() => {
         const c = chartData();
@@ -1606,7 +1631,7 @@ function render() {
         }
         if (c.leads.length) {
           blocks.push(`<div class="card chartcard"><h2>Лиды по публикациям</h2>
-            <p class="muted chartnote">По последнему замеру каждой публикации.</p>${barChart(c.leads)}</div>`);
+            <p class="muted chartnote">По последнему замеру каждой публикации.</p>${barChart(c.leads, 'Лиды по публикациям')}</div>`);
         }
         return `<div class="grid" style="margin-bottom:16px">${blocks.join('')}</div>`;
       })()
@@ -1621,7 +1646,7 @@ function render() {
   }
 
   if (page === 'competitors') {
-    s = heading('Конкурентная карта', 'Первичный обзор позиционирования. Не рейтинг и не полный функциональный аудит.')
+    s = heading('Конкуренты', 'Карта позиционирования. Первичный обзор, не рейтинг и не полный функциональный аудит.')
       + `<div class="notice">Источники собраны 15 сентября 2026. Часть страниц не отдала полный текст. Глубина проверки указана в каждой строке.</div>
       <div class="card tablewrap"><table class="table"><thead><tr><th>Сегмент</th><th>Компания</th><th>Контекст</th><th>Возможность для ADERVIS / проверка</th><th>Источник</th></tr></thead><tbody>
       ${rivals.map(([g, n, c, a, u, st]) => `<tr><td>${tag(g)}</td><td><b>${n}</b></td><td>${c}</td><td>${a}</td><td>${source(u)}<p><small>${st}</small></p></td></tr>`).join('')}
@@ -1642,7 +1667,7 @@ function render() {
       ['05', 'Интеграции', 'Метрика, UTM и сделки из Adervis CRM: какие публикации привели заявки.'],
       ['06', 'Исследования', 'Мониторинг конкурентов, уведомления об изменениях и проверка гипотез.']
     ];
-    s = heading('Развитие платформы', 'Последовательность релизов и критерии готовности.')
+    s = heading('Развитие системы', 'Последовательность релизов самого приложения и критерии готовности.')
       + `<div class="timeline">${stages.map(([n, t, b]) => `<div class="card"><div class="eyebrow">${n}</div><h2 style="margin-top:8px">${t}</h2><p class="muted">${b}</p></div>`).join('')}</div>`;
   }
 
@@ -2775,7 +2800,10 @@ $('#gateform').onsubmit = async e => {
   }
 };
 
-$('#nav').innerHTML = sections.map(([id, , t]) => `<button data-page="${id}"><i>${icon(id)}</i><span>${t}</span></button>`).join('');
+$('#nav').innerHTML = NAV.map(([group, ids]) =>
+  `<div class="navgroup">${group}</div>` +
+  ids.map(id => `<button data-page="${id}"><i>${icon(id)}</i><span>${SECTION_TITLE[id]}</span></button>`).join('')
+).join('');
 $('#menu').innerHTML = icon('menu');
 $('#refresh').innerHTML = icon('refresh');
 $('#theme').innerHTML = icon('theme');

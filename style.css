@@ -449,3 +449,36 @@ dialog .close{width:34px;height:34px;border-radius:10px;background:var(--bg);bor
 .table tr.clickrow{cursor:pointer}
 .table tr.clickrow:hover td{background:var(--purple)}
 .table tr.clickrow:focus-visible{outline:3px solid #9278ff;outline-offset:-3px}
+
+/* --- Навигация и плотность -------------------------------------------
+   Меню сгруппировано, поэтому пункты сделаны компактнее: иначе четыре
+   заголовка групп выталкивают «Настройки» за край экрана. */
+.nav{gap:1px}
+.nav button{padding:8px 12px}
+.nav .navgroup{color:#71767f;text-transform:uppercase;letter-spacing:.11em;font-size:9.5px;font-weight:700;padding:15px 12px 6px}
+.nav .navgroup:first-child{padding-top:2px}
+
+/* Шапка обзора: приветствие не должно занимать треть экрана. */
+.hero.compact{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;padding:22px 26px}
+.hero.compact h1{font-size:30px;margin:6px 0 6px}
+.hero.compact p{max-width:none;margin:0}
+.hero.compact:after{font-size:88px;right:24px;top:-6px}
+.heroactions{display:flex;gap:8px;flex:none;position:relative;z-index:1}
+
+/* Плитки обзора кликабельны: цифра ведёт туда, где её можно разобрать. */
+.metric.click{text-align:left;width:100%;display:block}
+.metric.click:hover{border-color:#9278ff}
+
+/* Таблицы: 12px сверху и снизу на каждой строке — это полтора экрана
+   воздуха на двадцати строках. */
+.table th,.table td{padding:9px 10px}
+.table th{letter-spacing:.06em;text-transform:uppercase}
+.table td{vertical-align:top}
+
+/* Меню длиннее экрана: прокручивается само, а знак сверху и пользователь
+   снизу остаются на месте. Иначе «Настройки» просто срезались краем. */
+.sidebar{overflow:hidden}
+.sidebar .brand,.sidebar .workspace,.sidebar .nav-label,.sidebar .bottom{flex:none}
+.nav{overflow-y:auto;min-height:0;flex:1;scrollbar-width:thin;padding-bottom:6px}
+.nav button{padding:7px 12px}
+.nav .navgroup{padding:13px 12px 5px}
