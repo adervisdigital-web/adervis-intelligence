@@ -280,6 +280,11 @@ for (const [month, dir, rev, cost, proj, days] of [
 }
 const tiles = await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')));
 check('выручка месяца сложена по направлениям', /550\s?000 ₽/.test(tiles[0]), tiles[0]);
+// знак рубля обязан остаться на одной строке с числом
+check('крупное число не разрывается переносом', await page.$$eval('.metric .value', vs => vs.every(v => {
+  const line = parseFloat(getComputedStyle(v).lineHeight) || parseFloat(getComputedStyle(v).fontSize) * 1.2;
+  return v.getBoundingClientRect().height <= line * 1.4;
+})));
 check('рост к прошлому месяцу посчитан', /\+38% к прошлому/.test(tiles[0]), tiles[0]);
 check('прибыль и маржа посчитаны', /365\s?000 ₽/.test(tiles[1]) && /маржа 66%/.test(tiles[1]), tiles[1]);
 check('средний чек посчитан по проектам', /110\s?000 ₽/.test(tiles[2]), tiles[2]);
@@ -344,6 +349,21 @@ check('в работе только незакрытые', /в работе 1/i.
 const srcRows = await page.$$eval('.table tr', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ')));
 check('источники сведены в таблицу', srcRows.some(r => /Рекомендация 2 1 50%/.test(r)), srcRows.slice(0, 5).join(' | '));
 check('источник без сделок показан честно', srcRows.some(r => /2ГИС 1 0 0%/.test(r)));
+// отбор: без него список перестанет читаться уже на третьем десятке
+check('у каждого статуса своя метка со счётчиком', (await page.$$('[data-action=leadstatus]')).length >= 3,
+  String((await page.$$('[data-action=leadstatus]')).length));
+await page.click('[data-action=leadstatus][data-id="Сделка"]');
+check('отбор по статусу оставляет только его', (await page.$$('tr[data-l]')).length === 1,
+  String((await page.$$('tr[data-l]')).length));
+check('видно, сколько показано из скольких', (await page.textContent('#view')).includes('показано 1 из 3'));
+await page.fill('#leadq', 'казан');
+await page.waitForFunction(() => document.querySelectorAll('tr[data-l]').length === 0);
+check('под пустой отбор объясняют, что делать', (await page.textContent('#view')).includes('Снимите фильтр'));
+check('курсор остаётся в поле поиска', await page.evaluate(() => document.activeElement.id === 'leadq'));
+await page.fill('#leadq', '');
+await page.click('[data-action=leadstatus][data-id="Все"]');
+await page.waitForFunction(() => document.querySelectorAll('tr[data-l]').length === 3);
+check('отбор снимается', (await page.$$('tr[data-l]')).length === 3);
 // статус видно взглядом, но слово остаётся — цвет не единственный носитель смысла
 const tones = await page.$$eval('tr[data-l] .tag', ts => ts.map(x => ({
   text: x.textContent.trim(), bg: getComputedStyle(x).backgroundColor
@@ -1159,6 +1179,59 @@ check('после ошибки черновики убраны', (await page.$$(
 check('задание в форме не потеряно', (await page.inputValue('#goal')).includes('смету'));
 await page.evaluate(() => { window.__aiFail = null; });
 await page.screenshot({ path: path.join(OUT, 'intel-ai.png') });
+
+// --- 10в. тёмная тема
+// Переключатель есть с самого начала, но ни одна проверка сюда не
+// заглядывала: половина оформления жила непроверенной.
+await page.click('#theme');
+await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+check('тёмная тема включается', await page.evaluate(() => document.documentElement.dataset.theme === 'dark'));
+await page.evaluate(() => {
+  // Контраст считаем по настоящему фону: у прозрачных элементов берём
+  // ближайшего родителя с непрозрачной заливкой.
+  const lum = c => {
+    const [r, g, b] = c.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number).map(v => {
+      const s = v / 255;
+      return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const bgOf = el => {
+    for (let n = el; n; n = n.parentElement) {
+      const c = getComputedStyle(n).backgroundColor;
+      if (c && !/rgba\(0, 0, 0, 0\)|transparent/.test(c)) return c;
+    }
+    return 'rgb(255,255,255)';
+  };
+  window.__contrast = sel => [...document.querySelectorAll(sel)]
+    .filter(e => e.getBoundingClientRect().width > 0 && e.textContent.trim())
+    .map(e => {
+      const st = getComputedStyle(e);
+      const a = lum(st.color), b = lum(bgOf(e));
+      return {
+        text: e.textContent.trim().slice(0, 22),
+        size: parseFloat(st.fontSize),
+        bold: Number(st.fontWeight) >= 600,
+        ratio: +(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05))).toFixed(2)
+      };
+    });
+});
+const darkFails = await page.evaluate(() => window.__contrast('.card p, .card small, .muted, .tag, .eyebrow, .nav button span, h1, h2')
+  .filter(x => x.ratio < (x.size >= 24 || (x.size >= 18.66 && x.bold) ? 3 : 4.5)));
+check('в тёмной теме текст читается по стандарту доступности', darkFails.length === 0,
+  darkFails.slice(0, 4).map(f => `${f.text} ${f.ratio}:1 @${f.size}px`).join(' | '));
+await page.screenshot({ path: path.join(OUT, 'dark-knowledge.png') });
+await nav('chain');
+await page.waitForSelector('#graphsvg');
+const darkGraph = await page.$$eval('.gnode circle:not(.ghit)', cs => cs.map(c => getComputedStyle(c).fill));
+check('узлы карты в тёмной теме не сливаются с фоном',
+  new Set(darkGraph).size >= 3 && !darkGraph.some(f => f === 'rgb(17, 19, 26)'), [...new Set(darkGraph)].slice(0, 4).join(' '));
+await page.screenshot({ path: path.join(OUT, 'dark-graph.png') });
+await nav('money');
+await page.screenshot({ path: path.join(OUT, 'dark-money.png') });
+await page.click('#theme');
+await page.waitForFunction(() => document.documentElement.dataset.theme !== 'dark');
+check('тема переключается обратно', await page.evaluate(() => document.documentElement.dataset.theme !== 'dark'));
 
 // --- 11. выход и «запомнить меня»
 await page.click('[data-action=signout]');

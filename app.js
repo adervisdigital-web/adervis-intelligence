@@ -1218,13 +1218,18 @@ function renderBreakEven() {
   }
   return `<div class="card"><div class="head" style="margin:0 0 12px"><h2 style="margin:0">Точка безубыточности</h2>${add}</div>
     <div class="grid bezgrid">${rows.map(r => `<div class="bezone ${r.ok ? 'ok' : 'under'}">
-      <div class="eyebrow">${E(r.direction)}</div>
-      <div class="value">${r.need}<small> клиентов до нуля</small></div>
-      <p class="muted">Постоянные ${num(r.fixed_costs)} ₽ · чек ${num(r.price)} ₽</p>
-      <p class="${r.ok ? 'plus' : 'minus'}">${r.ok
-        ? `В плюсе: ${r.have} при пороге ${r.need}`
-        : r.have ? `Сейчас ${r.have} — не хватает ${r.gap}` : 'В этом месяце клиентов не внесено'}</p>
-      ${r.note ? `<p class="muted small">${E(r.note)}</p>` : ''}
+      <div class="bezfigure">
+        <div class="eyebrow">${E(r.direction)}</div>
+        <div class="value">${r.need}</div>
+        <small class="muted">клиентов до нуля</small>
+      </div>
+      <div class="bezfacts">
+        <p class="muted">Постоянные ${num(r.fixed_costs)} ₽ · чек ${num(r.price)} ₽</p>
+        <p class="${r.ok ? 'plus' : 'minus'}">${r.ok
+          ? `В плюсе: ${r.have} при пороге ${r.need}`
+          : r.have ? `Сейчас ${r.have} — не хватает ${r.gap}` : 'В этом месяце клиентов не внесено'}</p>
+        ${r.note ? `<p class="muted small">${E(r.note)}</p>` : ''}
+      </div>
     </div>`).join('')}</div></div>`;
 }
 
@@ -2196,6 +2201,15 @@ function render() {
     map.onkeydown = jump;
   }
 
+  const lq = $('#leadq');
+  if (lq) lq.oninput = e => {
+    const pos = e.target.selectionStart;
+    leadFilter.q = e.target.value;
+    render();
+    const again = $('#leadq');
+    if (again) { again.focus(); again.setSelectionRange(pos, pos); }
+  };
+
   const f = $('#filter');
   if (f) f.oninput = e => {
     const pos = e.target.selectionStart;
@@ -2514,9 +2528,17 @@ function leadStats() {
   };
 }
 
+// Заявок станет больше всего быстрее прочего: без отбора список
+// перестанет читаться уже на третьем десятке.
+let leadFilter = { status: 'Все', q: '' };
+
 function renderLeads() {
   const st = leadStats();
-  const rows = [...db.leads].sort((a, b) => b.came_on.localeCompare(a.came_on));
+  const q = leadFilter.q.toLowerCase();
+  const rows = [...db.leads]
+    .filter(l => leadFilter.status === 'Все' || l.status === leadFilter.status)
+    .filter(l => !q || `${l.name} ${l.request} ${l.source} ${l.note}`.toLowerCase().includes(q))
+    .sort((a, b) => b.came_on.localeCompare(a.came_on));
 
   const head = heading('Заявки', 'Кто обратился и откуда узнал. Отсюда видно, какие решения принесли деньги, а какие только время.',
     `<button class="primary" data-action="newlead">+ Заявка</button>`);
@@ -2542,14 +2564,24 @@ function renderLeads() {
         <td>${s.all ? Math.round(100 * s.deals / s.all) + '%' : '—'}</td><td>${num(s.amount)}</td></tr>`).join('')}
       </tbody></table></div>`;
 
-  const list = `<div class="head"><h2>Все обращения</h2><small class="muted">свежие сверху</small></div>
+  const counts = LEAD_STATUS.map(s => [s, db.leads.filter(l => l.status === s).length]).filter(([, n]) => n);
+  const filters = `<div class="toolbar leadbar">
+    <input class="input" id="leadq" placeholder="Имя, запрос, источник…" value="${E(leadFilter.q)}" aria-label="Поиск по обращениям">
+    <div class="filters">
+      <button class="chip${leadFilter.status === 'Все' ? ' on' : ''}" data-action="leadstatus" data-id="Все">Все <b>${db.leads.length}</b></button>
+      ${counts.map(([s, n]) => `<button class="chip${leadFilter.status === s ? ' on' : ''}" data-action="leadstatus" data-id="${E(s)}">${E(s)} <b>${n}</b></button>`).join('')}
+    </div></div>`;
+
+  const list = filters + `<div class="head"><h2>Все обращения</h2>
+      <small class="muted">${rows.length === db.leads.length ? 'свежие сверху' : `показано ${rows.length} из ${db.leads.length}`}</small></div>
     <div class="card tablewrap"><table class="table">
       <thead><tr><th>Когда</th><th>Кто</th><th>Откуда</th><th>Направление</th><th>Чего хотел</th><th>Сумма</th><th>Статус</th></tr></thead>
       <tbody>${rows.map(l => `<tr class="clickrow" tabindex="0" role="button" data-l="${E(l.id)}">
         <td class="date">${E(l.came_on)}</td><td><b>${E(l.name)}</b></td><td>${E(l.source)}</td>
         <td>${tag(l.direction)}</td><td>${E((l.request || '').slice(0, 60))}${(l.request || '').length > 60 ? '…' : ''}</td>
         <td>${l.amount ? num(l.amount) : '—'}</td><td>${tag(l.status)}</td></tr>`).join('')}
-      </tbody></table></div>`;
+      </tbody></table></div>`
+    + (rows.length ? '' : '<div class="card empty">Под отбор ничего не подошло. Снимите фильтр или измените запрос.</div>');
 
   return head + metrics + sources + list;
 }
@@ -3127,6 +3159,7 @@ document.addEventListener('click', async e => {
     case 'delmonth': delMonth(b.dataset.id); break;
     case 'newdecision': editDecision(); break;
     case 'deldecision': delDecision(b.dataset.id); break;
+    case 'leadstatus': leadFilter.status = b.dataset.id; render(); break;
     case 'newlead': editLead(); break;
     case 'dellead': delLead(b.dataset.id); break;
     case 'graphfull': graph.open = !graph.open; render(); break;
