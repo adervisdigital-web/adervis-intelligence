@@ -765,6 +765,32 @@ const FIGURES = {
       ${svc}</svg>`;
   },
 
+  // Одна раскладка на три продукта: показывает, что от продукта к
+  // продукту меняется только акцент, а ядро остаётся тем же.
+  product: (data = {}) => {
+    const dir = data.dir || 'Студия';
+    const name = data.product || dir;
+    return `<div class="productsheet" data-dir="${E(dir)}">
+      <div class="prodplate"><span>${E(name)}</span></div>
+      <div class="prodrow">
+        <span class="uilabel">Акцент в деле</span>
+        <button class="primary prodbtn" type="button">Основное действие</button>
+        <button class="chip prodchip" type="button">Метка</button>
+        <span class="tag" data-dir="${E(dir)}">${E(dir)}</span>
+        <span class="prodbar"><i></i></span>
+      </div>
+      <div class="prodrow">
+        <span class="uilabel">Остаётся общим</span>
+        <button class="primary" type="button">Кнопка ядра</button>
+        <input class="input" value="Поле" aria-label="Поле" readonly>
+        <span class="tag good">Сработало</span>
+        <span class="muted">знак, шрифты, сетка, иконки</span>
+      </div>
+      <p class="muted">Меняется только акцент: заливка, полоса, свечение. Знак, шрифты, отступы,
+      иконки и состояния берутся из общей части и в продукте не переопределяются.</p>
+    </div>`;
+  },
+
   // Набор иконок. Одна геометрия, одна толщина штриха, размеры токенами.
   icons: () => {
     const groups = [
@@ -897,7 +923,7 @@ function brandSlides() {
         kind: 'gallery', title: b.title, items: part, part: all.length > 1 ? `${i + 1}/${all.length}` : ''
       }));
     } else if (b.kind === 'figure') {
-      slides.push({ kind: 'figure', title: b.title, figure: b.data?.figure, note: b.data?.body || '' });
+      slides.push({ kind: 'figure', title: b.title, figure: b.data?.figure, data: b.data, note: b.data?.body || '' });
     } else {
       const { intro, bullets } = splitBody(b.data?.body);
       chunked(bullets, 6).forEach((part, i, all) => slides.push({
@@ -947,7 +973,7 @@ function slideHtml(sl, i, total) {
   }
   if (sl.kind === 'figure') {
     const draw = FIGURES[sl.figure];
-    return head(sl.title) + `<div class="slidebody sfigure">${draw ? draw() : ''}
+    return head(sl.title) + `<div class="slidebody sfigure">${draw ? draw(sl.data || {}) : ''}
       ${sl.note ? `<p class="slidenote">${E(sl.note.split('\n')[0])}</p>` : ''}</div>` + foot;
   }
   if (sl.kind === 'end') {
@@ -1013,7 +1039,10 @@ const brandEmpty = b => b.kind === 'text'
 
 // Темы сгруппированы по разделам, сверху — оглавление. Иначе брендбук
 // превращается в ленту из тридцати карточек, которую никто не дочитывает.
-const SECTIONS = ['Компания', 'Знак', 'Цвет', 'Шрифт и текст', 'Элементы', 'Правила', 'Материалы', 'Прочее'];
+// Общая часть идёт первой, продукты — после неё: порядок сам говорит,
+// что ядро одно, а продукты только добавляют к нему своё.
+const SECTIONS = ['Компания', 'Знак', 'Цвет', 'Шрифт и текст', 'Элементы', 'Правила', 'Материалы',
+  'ADERVIS Studio', 'ADERVIS CRM', 'ADERVIS Stock', 'Прочее'];
 
 function brandSections() {
   const groups = SECTIONS
@@ -1076,7 +1105,7 @@ function brandBlock(b) {
       <img alt="${E(g.caption || '')}"><figcaption>${E(g.caption || '')}</figcaption></figure>`).join('')}</div>`;
   } else if (b.kind === 'figure') {
     const draw = FIGURES[b.data?.figure];
-    body = draw ? draw() : '<p class="muted">Чертёж не найден.</p>';
+    body = draw ? draw(b.data) : '<p class="muted">Чертёж не найден.</p>';
     if (b.data?.body) body += `<div class="brandtext" style="margin-top:12px">${brandText(b.data.body)}</div>`;
   } else {
     // Длинный текст сворачиваем: карточка остаётся одного роста с соседями.
@@ -1749,15 +1778,20 @@ function graphPositions() {
 }
 
 function renderGraph() {
-  // На узком экране карта открывается приближённой и по центру: сотня
-  // узлов с областью касания в 44 точки на телефон физически не влезает,
-  // поэтому там ходят по карте, а полный охват даёт список под ней.
+  const { nodes, edges } = graphPositions();
+  // Чем больше записей, тем теснее узлы: расстояние между ними падает как
+  // корень из их числа, и никакой размер полотна этого не меняет —
+  // сокращается вместе с ним. Значит единственный рычаг — приближение,
+  // и оно должно расти вместе с базой, иначе карта со временем мельчает
+  // сама по себе. На телефоне стартуем ближе: там экрана меньше.
   if (!graph.scale) {
-    graph.scale = innerWidth <= 720 ? 3 : 1;
+    const crowd = Math.sqrt(Math.max(nodes.length, 1) / 55);
+    graph.scale = innerWidth <= 720
+      ? Math.min(4, 3 * crowd)
+      : Math.max(1, Math.min(1.7, crowd));
     graph.ox = GRAPH_W * (1 - 1 / graph.scale) / 2;
     graph.oy = GRAPH_H * (1 - 1 / graph.scale) / 2;
   }
-  const { nodes, edges } = graphPositions();
   if (!nodes.length) {
     return `<div class="card empty"><h2>Связывать пока нечего</h2>
       <p>Карта рисуется по записям: база знаний, брендбук, публикации, решения и заявки.

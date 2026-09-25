@@ -53,31 +53,35 @@ const fake = (seedData) => {
     ],
     ai: [],
     brand: [
-      { id: 'colors-base', title: 'Базовые цвета', kind: 'colors', sort: 20, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+      { id: 'colors-base', title: 'Базовые цвета', kind: 'colors', sort: 20, section: 'Цвет', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { items: [{ name: 'Фон', hex: '#141414', usage: 'основной фон' }, { name: 'Золото', hex: '#f6bd3a', usage: 'акцент' }] } },
-      { id: 'fonts', title: 'Шрифты', kind: 'fonts', sort: 40, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+      { id: 'fonts', title: 'Шрифты', kind: 'fonts', sort: 40, section: 'Шрифт и текст', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { items: [{ family: 'Unbounded', role: 'Заголовки', weights: '500, 700', sample: 'ADERVIS' },
           { family: 'TT Fors', role: 'Текст', weights: 'Regular', sample: 'Визуал для бизнеса', file: 'brand/tt-fors-regular.ttf' }] } },
       { id: 'patterns', title: 'Паттерны', kind: 'gallery', sort: 85, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { items: [{ file: 'brand/gallery/pattern-1.jpg', caption: 'Паттерн 1' }, { file: 'brand/gallery/pattern-2.jpg', caption: 'Паттерн 2' }] } },
       { id: 'photo', title: 'Фото и видео', kind: 'text', sort: 120, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { body: 'Пока не заполнено.' } },
-      { id: 'clearspace', title: 'Охранное поле', kind: 'figure', sort: 11, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+      { id: 'clearspace', title: 'Охранное поле', kind: 'figure', sort: 11, section: 'Знак', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'clearspace', body: '— Свободное поле не меньше половины высоты знака' } },
-      { id: 'contrast', title: 'Сочетания цветов', kind: 'figure', sort: 36, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+      { id: 'contrast', title: 'Сочетания цветов', kind: 'figure', sort: 36, section: 'Цвет', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'contrast' } },
       { id: 'misuse-figure', title: 'Как нельзя: наглядно', kind: 'figure', sort: 16, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'misuse' } },
-      { id: 'icons-set', title: 'Иконки', kind: 'figure', sort: 82, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+      { id: 'icons-set', title: 'Иконки', kind: 'figure', sort: 82, section: 'Элементы', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'icons' } },
       { id: 'ui-elements', title: 'Элементы интерфейса', kind: 'figure', sort: 84, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'uikit' } },
       { id: 'spacing-scale', title: 'Шкала отступов', kind: 'figure', sort: 62, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'spacing' } },
-      { id: 'dir-colors', title: 'Цвета продуктов и услуг', kind: 'figure', sort: 34, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+      { id: 'dir-colors', title: 'Цвета продуктов и услуг', kind: 'figure', sort: 34, section: 'Цвет', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'dirs', body: '— Градиент только для крупных плашек' } },
       { id: 'mark-patterns', title: 'Паттерны из знака', kind: 'figure', sort: 86, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'marks', body: '— Паттерн остаётся фоном' } },
+      { id: 'p-crm', title: 'CRM: акцент в деле', kind: 'figure', sort: 10, section: 'ADERVIS CRM', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'product', dir: 'CRM', product: 'ADERVIS CRM', body: '— Градиент только на крупных плашках' } },
+      { id: 'p-stock', title: 'Stock: акцент в деле', kind: 'figure', sort: 10, section: 'ADERVIS Stock', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'product', dir: 'Stock', product: 'ADERVIS Stock', body: '— Зелёный здесь не значит «успех»' } },
       { id: 'formats', title: 'Форматы и безопасные зоны', kind: 'figure', sort: 102, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'formats', body: '— Знак и заголовок держим внутри безопасной зоны' } },
       { id: 'card-layout', title: 'Визитка: раскладка', kind: 'figure', sort: 112, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
@@ -484,6 +488,8 @@ const taps = await page.$$eval('.gnode .ghit', cs => cs.map(c => {
 // держим разумный минимум, а крупную цель даёт разворот во весь экран.
 const median = ts => Math.round([...ts].sort((a, b) => a - b)[Math.floor(ts.length / 2)]);
 check('в окне цель не мельче 26 точек', median(taps) >= 26, String(median(taps)));
+check('карта сама приближается, когда записей становится больше',
+  await page.$eval('#graphsvg', g => +g.getAttribute('viewBox').split(' ')[2] <= 1600));
 await page.screenshot({ path: path.join(OUT, 'intel-graph.png') });
 const nodeKinds = await page.$$eval('.gnode', g => g.map(x => x.className.baseVal.split(' ')[1]));
 check('на карте есть записи всех заведённых видов',
@@ -974,6 +980,8 @@ for (const [name, label] of [['contrast', 'Сочетания цветов и к
   const el = await page.$(`.figure[aria-label="${label}"]`);
   if (el) await el.screenshot({ path: path.join(OUT, `figure-${name}.png`) });
 }
+const prodFig = await page.$('.productsheet');
+if (prodFig) await prodFig.screenshot({ path: path.join(OUT, 'figure-product.png') });
 const iconsFig = await page.$('.iconsheet');
 if (iconsFig) await iconsFig.screenshot({ path: path.join(OUT, 'figure-icons.png') });
 const pat = await page.$('.patterns');
@@ -1011,6 +1019,32 @@ check('подписи под картинками на месте',
 
 // оглавление и разделы
 check('сверху есть оглавление по разделам', (await page.$$('.brandbar .tocrow .chip')).length >= 1);
+// один брендбук, продукты — разделами внутри, а не тремя документами
+const tocNames = await page.$$eval('.brandbar .tocrow .chip', cs => cs.map(c => c.textContent.replace(/\s+/g, ' ').trim()));
+check('у каждого продукта свой раздел в оглавлении',
+  tocNames.some(t => t.startsWith('ADERVIS CRM')) && tocNames.some(t => t.startsWith('ADERVIS Stock')),
+  tocNames.join(' | '));
+check('общая часть идёт раньше продуктов',
+  tocNames.findIndex(t => t.startsWith('ADERVIS')) > 0, tocNames.join(' | '));
+const prodAccent = await page.$$eval('.productsheet', ps => ps.map(p => ({
+  dir: p.dataset.dir, plate: getComputedStyle(p.querySelector('.prodplate')).backgroundImage.slice(0, 60)
+})));
+// подпись на плашке обязана читаться поверх акцента любого продукта
+const plateReadable = await page.$$eval('.productsheet', ps => {
+  const lum = c => { const [r,g,b] = c.match(/\d+/g).slice(0,3).map(Number).map(v => {
+    const t = v/255; return t <= 0.04045 ? t/12.92 : ((t+0.055)/1.055)**2.4; });
+    return 0.2126*r + 0.7152*g + 0.0722*b; };
+  return ps.map(p => {
+    const el = p.querySelector('.prodplate span');
+    return { dir: p.dataset.dir, ink: getComputedStyle(el).color, light: lum(getComputedStyle(el).color) > 0.4 };
+  });
+});
+check('на тёмном акценте подпись светлая, на светлом тёмная',
+  plateReadable.every(p => (p.dir === 'CRM' || p.dir === 'Медиа') ? p.light : !p.light),
+  plateReadable.map(p => `${p.dir}:${p.ink}`).join(' | '));
+check('у каждого продукта свой акцент на странице',
+  prodAccent.length >= 2 && new Set(prodAccent.map(p => p.plate)).size === prodAccent.length,
+  prodAccent.map(p => p.dir).join(', '));
 // управление темой не спорит с её названием
 check('кнопки темы спрятаны, пока на карточку не навели',
   await page.$eval('.blockhead .blockbtns', e => getComputedStyle(e).opacity === '0'));
@@ -1052,7 +1086,7 @@ check('в оглавлении видно число тем в разделе',
 
 // полнота брендбука
 const progress = (await page.textContent('.brandbar')).replace(/\s+/g, ' ');
-check('видно, сколько тем заполнено', /Заполнено 14 из 15/.test(progress), progress);
+check('видно, сколько тем заполнено', /Заполнено 16 из 17/.test(progress), progress);
 check('пустая тема названа поимённо', /Ждут содержимого.*Фото и видео/.test(progress), progress);
 check('из полноты можно сразу открыть пустую тему',
   (await page.$$('.brandbar [data-action=editbrand]')).length > 0);
@@ -1088,8 +1122,8 @@ await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
 const slideCount = await page.$$eval('.slide', s => s.length);
 // обложка + знак + 13 тем + финал
-check('слайды собраны по темам', slideCount === 18, String(slideCount));
-check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 10, String((await page.$$('.slide .sfigure')).length));
+check('слайды собраны по темам', slideCount === 20, String(slideCount));
+check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 12, String((await page.$$('.slide .sfigure')).length));
 check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
 const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
 check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));
