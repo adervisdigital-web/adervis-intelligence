@@ -979,3 +979,8 @@ h1,.sectionhead,.hero h1,.covertitle,.slidetitle{
     transition-duration:.01ms !important;scroll-behavior:auto !important}
   .click:hover,.metric.click:hover,.dircard:hover{transform:none !important}
 }
+
+/* Узел рекламы на карте связей: расход по каналу. */
+.gnode.ad circle:not(.ghit){fill:var(--g-money)}
+.glegend.ad{color:var(--g-money)}
+.adtable td.minus{font-weight:700}

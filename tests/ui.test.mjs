@@ -40,8 +40,7 @@ const fake = (seedData) => {
     metrics: [],
     files: [],
     publications: [],
-    finance: [],
-    economics: [{ direction: 'Stock', fixed_costs: 4685, price: 449, note: 'Envato и сервер', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }],
+    ad_budget: [],
     decisions: [],
     leads: [
       { id: 'l1', came_on: '2026-09-10', name: 'Графсил', source: 'Рекомендация', direction: 'Студия',
@@ -243,15 +242,16 @@ check('свой вошёл', await page.isVisible('#shell'));
 check('в боковом меню его имя', (await page.textContent('#myname')) === 'Артём');
 // На обзоре — состояние дела, а не объём базы: пока денег не внесли, стоит прочерк с подсказкой.
 const homeCards = await page.$$eval('.metric', c => c.map(x => x.innerText.replace(/\s+/g, ' ')));
-check('обзор начинается с выручки', /выручка за месяц/i.test(homeCards[0]), homeCards[0]);
-check('пустые деньги объясняют, что внести', /внесите месяцы/i.test(homeCards[0]), homeCards[0]);
-check('обзор показывает заявки и решения',
-  /заявки за 30 дней/i.test(homeCards[2]) && /решения к проверке/i.test(homeCards[3]), homeCards.join(' | '));
+check('обзор начинается с рекламы, а не с выручки', /реклама за месяц/i.test(homeCards[0]), homeCards[0]);
+check('пустой бюджет объясняет, что внести', /внесите бюджет/i.test(homeCards[0]), homeCards[0]);
+check('на обзоре есть цена заявки', /цена заявки/i.test(homeCards[1]), homeCards[1]);
+check('обзор показывает заявки и охват',
+  /заявки за 30 дней/i.test(homeCards[2]) && /охват публикаций/i.test(homeCards[3]), homeCards.join(' | '));
 check('с плитки можно уйти в её раздел',
-  await page.$eval('.metric.click', b => b.dataset.page === 'money'));
+  await page.$eval('.metric.click', b => b.dataset.page === 'ads'));
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup', g => g.map(x => x.textContent));
-check('меню разбито на группы', groups.join(',') === 'Дело,Знание компании,Работа,Система', groups.join(','));
+check('меню разбито на группы', groups.join(',') === 'Маркетинг,Знание компании,Работа,Система', groups.join(','));
 check('все разделы остались в меню', (await page.$$('#nav button')).length === 17,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
@@ -269,60 +269,53 @@ check('имя пользователя остаётся на виду', await pa
 await page.evaluate(() => { document.querySelector('#nav').scrollTop = 0; });
 await page.screenshot({ path: path.join(OUT, 'intel-home.png') });
 
-// --- 1в. деньги
-await nav('money');
-check('пустой раздел денег объясняет, что внести', (await page.textContent('#view')).includes('Внесите хотя бы три последних месяца'));
-check('сказано, что цифры не уходят в тексты', (await page.textContent('#view')).includes('в запросы к ИИ они не попадают'));
-await page.waitForSelector('.bezone');
-const bez = (await page.$eval('.bezone', e => e.innerText)).replace(/\s+/g, ' ');
-check('порог безубыточности посчитан', /11 клиентов до нуля/.test(bez), bez);
-check('видно, из чего порог складывается', /4\s?685 ₽/.test(bez) && /449 ₽/.test(bez), bez);
-for (const [month, dir, rev, cost, proj, days] of [
-  ['2026-07', 'Студия', '400000', '150000', '4', '6'],
-  ['2026-08', 'Студия', '520000', '180000', '5', '8'],
-  ['2026-08', 'CRM', '30000', '5000', '0', '0']
-]) {
-  await page.click('[data-action=newmonth]');
-  await page.fill('#mo input[name=month]', month);
-  await page.selectOption('#mo select[name=direction]', dir);
-  await page.fill('#mo input[name=revenue]', rev);
-  await page.fill('#mo input[name=costs]', cost);
-  await page.fill('#mo input[name=projects]', proj);
-  await page.fill('#mo input[name=shoot_days]', days);
-  await page.click('#mo button.primary');
+// --- 1в. реклама: бюджет по каналам и цена заявки
+// Учёта денег в приложении больше нет — только бюджет на рекламу. Канал
+// совпадает с источником заявки, поэтому считается цена обращения.
+check('раздела «Деньги» в меню больше нет', (await page.$$('#nav button[data-page=money]')).length === 0);
+await nav('ads');
+check('пустой бюджет объясняет, что внести и зачем',
+  (await page.textContent('#view')).includes('Название канала совпадает с источником'));
+const nowMonth = new Date().toISOString().slice(0, 7);
+const addAd = async (ch, plan, spent) => {
+  await page.click('[data-action=newad]');
+  await page.fill('#adf input[name=month]', nowMonth);
+  await page.selectOption('#adf select[name=channel]', ch);
+  await page.fill('#adf input[name=planned]', plan);
+  await page.fill('#adf input[name=spent]', spent);
+  await page.click('#adf button.primary');
   await page.waitForFunction(() => !document.querySelector('#modal').open);
-}
-const tiles = await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')));
-check('выручка месяца сложена по направлениям', /550\s?000 ₽/.test(tiles[0]), tiles[0]);
+};
+await addAd('2ГИС', '8000', '6000');
+await addAd('ВКонтакте', '12000', '10000');
+const adTiles = await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')));
+check('бюджет месяца сложен по каналам и сверен с планом',
+  /16\s?000 ₽/.test(adTiles[0]) && /20\s?000 ₽/.test(adTiles[0]), adTiles[0]);
 // знак рубля обязан остаться на одной строке с числом
 check('крупное число не разрывается переносом', await page.$$eval('.metric .value', vs => vs.every(v => {
   const line = parseFloat(getComputedStyle(v).lineHeight) || parseFloat(getComputedStyle(v).fontSize) * 1.2;
   return v.getBoundingClientRect().height <= line * 1.4;
 })));
-check('рост к прошлому месяцу посчитан', /\+38% к прошлому/.test(tiles[0]), tiles[0]);
-check('прибыль и маржа посчитаны', /365\s?000 ₽/.test(tiles[1]) && /маржа 66%/.test(tiles[1]), tiles[1]);
-check('средний чек посчитан по проектам', /110\s?000 ₽/.test(tiles[2]), tiles[2]);
-check('график по направлениям нарисован', (await page.$$('.chart .serie')).length === 2);
-const axis = await page.$$eval('.chart .axis', t => t.map(x => x.textContent));
-check('месяцы на оси подписаны словом, а не номером', axis.includes('июл 26') && axis.includes('авг 26'), axis.join(' '));
-check('порог безубыточности занимает всю карточку', await page.$eval('.bezone', e => {
-  const tile = e.getBoundingClientRect(), card = e.closest('.card').getBoundingClientRect();
-  return tile.width > card.width * 0.7;
-}));
-check('в таблице все внесённые строки', (await page.$$('.table tbody tr')).length === 3);
-await page.screenshot({ path: path.join(OUT, 'intel-money.png'), fullPage: true });
-const repeat = async () => {
-  await page.click('[data-action=newmonth]');
-  await page.fill('#mo input[name=month]', '2026-08');
-  await page.selectOption('#mo select[name=direction]', 'Студия');
-  await page.fill('#mo input[name=revenue]', '600000');
-  await page.click('#mo button.primary');
-  await page.waitForFunction(() => !document.querySelector('#modal').open);
-};
-await repeat();
-check('повторный ввод месяца заменяет строку, а не дублирует', (await page.$$('.table tbody tr')).length === 3);
-const afterRepeat = await page.$$eval('.metric', m => m[0].innerText.replace(/\s+/g, ' '));
-check('новая сумма пересчитана вместе с другими направлениями', /630\s?000 ₽/.test(afterRepeat), afterRepeat);
+await page.click('[data-action=adperiod][data-id=all]');
+const adRow = async ch => (await page.$$eval('.adtable tbody tr', rs => rs.map(r => r.innerText.replace(/\s+/g, ' '))))
+  .find(r => r.startsWith(ch)) || '';
+const gis = await adRow('2ГИС');
+check('цена заявки по каналу: потрачено ÷ заявок из этого канала', /6\s?000 ₽ 1 6\s?000 ₽/.test(gis), gis);
+check('канал с расходом без заявок отмечен честно', (await adRow('ВКонтакте')).includes('заявок нет'), await adRow('ВКонтакте'));
+check('выбранный период объявлен для чтения с экрана',
+  await page.$eval('[data-action=adperiod][data-id=all]', b => b.getAttribute('aria-pressed') === 'true'));
+check('цена заявки нарисована графиком по каналам',
+  (await page.$$eval('.chart .rowlabel', t => t.map(x => x.textContent))).includes('2ГИС'));
+await addAd('2ГИС', '8000', '9000');
+check('повторный ввод канала за месяц заменяет запись, а не дублирует',
+  (await state()).ad_budget.length === 2, String((await state()).ad_budget.length));
+check('цена заявки пересчитана после правки', /9\s?000 ₽ 1 9\s?000 ₽/.test(await adRow('2ГИС')), await adRow('2ГИС'));
+await page.screenshot({ path: path.join(OUT, 'intel-ads.png'), fullPage: true });
+// подсказка на обзоре: канал тратит, а заявок нет
+await nav('home');
+const adGaps = await page.$$eval('.gapcard', cs => cs.map(c => c.innerText.replace(/\s+/g, ' ')));
+check('обзор предупреждает о канале, который тратит без заявок',
+  adGaps.some(g => /Канал тратит без заявок: ВКонтакте/.test(g)), adGaps.join(' | '));
 
 // --- 1г. решения
 await nav('decisions');
@@ -446,8 +439,8 @@ check('новая заявка по умолчанию новая', (await state
 await page.click('#create');
 await page.waitForSelector('.createlist');
 const createItems = await page.$$eval('.createitem', b => b.map(x => x.dataset.action));
-check('в «Создать» есть заявка, решение и месяц',
-  ['newlead', 'newdecision', 'newmonth'].every(a => createItems.includes(a)), createItems.join(', '));
+check('в «Создать» есть заявка, решение и расход на рекламу',
+  ['newlead', 'newdecision', 'newad'].every(a => createItems.includes(a)), createItems.join(', '));
 check('первым стоит то, что относится к открытому разделу', createItems[0] === 'newlead', createItems[0]);
 check('пункт текущего раздела помечен', await page.$eval('.createitem', b => b.classList.contains('here')));
 await page.click('#modal [data-action=close]');
@@ -505,6 +498,15 @@ check('на карте есть записи всех заведённых ви�
 check('признаки вынесены отдельными узлами', nodeKinds.filter(k => k === 'hub').length >= 3,
   String(nodeKinds.filter(k => k === 'hub').length));
 check('узлы соединены линиями', (await page.$$('.glink')).length > 0);
+check('расход на рекламу стоит на карте', (await page.$$('.gnode.ad')).length === 2, String((await page.$$('.gnode.ad')).length));
+check('расход и заявки одного канала сходятся в одном узле «Источник»', await page.evaluate(() => {
+  const hub = document.querySelector('g[data-node="hub:Источник:2ГИС"]');
+  if (!hub) return false;
+  const [x, y] = [hub.querySelector('circle:not(.ghit)').getAttribute('cx'), hub.querySelector('circle:not(.ghit)').getAttribute('cy')];
+  const ends = [...document.querySelectorAll('.glink')].filter(l =>
+    (l.getAttribute('x1') === x && l.getAttribute('y1') === y) || (l.getAttribute('x2') === x && l.getAttribute('y2') === y)).length;
+  return ends >= 2;
+}));
 // подписи не должны ложиться друг на друга: в скоплениях это каша
 const labelBoxes = await page.$$eval('.gnode text:not(.off)', ts => ts.map(t => {
   const r = t.getBoundingClientRect();
@@ -585,10 +587,6 @@ check('цвет числа у продуктов разный',
   new Set(dirCards.map(c => c.num)).size === 3, dirCards.map(c => `${c.dir}:${c.num}`).join(' | '));
 check('полоса продукта нарисована градиентом',
   dirCards.every(c => c.stripe.includes('gradient')), dirCards[0].stripe.slice(0, 40));
-await nav('money');
-const serieColors = await page.$$eval('.chart .serie path', ps => ps.map(p => p.getAttribute('stroke')));
-check('линии в деньгах окрашены по направлению, а не по порядку',
-  serieColors.every(c => c.includes('var(--c-')), serieColors.join(' | '));
 
 // --- 1д. поиск: должен находить всё, а не только записи и публикации
 await page.click('#search');
@@ -823,7 +821,7 @@ const [dl] = await Promise.all([
 const backup = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
 check('копия называется по дате', /^adervis-backup-\d{4}-\d{2}-\d{2}\.json$/.test(dl.suggestedFilename()), dl.suggestedFilename());
 check('локальная версия по-прежнему прочитает копию', backup.version === 2);
-const missing = ['knowledge', 'content', 'tasks', 'metrics', 'brand', 'decisions', 'finance', 'economics', 'files', 'publications']
+const missing = ['knowledge', 'content', 'tasks', 'metrics', 'brand', 'decisions', 'ad_budget', 'leads', 'files', 'publications']
   .filter(t => !Array.isArray(backup[t]));
 check('в копию попали все разделы', missing.length === 0, missing.join(', '));
 check('брендбук лежит в копии, а не теряется', backup.brand.some(b => b.id === 'clearspace') && backup.brand.length >= 10,
@@ -1460,8 +1458,8 @@ const darkGraph = await page.$$eval('.gnode circle:not(.ghit)', cs => cs.map(c =
 check('узлы карты в тёмной теме не сливаются с фоном',
   new Set(darkGraph).size >= 3 && !darkGraph.some(f => f === 'rgb(17, 19, 26)'), [...new Set(darkGraph)].slice(0, 4).join(' '));
 await page.screenshot({ path: path.join(OUT, 'dark-graph.png') });
-await nav('money');
-await page.screenshot({ path: path.join(OUT, 'dark-money.png') });
+await nav('ads');
+await page.screenshot({ path: path.join(OUT, 'dark-ads.png') });
 await page.click('#theme');
 await page.waitForFunction(() => document.documentElement.dataset.theme !== 'dark');
 check('тема переключается обратно', await page.evaluate(() => document.documentElement.dataset.theme !== 'dark'));
@@ -1514,7 +1512,7 @@ check('на телефоне меню поверх верхней панели',
 
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
-const sections = ['home', 'money', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
+const sections = ['home', 'ads', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
   'cases', 'content', 'calendar', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {

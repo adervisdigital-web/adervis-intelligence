@@ -61,8 +61,7 @@ const FIELDS = {
   metrics: ['id', 'post', 'date', 'views', 'replies', 'leads'],
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
   brand: ['id', 'title', 'kind', 'sort', 'data', 'section'],
-  finance: ['id', 'month', 'direction', 'revenue', 'costs', 'projects', 'shoot_days', 'note'],
-  economics: ['direction', 'fixed_costs', 'price', 'note'],
+  ad_budget: ['id', 'month', 'channel', 'direction', 'planned', 'spent', 'note'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
   leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note']
 };
@@ -114,15 +113,14 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, finance, economics, decisions, leads, publications, ai, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, adBudget, decisions, leads, publications, ai, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
         selectAll('metrics', 'measured_on'),
         selectAll('files', 'created_at'),
         selectAll('brand', 'sort'),
-        selectAll('finance', 'month'),
-        selectAll('economics', 'direction'),
+        selectAll('ad_budget', 'month'),
         selectAll('decisions', 'decided_on'),
         selectAll('leads', 'came_on'),
         selectAll('publications', 'at'),
@@ -137,8 +135,7 @@ function createApi(cfg) {
         metrics: metrics.map(r => fromRow('metrics', r)),
         files: files.map(r => fromRow('files', r)),
         brand: brand.map(r => fromRow('brand', r)),
-        finance: finance.map(r => fromRow('finance', r)),
-        economics: economics.map(r => fromRow('economics', r)),
+        ad_budget: adBudget.map(r => fromRow('ad_budget', r)),
         decisions: decisions.map(r => fromRow('decisions', r)),
         leads: leads.map(r => fromRow('leads', r)),
         publications, ai, members, activity
@@ -215,8 +212,8 @@ function createApi(cfg) {
 let api = null;
 let me = null;
 const emptyDb = () => ({
-  knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], finance: [],
-  economics: [], decisions: [], leads: [], publications: [], ai: [], members: [], activity: []
+  knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], ad_budget: [],
+  decisions: [], leads: [], publications: [], ai: [], members: [], activity: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -237,7 +234,7 @@ let ai = {
 // Группы отвечают на вопрос «зачем я сюда иду»: вести дело, вспомнить,
 // сделать работу, настроить. Внутри группы — по частоте обращения.
 const SECTION_TITLE = {
-  home: 'Обзор', money: 'Деньги', leads: 'Заявки', decisions: 'Решения',
+  home: 'Обзор', ads: 'Реклама', leads: 'Заявки', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
   cases: 'Кейсы', competitors: 'Конкуренты',
   content: 'Контент-студия', calendar: 'Календарь', assistant: 'AI-рабочая зона', analytics: 'Аналитика',
@@ -245,7 +242,7 @@ const SECTION_TITLE = {
 };
 
 const NAV = [
-  ['Дело', ['home', 'money', 'leads', 'decisions']],
+  ['Маркетинг', ['home', 'ads', 'leads', 'decisions']],
   ['Знание компании', ['knowledge', 'brand', 'products', 'cases', 'competitors']],
   ['Работа', ['content', 'calendar', 'assistant', 'analytics']],
   ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
@@ -1341,28 +1338,56 @@ const DIR_COLOR = {
 };
 const monthName = m => new Date(m + (m.length === 7 ? '-01' : '')).toLocaleDateString('ru', { month: 'long', year: 'numeric' });
 
-function moneyStats() {
-  const months = [...new Set(db.finance.map(r => r.month))].sort();
-  const sum = (rows, f) => rows.reduce((n, r) => n + Number(r[f] || 0), 0);
-  const byMonth = months.map(m => {
-    const rows = db.finance.filter(r => r.month === m);
-    const revenue = sum(rows, 'revenue'), costs = sum(rows, 'costs');
-    return { month: m, revenue, costs, profit: revenue - costs, projects: sum(rows, 'projects'), days: sum(rows, 'shoot_days') };
-  });
-  const last = byMonth[byMonth.length - 1] || null;
-  const prev = byMonth[byMonth.length - 2] || null;
-  const year = byMonth.slice(-12);
+// ------------------------------------------------------------------ реклама
+//
+// Учёта денег здесь больше нет: выручка и расходы студии ведутся в CRM.
+// Остался бюджет на рекламу — и он связан с заявками по названию канала:
+// «ВКонтакте» в бюджете и «ВКонтакте» в источнике заявки — одно и то же.
+// Отсюда цена обращения по каждому каналу: потрачено ÷ заявок.
+
+const AD_CHANNELS = ['ВКонтакте', 'Яндекс Директ', 'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Другое'];
+const AD_PERIODS = [['month', 'Этот месяц'], ['quarter', '3 месяца'], ['all', 'Всё время']];
+let adPeriod = 'quarter';
+
+const monthKey = d => String(d).slice(0, 7);
+const thisMonth = () => new Date().toISOString().slice(0, 7);
+
+function periodStart(period) {
+  if (period === 'all') return '0000-00';
+  const d = new Date();
+  d.setDate(1);
+  if (period === 'quarter') d.setMonth(d.getMonth() - 2);
+  return d.toISOString().slice(0, 7);
+}
+
+function adStats(period = adPeriod) {
+  const from = periodStart(period);
+  const rows = db.ad_budget.filter(r => monthKey(r.month) >= from);
+  const leads = db.leads.filter(l => monthKey(l.came_on) >= from);
+  const sum = (list, f) => list.reduce((n, r) => n + Number(r[f] || 0), 0);
+  const channels = [...new Set(rows.map(r => r.channel))].map(ch => {
+    const spend = rows.filter(r => r.channel === ch);
+    const got = leads.filter(l => l.source === ch);
+    const deals = got.filter(l => l.status === 'Сделка');
+    const spent = sum(spend, 'spent');
+    return {
+      channel: ch, planned: sum(spend, 'planned'), spent,
+      leads: got.length, deals: deals.length, dealSum: sum(deals, 'amount'),
+      cpl: got.length ? Math.round(spent / got.length) : null
+    };
+  }).sort((x, y) => y.spent - x.spent);
+  const now = db.ad_budget.filter(r => monthKey(r.month) === thisMonth());
+  const nowLeads = db.leads.filter(l => monthKey(l.came_on) === thisMonth() && AD_CHANNELS.includes(l.source));
+  const nowSpent = sum(now, 'spent');
   return {
-    months, byMonth, last, prev,
-    yearRevenue: sum(year, 'revenue'),
-    yearProfit: sum(year, 'profit'),
-    avgCheck: last && last.projects ? Math.round(last.revenue / last.projects) : 0,
-    margin: last && last.revenue ? Math.round(100 * last.profit / last.revenue) : 0,
-    byDirection: DIRECTIONS.map(d => ({
-      name: d,
-      color: DIR_COLOR[d],
-      points: months.map(m => ({ x: m.slice(0, 7), y: sum(db.finance.filter(r => r.month === m && r.direction === d), 'revenue') }))
-    })).filter(s => s.points.some(p => p.y > 0))
+    channels,
+    spent: sum(rows, 'spent'), planned: sum(rows, 'planned'),
+    month: {
+      planned: sum(now, 'planned'), spent: nowSpent,
+      leads: nowLeads.length,
+      cpl: nowLeads.length ? Math.round(nowSpent / nowLeads.length) : null,
+      deals: nowLeads.filter(l => l.status === 'Сделка').length
+    }
   };
 }
 
@@ -1444,124 +1469,101 @@ function editDecision(id) {
   submitForm($('#df'), 'decisions', d, exists, 'Решение записано');
 }
 
-// Порог безубыточности: сколько клиентов в месяц нужно направлению, чтобы
-// перестать работать в минус. Сравнивается с фактом последнего месяца.
-function breakEven() {
-  const last = moneyStats().last;
-  return (db.economics || []).filter(e => e.fixed_costs > 0 && e.price > 0).map(e => {
-    const need = Math.ceil(e.fixed_costs / e.price);
-    const rows = last ? db.finance.filter(r => r.month === last.month && r.direction === e.direction) : [];
-    const have = rows.reduce((n, r) => n + Number(r.projects || 0), 0);
-    const revenue = rows.reduce((n, r) => n + Number(r.revenue || 0), 0);
-    return { ...e, need, have, revenue, gap: Math.max(0, need - have), ok: have >= need };
-  });
-}
+function renderAds() {
+  const st = adStats();
+  const m = st.month;
+  const rub = n => n === null || n === undefined ? '—' : num(n) + ' ₽';
+  const head = heading('Реклама', 'Бюджет по каналам и что он принёс. Канал совпадает с источником в «Заявках» — поэтому видна цена обращения.',
+    `<button class="primary" data-action="newad">+ Расход на рекламу</button>`);
 
-function renderBreakEven() {
-  const rows = breakEven();
-  const add = `<button data-action="economics">${db.economics.length ? 'Изменить пороги' : 'Задать порог'}</button>`;
-  if (!rows.length) {
-    return `<div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Точка безубыточности</h2>${add}</div>
-      <p class="muted">Задайте постоянные расходы и средний чек по направлению — покажу, сколько клиентов в месяц нужно, чтобы выйти в ноль.</p></div>`;
+  if (!db.ad_budget.length) {
+    return head + `<div class="card empty"><h2>Бюджет ещё не внесён</h2>
+      <p>Запишите, сколько запланировали и потратили на каждый канал за месяц.</p>
+      <p>Название канала совпадает с источником в «Заявках»: ВКонтакте, Яндекс Директ, Авито, 2ГИС.
+      Тогда приложение само посчитает, во что обошлось одно обращение и какой канал окупается.</p></div>`;
   }
-  return `<div class="card"><div class="head" style="margin:0 0 12px"><h2 style="margin:0">Точка безубыточности</h2>${add}</div>
-    <div class="grid bezgrid">${rows.map(r => `<div class="bezone ${r.ok ? 'ok' : 'under'}">
-      <div class="bezfigure">
-        <div class="eyebrow">${E(r.direction)}</div>
-        <div class="value">${r.need}</div>
-        <small class="muted">клиентов до нуля</small>
-      </div>
-      <div class="bezfacts">
-        <p class="muted">Постоянные ${num(r.fixed_costs)} ₽ · чек ${num(r.price)} ₽</p>
-        <p class="${r.ok ? 'plus' : 'minus'}">${r.ok
-          ? `В плюсе: ${r.have} при пороге ${r.need}`
-          : r.have ? `Сейчас ${r.have} — не хватает ${r.gap}` : 'В этом месяце клиентов не внесено'}</p>
-        ${r.note ? `<p class="muted small">${E(r.note)}</p>` : ''}
-      </div>
-    </div>`).join('')}</div></div>`;
+
+  const metrics = `<div class="grid metrics">${[
+    ['Бюджет месяца', rub(m.spent), m.planned ? `из ${rub(m.planned)} по плану` : 'план не задан'],
+    ['Заявки из рекламы', m.leads, 'в этом месяце'],
+    ['Средняя цена заявки', rub(m.cpl), m.leads ? 'весь бюджет ÷ все заявки из рекламы' : 'заявок из рекламы пока нет'],
+    ['Сделки из рекламы', m.deals, 'в этом месяце']
+  ].map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small></div>`).join('')}</div>`;
+
+  const periods = `<div class="filters" role="group" aria-label="Период">${AD_PERIODS.map(([k, t]) =>
+    `<button class="chip${adPeriod === k ? ' on' : ''}" data-action="adperiod" data-id="${k}" aria-pressed="${adPeriod === k}">${t}</button>`).join('')}</div>`;
+
+  const withLeads = st.channels.filter(c => c.cpl !== null);
+  const chart = withLeads.length
+    ? `<div class="card chartcard"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Цена заявки по каналам</h2>
+        <small class="muted">меньше — лучше</small></div>
+        ${barChart(withLeads.map(c => ({ name: c.channel, value: c.cpl })), 'Цена заявки по каналам')}</div>`
+    : '';
+
+  const table = `<div class="card tablewrap"><table class="table adtable">
+    <thead><tr><th>Канал</th><th>План</th><th>Потрачено</th><th>Заявок</th><th>Цена заявки</th><th>Сделок</th><th>Сумма сделок</th></tr></thead>
+    <tbody>${st.channels.map(c => `<tr>
+      <td><b>${E(c.channel)}</b></td><td>${rub(c.planned)}</td><td>${rub(c.spent)}</td>
+      <td>${c.leads}</td><td class="${c.spent && !c.leads ? 'minus' : ''}">${c.spent && !c.leads ? 'заявок нет' : rub(c.cpl)}</td>
+      <td>${c.deals}</td><td>${c.dealSum ? rub(c.dealSum) : '—'}</td></tr>`).join('')
+      || '<tr><td colspan="7" class="muted">За этот период расходов нет.</td></tr>'}</tbody></table></div>`;
+
+  const log = `<div class="head"><h2>Записи бюджета</h2><small class="muted">по месяцам</small></div>
+    <div class="card tablewrap"><table class="table">
+    <thead><tr><th>Месяц</th><th>Канал</th><th>Направление</th><th>План</th><th>Потрачено</th><th></th></tr></thead>
+    <tbody>${[...db.ad_budget].sort((a, b) => String(b.month).localeCompare(String(a.month))).map(r => `<tr>
+      <td>${E(monthName(monthKey(r.month)))}</td><td>${E(r.channel)}</td><td>${tag(r.direction)}</td>
+      <td>${rub(r.planned)}</td><td>${rub(r.spent)}</td>
+      <td><button class="del" data-action="delad" data-id="${E(r.id)}" aria-label="Удалить запись">${icon('close', 15)}</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+
+  return head + metrics
+    + `<div class="head"><h2>По каналам</h2>${periods}</div>`
+    + chart + table + log
+    + `<div class="notice">Заявки считаются по источнику: если в «Заявках» не указано, откуда человек пришёл,
+      канал недополучит обращение, и цена заявки выйдет завышенной.</div>`;
 }
 
-function editEconomics() {
-  const rows = DIRECTIONS.map(d => db.economics.find(e => e.direction === d) || { direction: d, fixed_costs: 0, price: 0, note: '' });
-  modal(`<h2>Пороги по направлениям</h2>
-    <p class="muted">Постоянные расходы в месяц и средний чек. Ноль — направление не считаем.</p>
-    <form id="ef">${rows.map(r => `<div class="ecorow">
-      <b>${E(r.direction)}</b>
-      <label>Постоянные расходы, ₽<input name="fixed_${E(r.direction)}" type="number" min="0" step="100" value="${r.fixed_costs}"></label>
-      <label>Средний чек, ₽<input name="price_${E(r.direction)}" type="number" min="0" step="100" value="${r.price}"></label>
-      <label>Заметка<input name="note_${E(r.direction)}" maxlength="500" value="${E(r.note)}"></label>
-    </div>`).join('')}
+// Ввод расхода: один канал за месяц. Повторный ввод того же месяца, канала
+// и направления заменяет прежнюю строку, а не плодит дубликаты.
+function editAd() {
+  modal(`<h2>Расход на рекламу</h2><form id="adf">
+    <div class="formgrid">
+      <div><label>Месяц</label><input type="month" name="month" required value="${thisMonth()}"></div>
+      <div><label>Канал</label><select name="channel">${opts(AD_CHANNELS, AD_CHANNELS[0])}</select></div>
+      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, 'Студия')}</select></div>
+      <div><label>План, ₽</label><input type="number" name="planned" min="0" step="1" value="0"></div>
+      <div><label>Потрачено, ₽</label><input type="number" name="spent" min="0" step="1" value="0"></div>
+    </div>
+    <label>Заметка</label><input name="note" maxlength="500" placeholder="Что крутили: объявление, аудитория, ставка">
     <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
-
-  $('#ef').onsubmit = async e => {
+  $('#adf').onsubmit = async e => {
     e.preventDefault();
-    const btn = $('#ef button.primary');
-    btn.disabled = true;
-    const f = new FormData(e.target);
+    const f = Object.fromEntries(new FormData(e.target));
+    const row = {
+      month: f.month + '-01', channel: f.channel, direction: f.direction,
+      planned: Number(f.planned) || 0, spent: Number(f.spent) || 0, note: f.note || ''
+    };
+    const same = db.ad_budget.find(r => monthKey(r.month) === f.month && r.channel === row.channel && r.direction === row.direction);
     try {
-      for (const d of DIRECTIONS) {
-        const row = {
-          direction: d,
-          fixed_costs: Number(f.get('fixed_' + d)) || 0,
-          price: Number(f.get('price_' + d)) || 0,
-          note: String(f.get('note_' + d) || '')
-        };
-        const old = db.economics.find(x => x.direction === d);
-        if (!old && !row.fixed_costs && !row.price) continue;
-        const saved = old ? await api.update('economics', { ...old, ...row }) : await api.insert('economics', row);
-        upsertLocal('economics', saved);
-      }
+      const saved = same ? await api.update('ad_budget', { ...same, ...row }) : await api.insert('ad_budget', { id: uid(), ...row });
+      upsertLocal('ad_budget', saved);
+      noteLocal(same ? 'update' : 'insert', 'ad_budget', { ...saved, title: `${row.channel}, ${f.month}` });
       $('#modal').close();
       render();
-      toast('Пороги сохранены');
-    } catch (err) { handleError(err); btn.disabled = false; }
+      toast(same ? 'Запись за месяц обновлена' : 'Расход записан');
+    } catch (err) { handleError(err); }
   };
 }
 
-function renderMoney() {
-  const s = moneyStats();
-  const head = heading('Деньги', 'Помесячно по направлениям. Считается только то, что внесли: ничего не достраивается.',
-    `<button class="primary" data-action="newmonth">+ Внести месяц</button>`);
-
-  if (!db.finance.length) {
-    return head + renderBreakEven() + `<div class="card empty" style="margin-top:16px"><h2>Цифр пока нет</h2>
-      <p>Внесите хотя бы три последних месяца — по каждому направлению отдельно. Дальше станет видно динамику, средний чек и маржу.</p>
-      <p class="muted">Эти данные внутренние: в тексты и в запросы к ИИ они не попадают никогда.</p></div>`;
-  }
-
-  const delta = s.prev && s.prev.revenue
-    ? Math.round(100 * (s.last.revenue - s.prev.revenue) / s.prev.revenue) : null;
-  const tiles = [
-    ['Выручка за месяц', num(s.last.revenue) + ' ₽', monthName(s.last.month) + (delta !== null ? ` · ${delta > 0 ? '+' : ''}${delta}% к прошлому` : '')],
-    ['Прибыль', num(s.last.profit) + ' ₽', s.margin ? `маржа ${s.margin}%` : 'расходы не внесены'],
-    ['Средний чек', s.avgCheck ? num(s.avgCheck) + ' ₽' : '—', s.last.projects ? `проектов: ${s.last.projects}` : 'проекты не внесены'],
-    ['Съёмочных дней', s.last.days || '—', 'в этом месяце']
-  ];
-
-  const table = `<div class="card tablewrap"><table class="table">
-    <thead><tr><th>Месяц</th><th>Направление</th><th>Выручка</th><th>Расходы</th><th>Прибыль</th><th>Проектов</th><th>Дней</th><th></th></tr></thead>
-    <tbody>${[...db.finance].sort((a, b) => b.month.localeCompare(a.month)).map(r => `<tr>
-      <td>${E(monthName(r.month))}</td><td>${tag(r.direction)}</td>
-      <td>${num(r.revenue)}</td><td>${num(r.costs)}</td>
-      <td class="${r.revenue - r.costs < 0 ? 'minus' : ''}">${num(r.revenue - r.costs)}</td>
-      <td>${r.projects || '—'}</td><td>${r.shoot_days || '—'}</td>
-      <td><button class="del" data-action="delmonth" data-id="${E(r.id)}" aria-label="Удалить строку">${icon('close', 15)}</button></td>
-    </tr>`).join('')}</tbody></table></div>`;
-
-  const charts = s.byDirection.length
-    ? `<div class="card chartcard" style="margin-bottom:16px"><div class="head" style="margin:0 0 6px">
-        <h2 style="margin:0">Выручка по направлениям</h2><small class="muted">направлений: ${s.byDirection.length}</small></div>
-        <p class="muted chartnote">Каждая линия — направление. Видно, что кормит, а что забирает время.</p>
-        ${lineChart(s.byDirection, 'Выручка по направлениям')}</div>`
-    : '';
-
-  return head
-    + `<div class="grid metrics">${tiles.map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div>
-        <div class="value">${b}</div><small>${E(c)}</small></div>`).join('')}</div>`
-    + renderBreakEven()
-    + `<div style="height:16px"></div>`
-    + charts + table
-    + `<div class="notice">Данные внутренние. Серверная функция ИИ читает только базу знаний, в тексты эти цифры не попадут.</div>`;
+function delAd(id) {
+  const r = db.ad_budget.find(x => x.id === id);
+  if (!r) return;
+  askDelete('Удалить запись бюджета?', `${E(r.channel)}, ${E(monthName(monthKey(r.month)))}.`, async () => {
+    await api.remove('ad_budget', id);
+    db.ad_budget = db.ad_budget.filter(x => x.id !== id);
+    noteLocal('delete', 'ad_budget', { ...r, title: r.channel });
+  });
 }
 
 // Нейроцепочка: знания → контент → ИИ → каналы → результат.
@@ -1614,13 +1616,14 @@ function businessGaps() {
       `Ближайшее — «${first.title.slice(0, 60)}${first.title.length > 60 ? '…' : ''}». Решение без проверки становится забытым намерением.`]);
   }
 
-  const prev = new Date();
-  prev.setDate(1);
-  prev.setMonth(prev.getMonth() - 1);
-  const prevKey = prev.toISOString().slice(0, 7);
-  if (db.finance.length && !db.finance.some(r => String(r.month).slice(0, 7) === prevKey)) {
-    gaps.push(['money', 'Прошлый месяц не внесён',
-      `${monthName(prevKey)} без цифр — сравнивать этот месяц не с чем.`]);
+  if (db.ad_budget.length && !db.ad_budget.some(r => monthKey(r.month) === thisMonth())) {
+    gaps.push(['ads', 'Бюджет этого месяца не внесён',
+      `${monthName(thisMonth())} без расходов на рекламу — цену заявки не посчитать.`]);
+  }
+  const idle = adStats('quarter').channels.filter(c => c.spent > 0 && !c.leads);
+  if (idle.length) {
+    gaps.push(['ads', `Канал тратит без заявок: ${idle.map(c => c.channel).join(', ')}`,
+      'За три месяца деньги ушли, а обращений из этого канала не записано. Либо не отмечен источник, либо канал не работает.']);
   }
 
   if (!db.leads.length) {
@@ -1628,10 +1631,10 @@ function businessGaps() {
       'Пока нет ни одной заявки, ни одно решение про каналы проверить нельзя.']);
   }
 
-  const noFixed = db.economics.filter(e => !e.fixed_costs);
-  if (noFixed.length) {
-    gaps.push(['money', 'Постоянные расходы не заданы',
-      `Без них не посчитать, сколько клиентов нужно до нуля: ${noFixed.map(e => e.direction).join(', ')}.`]);
+  const blind = db.leads.filter(l => l.source === 'Не знаем').length;
+  if (db.leads.length >= 5 && blind / db.leads.length > 0.3) {
+    gaps.push(['leads', `Без источника: ${blind} из ${db.leads.length} заявок`,
+      'Не отмечено, откуда пришёл человек, — эти заявки не засчитаются ни одному каналу.']);
   }
   return gaps;
 }
@@ -1719,7 +1722,7 @@ let graph = { open: false, focus: null, sig: '', pos: null, scale: 0, ox: 0, oy:
 
 const GRAPH_KIND = {
   knowledge: 'Знания', brand: 'Брендбук', content: 'Публикации',
-  decision: 'Решения', lead: 'Заявки', money: 'Деньги', hub: 'Признак'
+  decision: 'Решения', lead: 'Заявки', ad: 'Реклама', hub: 'Признак'
 };
 
 function graphData() {
@@ -1760,11 +1763,11 @@ function graphData() {
     link(id, hub(l.source, 'Источник'));
     link(id, hub(l.direction, 'Направление'));
   }
-  for (const d of DIRECTIONS) {
-    const rows = db.finance.filter(r => r.direction === d);
-    if (!rows.length) continue;
-    const revenue = rows.reduce((n, r) => n + Number(r.revenue || 0), 0);
-    link(add('m:' + d, 'money', `Деньги: ${d} · ${num(revenue)} ₽`, { open: 'money' }), hub(d, 'Направление'));
+  // Расход на канал цепляется к тому же признаку «Источник», что и заявки:
+  // на карте сразу видно, куда ушли деньги и что оттуда пришло.
+  for (const ch of new Set(db.ad_budget.map(r => r.channel))) {
+    const spent = db.ad_budget.filter(r => r.channel === ch).reduce((n, r) => n + Number(r.spent || 0), 0);
+    link(add('ad:' + ch, 'ad', `Реклама: ${ch} · ${num(spent)} ₽`, { open: 'ads' }), hub(ch, 'Источник'));
   }
   // настоящие ссылки между записями
   for (const f of db.files) link('k:' + f.record, hub('С файлами', 'Материалы'));
@@ -2120,7 +2123,7 @@ function graphOpen(id) {
   else if (node.open === 'd') { go('decisions'); editDecision(node.ref); }
   else if (node.open === 'l') { go('leads'); editLead(node.ref); }
   else if (node.open === 'brand') { graph.open = false; go('brand'); editBrand(node.ref); }
-  else if (node.open === 'money') { graph.open = false; go('money'); }
+  else if (node.open === 'ads') { graph.open = false; go('ads'); }
 }
 
 function renderChain() {
@@ -2195,24 +2198,25 @@ function render() {
   let s = '';
 
   if (page === 'home') {
-    // На главной — состояние дела, а не объём содержимого. Сколько в базе
-    // записей, видно в самой базе; отсюда нужно понять, как идут деньги.
-    const m = moneyStats();
+    // На главной — маркетинг: сколько ушло на рекламу, сколько она принесла
+    // обращений и во что обошлось одно. Выручка студии ведётся в CRM.
+    const a = adStats().month;
     const ls = leadStats();
-    const overdue = db.decisions.filter(d => ['Думаем', 'Делаем', 'Проверяем'].includes(d.status)
-      && d.due_on && d.due_on <= today()).length;
-    const delta = m.last && m.prev && m.prev.revenue
-      ? Math.round(100 * (m.last.revenue - m.prev.revenue) / m.prev.revenue) : null;
+    const reach = totals();
 
     const cards = [
-      ['Выручка за месяц', m.last ? num(m.last.revenue) : '—',
-        m.last ? `${monthName(m.last.month)}${delta === null ? '' : ` · ${delta >= 0 ? '+' : ''}${delta}% к прошлому`}` : 'Внесите месяцы в «Деньгах»',
-        'money', sparkline(chartData().spark)],
-      ['Прибыль за месяц', m.last ? num(m.last.profit) : '—',
-        m.last ? 'выручка минус расходы' : 'считается по внесённым месяцам', 'money', ''],
+      ['Реклама за месяц', db.ad_budget.length ? num(a.spent) : '—',
+        !db.ad_budget.length ? 'Внесите бюджет в «Рекламе»' : a.planned ? `из ${num(a.planned)} по плану` : 'план не задан',
+        'ads', ''],
+      ['Цена заявки', a.cpl === null ? '—' : num(a.cpl),
+        a.leads ? `заявок из рекламы: ${a.leads}` : 'заявок из рекламы в этом месяце нет', 'ads', ''],
       ['Заявки за 30 дней', db.leads.length ? ls.recent : '—',
         db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads', ''],
-      ['Решения к проверке', overdue, overdue ? 'срок подошёл' : 'просроченных нет', 'decisions', '']
+      // Охват — маркетинговая цифра, ей место на главной. Просроченные
+      // решения не теряются: они первыми стоят в «Что мешает прямо сейчас».
+      ['Охват публикаций', reach.posts ? num(reach.views) : '—',
+        reach.posts ? `по последним замерам · публикаций: ${reach.posts}` : 'замеров пока нет',
+        'analytics', sparkline(chartData().spark)]
     ];
 
     s = `<div class="hero compact">
@@ -2254,7 +2258,7 @@ function render() {
       || '<div class="empty">Записи не найдены.</div>'}</div>`;
   }
 
-  if (page === 'money') s = renderMoney();
+  if (page === 'ads') s = renderAds();
   if (page === 'leads') s = renderLeads();
   if (page === 'decisions') s = renderDecisions();
   if (page === 'chain') s = renderChain();
@@ -2758,54 +2762,6 @@ function taskNew() {
   };
 }
 
-// Ввод месяца: одно направление за раз. Повторный ввод того же месяца
-// и направления заменяет прежнюю строку, а не плодит дубликаты.
-function monthNew() {
-  const now = new Date();
-  const month = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  modal(`<h2>Цифры за месяц</h2><form id="mo">
-    <div class="formgrid">
-      <div><label>Месяц</label><input type="month" name="month" required value="${month.slice(0, 7)}"></div>
-      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, 'Студия')}</select></div>
-      <div><label>Выручка, ₽</label><input name="revenue" type="number" min="0" step="1000" required></div>
-      <div><label>Расходы, ₽</label><input name="costs" type="number" min="0" step="1000" value="0"></div>
-      <div><label>Проектов</label><input name="projects" type="number" min="0" step="1" value="0"></div>
-      <div><label>Съёмочных дней</label><input name="shoot_days" type="number" min="0" step="1" value="0"></div>
-    </div>
-    <label>Заметка</label><input name="note" maxlength="500" placeholder="Например: два крупных проекта и отпуск">
-    <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
-
-  $('#mo').onsubmit = async e => {
-    e.preventDefault();
-    const btn = $('#mo button.primary');
-    btn.disabled = true;
-    const f = Object.fromEntries(new FormData(e.target));
-    const row = {
-      id: uid(), month: f.month + '-01', direction: f.direction, note: f.note || '',
-      revenue: Number(f.revenue), costs: Number(f.costs), projects: Number(f.projects), shoot_days: Number(f.shoot_days)
-    };
-    const same = db.finance.find(r => r.month === row.month && r.direction === row.direction);
-    try {
-      const saved = same ? await api.update('finance', { ...same, ...row, id: same.id }) : await api.insert('finance', row);
-      upsertLocal('finance', saved);
-      noteLocal(same ? 'update' : 'insert', 'finance', { ...saved, title: monthName(saved.month) + ' · ' + saved.direction });
-      $('#modal').close();
-      render();
-      toast(same ? 'Месяц обновлён' : 'Месяц внесён');
-    } catch (err) { handleError(err); btn.disabled = false; }
-  };
-}
-
-function delMonth(id) {
-  const r = db.finance.find(x => x.id === id);
-  if (!r) return;
-  askDelete('Удалить строку?', `${E(monthName(r.month))} · ${E(r.direction)}`, async () => {
-    await api.remove('finance', id);
-    db.finance = db.finance.filter(x => x.id !== id);
-    noteLocal('delete', 'finance', { ...r, title: monthName(r.month) + ' · ' + r.direction });
-  });
-}
-
 function delDecision(id) {
   const d = db.decisions.find(x => x.id === id);
   if (!d) return;
@@ -2823,8 +2779,11 @@ function delDecision(id) {
 // сделки ведутся в CRM, тут считаются источники.
 
 const LEAD_STATUS = ['Новое', 'В работе', 'Сделка', 'Отказ', 'Пропало'];
-const LEAD_SOURCES = ['Сайт', 'Рекомендация', 'Повторный клиент', 'Behance', 'Telegram',
-  'ВКонтакте', 'Яндекс.Карты', '2ГИС', 'Личный контакт', 'Не знаем'];
+// Платные каналы — те же названия, что в «Рекламе»: по ним считается цена
+// заявки. Telegram без приписки — свой канал, «Telegram Ads» — реклама.
+const LEAD_SOURCES = ['Сайт', 'Рекомендация', 'Повторный клиент', 'ВКонтакте', 'Яндекс Директ',
+  'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Telegram', 'Behance', 'Личный контакт',
+  'Другое', 'Не знаем'];
 
 function leadStats() {
   const from = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
@@ -3349,7 +3308,7 @@ function exportJson() {
     knowledge: strip(db.knowledge), content: strip(db.content),
     tasks: strip(db.tasks), metrics: strip(db.metrics),
     brand: strip(db.brand), decisions: strip(db.decisions),
-    finance: strip(db.finance), economics: strip(db.economics), leads: strip(db.leads),
+    ad_budget: strip(db.ad_budget), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications)
   }, null, 2), 'adervis-backup-' + new Date().toISOString().slice(0, 10) + '.json');
 }
@@ -3475,9 +3434,9 @@ document.addEventListener('click', async e => {
     case 'newp': editP(); break;
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
-    case 'newmonth': monthNew(); break;
-    case 'economics': editEconomics(); break;
-    case 'delmonth': delMonth(b.dataset.id); break;
+    case 'newad': editAd(); break;
+    case 'delad': delAd(b.dataset.id); break;
+    case 'adperiod': adPeriod = b.dataset.id; render(); break;
     case 'newdecision': editDecision(); break;
     case 'deldecision': delDecision(b.dataset.id); break;
     case 'leadstatus': leadFilter.status = b.dataset.id; render(); break;
@@ -3693,7 +3652,7 @@ $('#search').onclick = search;
 const CREATE_ITEMS = [
   ['newlead', 'Заявку', 'кто обратился и откуда узнал', 'leads'],
   ['newdecision', 'Решение', 'что решили, почему и как проверим', 'decisions'],
-  ['newmonth', 'Месяц в деньги', 'выручка и расходы по направлению', 'money'],
+  ['newad', 'Расход на рекламу', 'канал, план и сколько потрачено', 'ads'],
   ['newk', 'Запись базы знаний', 'факт о компании с источником', 'knowledge'],
   ['newp', 'Публикацию', 'материал для канала', 'content'],
   ['newtask', 'Задачу', 'общий список для обоих руководителей', 'tasks']
