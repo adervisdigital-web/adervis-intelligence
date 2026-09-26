@@ -912,8 +912,8 @@ const FIGURES = {
       <input class="input uifocus" value="В фокусе" aria-label="Поле в фокусе">
       <input class="input uierror" value="С ошибкой" aria-label="Поле с ошибкой"></div>
     <div class="uirow"><span class="uilabel">Отметки</span>
-      ${['Черновик', 'На проверке', 'Утверждено', 'Опубликовано'].map(t => `<span class="tag">${t}</span>`).join('')}
-      <span class="tag green">Сработало</span><span class="tag orange">Требует проверки</span></div>
+      ${['Черновик', 'На проверке', 'Утверждено', 'Опубликовано', 'Сработало', 'Требует проверки', 'Внутреннее']
+        .map(t => tag(t)).join('')}</div>
     <div class="uirow"><span class="uilabel">Переключатели</span>
       <label class="task"><input type="checkbox" checked> Отмечено</label>
       <label class="task"><input type="checkbox"> Не отмечено</label></div>
@@ -2887,8 +2887,10 @@ function renderLeads() {
   const filters = `<div class="toolbar leadbar">
     <input class="input" id="leadq" placeholder="Имя, запрос, источник…" value="${E(leadFilter.q)}" aria-label="Поиск по обращениям">
     <div class="filters">
-      <button class="chip${leadFilter.status === 'Все' ? ' on' : ''}" data-action="leadstatus" data-id="Все">Все <b>${db.leads.length}</b></button>
-      ${counts.map(([s, n]) => `<button class="chip${leadFilter.status === s ? ' on' : ''}" data-action="leadstatus" data-id="${E(s)}">${E(s)} <b>${n}</b></button>`).join('')}
+      <button class="chip${leadFilter.status === 'Все' ? ' on' : ''}" data-action="leadstatus" data-id="Все"
+        aria-pressed="${leadFilter.status === 'Все'}">Все <b>${db.leads.length}</b></button>
+      ${counts.map(([s, n]) => `<button class="chip${leadFilter.status === s ? ' on' : ''}" data-action="leadstatus" data-id="${E(s)}"
+        aria-pressed="${leadFilter.status === s}">${E(s)} <b>${n}</b></button>`).join('')}
     </div></div>`;
 
   const list = filters + `<div class="head"><h2>Все обращения</h2>

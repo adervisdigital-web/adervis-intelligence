@@ -388,6 +388,8 @@ const srcRows = await page.$$eval('.table tr', rs => rs.map(r => r.innerText.rep
 check('источники сведены в таблицу', srcRows.some(r => /Рекомендация 2 1 50%/.test(r)), srcRows.slice(0, 5).join(' | '));
 check('источник без сделок показан честно', srcRows.some(r => /2ГИС 1 0 0%/.test(r)));
 // отбор: без него список перестанет читаться уже на третьем десятке
+check('выбранная метка объявлена для чтения с экрана, а не только цветом',
+  await page.$eval('[data-action=leadstatus][data-id="Все"]', b => b.getAttribute('aria-pressed') === 'true'));
 check('у каждого статуса своя метка со счётчиком', (await page.$$('[data-action=leadstatus]')).length >= 3,
   String((await page.$$('[data-action=leadstatus]')).length));
 await page.click('[data-action=leadstatus][data-id="Сделка"]');
@@ -1111,17 +1113,22 @@ check('у каждого продукта свой акцент на стран�
   prodAccent.length >= 2 && new Set(prodAccent.map(p => p.plate)).size === prodAccent.length,
   prodAccent.map(p => p.dir).join(', '));
 // управление темой не спорит с её названием
-check('кнопки темы спрятаны, пока на карточку не навели',
-  await page.$eval('.blockhead .blockbtns', e => getComputedStyle(e).opacity === '0'));
+await page.mouse.move(0, 0);
+await page.waitForTimeout(250);
+check('«Изменить» видно всегда — это единственное действие над темой',
+  await page.$eval('.brandcard .blockhead [data-action=editbrand]', e => getComputedStyle(e).opacity === '1'
+    && getComputedStyle(e.parentElement).opacity === '1'));
+check('второстепенные ↑ ↓ × спрятаны, пока не навели',
+  await page.$eval('.brandcard .blockhead .blockbtns > .chip', e => getComputedStyle(e).opacity === '0'));
 await page.hover('.brandcard');
 await page.waitForTimeout(250);
 check('при наведении управление появляется',
-  await page.$eval('.brandcard .blockhead .blockbtns', e => getComputedStyle(e).opacity === '1'));
+  await page.$eval('.brandcard .blockhead .blockbtns > .chip', e => getComputedStyle(e).opacity === '1'));
 await page.mouse.move(0, 0);
 await page.focus('.brandcard .blockhead [data-action=editbrand]');
 await page.waitForTimeout(250);
 check('до управления можно добраться табом, без мыши',
-  await page.$eval('.brandcard .blockhead .blockbtns', e => getComputedStyle(e).opacity === '1'));
+  await page.$eval('.brandcard .blockhead .blockbtns > .chip', e => getComputedStyle(e).opacity === '1'));
 check('у темы виден её раздел', (await page.$$('.blockhead .eyebrow')).length > 0);
 // брендбук длиной в шесть экранов: заголовок раздела должен держаться у кромки
 await page.evaluate(() => window.scrollTo(0, 2200));
@@ -1397,6 +1404,14 @@ check('после ошибки черновики убраны', (await page.$$(
 check('задание в форме не потеряно', (await page.inputValue('#goal')).includes('смету'));
 await page.evaluate(() => { window.__aiFail = null; });
 await page.screenshot({ path: path.join(OUT, 'intel-ai.png') });
+
+// --- 10б. меньше движения по системной настройке
+await page.emulateMedia({ reducedMotion: 'reduce' });
+await nav('brand');
+await page.waitForSelector('.iconsheet .iconcell');
+const motion = await page.$eval('.iconsheet .iconcell', c => parseFloat(getComputedStyle(c).transitionDuration));
+check('при «меньше движения» анимации выключены', motion <= 0.0001, String(motion));
+await page.emulateMedia({ reducedMotion: 'no-preference' });
 
 // --- 10в. тёмная тема
 // Переключатель есть с самого начала, но ни одна проверка сюда не

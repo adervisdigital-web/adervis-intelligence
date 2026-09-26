@@ -962,3 +962,20 @@ h1,.sectionhead,.hero h1,.covertitle,.slidetitle{
 .logoplate img{max-width:100%;max-height:100%}
 .logoitem figcaption{display:grid;gap:2px;margin-top:6px;font-size:var(--t-small)}
 @media (prefers-reduced-motion: reduce){.logoplate{transition:none}.logoplate:hover{transform:none}}
+
+/* «Изменить» — единственное действие над темой, прятать его до наведения
+   нельзя: мышью неочевидно, что оно вообще есть. Скрываются только
+   второстепенные ↑ ↓ × — они и правда нужны редко. */
+.blockhead .blockbtns{opacity:1}
+.blockhead .blockbtns > .chip{opacity:0;transition:opacity .15s}
+.card:hover .blockhead .blockbtns > .chip,
+.blockhead .blockbtns:focus-within > .chip{opacity:1}
+@media(hover:none){.blockhead .blockbtns > .chip{opacity:1}}
+
+/* Кто попросил систему поменьше движения — получает смену состояний без
+   подъёмов, пружин и плавных появлений по всему приложению. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;scroll-behavior:auto !important}
+  .click:hover,.metric.click:hover,.dircard:hover{transform:none !important}
+}
