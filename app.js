@@ -61,9 +61,10 @@ const FIELDS = {
   metrics: ['id', 'post', 'date', 'views', 'replies', 'leads'],
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
   brand: ['id', 'title', 'kind', 'sort', 'data', 'section'],
-  ad_budget: ['id', 'month', 'channel', 'direction', 'planned', 'spent', 'note'],
+  campaigns: ['id', 'name', 'channel', 'direction', 'goal', 'status', 'starts_on', 'ends_on', 'budget', 'spent',
+    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
-  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note']
+  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 
@@ -113,14 +114,14 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, adBudget, decisions, leads, publications, ai, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
         selectAll('metrics', 'measured_on'),
         selectAll('files', 'created_at'),
         selectAll('brand', 'sort'),
-        selectAll('ad_budget', 'month'),
+        selectAll('campaigns', 'starts_on'),
         selectAll('decisions', 'decided_on'),
         selectAll('leads', 'came_on'),
         selectAll('publications', 'at'),
@@ -135,7 +136,7 @@ function createApi(cfg) {
         metrics: metrics.map(r => fromRow('metrics', r)),
         files: files.map(r => fromRow('files', r)),
         brand: brand.map(r => fromRow('brand', r)),
-        ad_budget: adBudget.map(r => fromRow('ad_budget', r)),
+        campaigns: campaigns.map(r => fromRow('campaigns', r)),
         decisions: decisions.map(r => fromRow('decisions', r)),
         leads: leads.map(r => fromRow('leads', r)),
         publications, ai, members, activity
@@ -212,7 +213,7 @@ function createApi(cfg) {
 let api = null;
 let me = null;
 const emptyDb = () => ({
-  knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], ad_budget: [],
+  knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: []
 });
 let db = emptyDb();
@@ -1340,54 +1341,82 @@ const monthName = m => new Date(m + (m.length === 7 ? '-01' : '')).toLocaleDateS
 
 // ------------------------------------------------------------------ реклама
 //
-// Учёта денег здесь больше нет: выручка и расходы студии ведутся в CRM.
-// Остался бюджет на рекламу — и он связан с заявками по названию канала:
-// «ВКонтакте» в бюджете и «ВКонтакте» в источнике заявки — одно и то же.
-// Отсюда цена обращения по каждому каналу: потрачено ÷ заявок.
+// Учёта денег здесь нет: выручка и расходы студии ведутся в CRM. Реклама
+// живёт кампаниями — у каждой своя цель, сроки, креатив и ссылка с
+// UTM-метками. Заявка привязывается к кампании, и видно, какое именно
+// объявление принесло обращение. Канал кампании совпадает с источником в
+// «Заявках», поэтому по каналам тоже считается цена обращения.
 
 const AD_CHANNELS = ['ВКонтакте', 'Яндекс Директ', 'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Другое'];
-const AD_PERIODS = [['month', 'Этот месяц'], ['quarter', '3 месяца'], ['all', 'Всё время']];
-let adPeriod = 'quarter';
+const CAMPAIGN_STATUS = ['Готовим', 'Идёт', 'Пауза', 'Завершена'];
+const CAMPAIGN_GOALS = ['Заявки на студию', 'Регистрации в CRM', 'Продажи Stock', 'Охват и узнаваемость'];
+const UTM_MEDIUMS = ['cpc', 'social', 'display', 'post', 'story', 'referral'];
+// Метка источника — латиницей, как принято в аналитике: кириллица в
+// ссылке превращается в %D0%92%D0%9A и ломает отчёты.
+const UTM_SOURCE = {
+  'ВКонтакте': 'vk', 'Яндекс Директ': 'yandex', 'Telegram Ads': 'telegram', 'Авито': 'avito',
+  '2ГИС': '2gis', 'Яндекс.Карты': 'yandex_maps', 'Блогеры': 'bloggers', 'Другое': 'other'
+};
+const LANDINGS = { 'Студия': 'https://adervis.ru/', 'CRM': 'https://adervis.ru/pro', 'Stock': 'https://stock.adervis.ru/', 'Медиа': 'https://adervis.ru/' };
+let campaignFilter = 'Все';
 
 const monthKey = d => String(d).slice(0, 7);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 
-function periodStart(period) {
-  if (period === 'all') return '0000-00';
-  const d = new Date();
-  d.setDate(1);
-  if (period === 'quarter') d.setMonth(d.getMonth() - 2);
-  return d.toISOString().slice(0, 7);
+const TRANSLIT = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k',
+  л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch',
+  ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+function slugify(text) {
+  const s = String(text || '').toLowerCase().split('').map(ch => TRANSLIT[ch] ?? ch).join('')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  return s || 'campaign';
 }
 
-function adStats(period = adPeriod) {
-  const from = periodStart(period);
-  const rows = db.ad_budget.filter(r => monthKey(r.month) >= from);
-  const leads = db.leads.filter(l => monthKey(l.came_on) >= from);
+function utmLink(c) {
+  let url;
+  try { url = new URL(c.landing || LANDINGS[c.direction] || 'https://adervis.ru/'); }
+  catch { url = new URL(LANDINGS[c.direction] || 'https://adervis.ru/'); }
+  url.searchParams.set('utm_source', UTM_SOURCE[c.channel] || slugify(c.channel));
+  url.searchParams.set('utm_medium', c.utm_medium || 'cpc');
+  url.searchParams.set('utm_campaign', c.utm_campaign || slugify(c.name));
+  if (c.utm_content) url.searchParams.set('utm_content', c.utm_content);
+  return url.toString();
+}
+
+function campaignStats(c) {
+  const leads = db.leads.filter(l => l.campaign_id === c.id);
+  const deals = leads.filter(l => l.status === 'Сделка');
+  return {
+    leads: leads.length, deals: deals.length,
+    dealSum: deals.reduce((n, l) => n + Number(l.amount || 0), 0),
+    cpl: leads.length ? Math.round(Number(c.spent || 0) / leads.length) : null,
+    over: c.budget > 0 && c.spent > c.budget,
+    overdue: c.status === 'Идёт' && c.ends_on && c.ends_on < today()
+  };
+}
+
+function adStats() {
   const sum = (list, f) => list.reduce((n, r) => n + Number(r[f] || 0), 0);
-  const channels = [...new Set(rows.map(r => r.channel))].map(ch => {
-    const spend = rows.filter(r => r.channel === ch);
-    const got = leads.filter(l => l.source === ch);
+  const running = db.campaigns.filter(c => c.status === 'Идёт');
+  const fromCampaigns = db.leads.filter(l => l.campaign_id);
+  const spentAll = sum(db.campaigns, 'spent');
+  const channels = [...new Set(db.campaigns.map(c => c.channel))].map(ch => {
+    const list = db.campaigns.filter(c => c.channel === ch);
+    const got = db.leads.filter(l => l.source === ch);
     const deals = got.filter(l => l.status === 'Сделка');
-    const spent = sum(spend, 'spent');
+    const spent = sum(list, 'spent');
     return {
-      channel: ch, planned: sum(spend, 'planned'), spent,
+      channel: ch, campaigns: list.length, budget: sum(list, 'budget'), spent,
       leads: got.length, deals: deals.length, dealSum: sum(deals, 'amount'),
       cpl: got.length ? Math.round(spent / got.length) : null
     };
   }).sort((x, y) => y.spent - x.spent);
-  const now = db.ad_budget.filter(r => monthKey(r.month) === thisMonth());
-  const nowLeads = db.leads.filter(l => monthKey(l.came_on) === thisMonth() && AD_CHANNELS.includes(l.source));
-  const nowSpent = sum(now, 'spent');
   return {
-    channels,
-    spent: sum(rows, 'spent'), planned: sum(rows, 'planned'),
-    month: {
-      planned: sum(now, 'planned'), spent: nowSpent,
-      leads: nowLeads.length,
-      cpl: nowLeads.length ? Math.round(nowSpent / nowLeads.length) : null,
-      deals: nowLeads.filter(l => l.status === 'Сделка').length
-    }
+    channels, running,
+    runningSpent: sum(running, 'spent'), runningBudget: sum(running, 'budget'),
+    leads: fromCampaigns.length,
+    deals: fromCampaigns.filter(l => l.status === 'Сделка').length,
+    cpl: fromCampaigns.length ? Math.round(spentAll / fromCampaigns.length) : null
   };
 }
 
@@ -1471,99 +1500,153 @@ function editDecision(id) {
 
 function renderAds() {
   const st = adStats();
-  const m = st.month;
   const rub = n => n === null || n === undefined ? '—' : num(n) + ' ₽';
-  const head = heading('Реклама', 'Бюджет по каналам и что он принёс. Канал совпадает с источником в «Заявках» — поэтому видна цена обращения.',
-    `<button class="primary" data-action="newad">+ Расход на рекламу</button>`);
+  const head = heading('Реклама', 'Кампании, их бюджет и что они принесли. Заявка привязывается к кампании — видно, какое объявление сработало.',
+    `<button class="primary" data-action="newcampaign">+ Кампания</button>`);
 
-  if (!db.ad_budget.length) {
-    return head + `<div class="card empty"><h2>Бюджет ещё не внесён</h2>
-      <p>Запишите, сколько запланировали и потратили на каждый канал за месяц.</p>
-      <p>Название канала совпадает с источником в «Заявках»: ВКонтакте, Яндекс Директ, Авито, 2ГИС.
-      Тогда приложение само посчитает, во что обошлось одно обращение и какой канал окупается.</p></div>`;
+  if (!db.campaigns.length) {
+    return head + `<div class="card empty"><h2>Кампаний пока нет</h2>
+      <p>Заведите кампанию: канал, цель, сроки и бюджет. Приложение соберёт ссылку с UTM-метками —
+      её ставят в объявление, и заявки с сайта сами покажут, откуда пришли.</p>
+      <p>Заявку можно привязать к кампании и вручную — в карточке заявки.</p></div>`;
   }
 
   const metrics = `<div class="grid metrics">${[
-    ['Бюджет месяца', rub(m.spent), m.planned ? `из ${rub(m.planned)} по плану` : 'план не задан'],
-    ['Заявки из рекламы', m.leads, 'в этом месяце'],
-    ['Средняя цена заявки', rub(m.cpl), m.leads ? 'весь бюджет ÷ все заявки из рекламы' : 'заявок из рекламы пока нет'],
-    ['Сделки из рекламы', m.deals, 'в этом месяце']
+    ['Идут кампании', st.running.length, st.running.length ? `потрачено ${rub(st.runningSpent)} из ${rub(st.runningBudget)}` : 'ни одна не запущена'],
+    ['Заявки из кампаний', st.leads, 'привязанные к кампании'],
+    ['Средняя цена заявки', rub(st.cpl), st.leads ? 'весь расход ÷ заявки из кампаний' : 'заявок из кампаний пока нет'],
+    ['Сделки из кампаний', st.deals, 'из привязанных заявок']
   ].map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small></div>`).join('')}</div>`;
 
-  const periods = `<div class="filters" role="group" aria-label="Период">${AD_PERIODS.map(([k, t]) =>
-    `<button class="chip${adPeriod === k ? ' on' : ''}" data-action="adperiod" data-id="${k}" aria-pressed="${adPeriod === k}">${t}</button>`).join('')}</div>`;
+  const counts = CAMPAIGN_STATUS.map(s => [s, db.campaigns.filter(c => c.status === s).length]).filter(([, n]) => n);
+  const filters = `<div class="filters" role="group" aria-label="Статус кампаний">
+    <button class="chip${campaignFilter === 'Все' ? ' on' : ''}" data-action="campaignfilter" data-id="Все"
+      aria-pressed="${campaignFilter === 'Все'}">Все <b>${db.campaigns.length}</b></button>
+    ${counts.map(([s, n]) => `<button class="chip${campaignFilter === s ? ' on' : ''}" data-action="campaignfilter" data-id="${E(s)}"
+      aria-pressed="${campaignFilter === s}">${E(s)} <b>${n}</b></button>`).join('')}</div>`;
 
-  const withLeads = st.channels.filter(c => c.cpl !== null);
-  const chart = withLeads.length
-    ? `<div class="card chartcard"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Цена заявки по каналам</h2>
+  const order = { 'Идёт': 0, 'Готовим': 1, 'Пауза': 2, 'Завершена': 3 };
+  const list = db.campaigns
+    .filter(c => campaignFilter === 'Все' || c.status === campaignFilter)
+    .sort((a, b) => order[a.status] - order[b.status] || String(b.starts_on).localeCompare(String(a.starts_on)));
+
+  const cards = `<div class="grid three">${list.map(c => {
+    const cs = campaignStats(c);
+    const pct = c.budget ? Math.min(100, Math.round(100 * c.spent / c.budget)) : 0;
+    return `<article class="card click campaign" tabindex="0" role="button" data-cp="${E(c.id)}" data-dir="${E(c.direction)}">
+      <div class="campaignhead"><span class="eyebrow">${E(c.channel)}</span>${tag(c.status)}</div>
+      <h2>${E(c.name)}</h2>
+      <p class="muted campaigngoal">${E(c.goal)} · ${E(String(c.starts_on))}${c.ends_on ? ' — ' + E(String(c.ends_on)) : ''}</p>
+      <div class="budgetbar${cs.over ? ' over' : ''}" role="img" aria-label="Потрачено ${pct}% бюджета"><i style="width:${pct}%"></i></div>
+      <p class="budgetline"><b>${rub(c.spent)}</b> <span class="muted">из ${rub(c.budget)}</span>${cs.over ? ' <span class="minus">перерасход</span>' : ''}</p>
+      <div class="campaignnums">
+        <span><b>${cs.leads}</b><small>заявок</small></span>
+        <span class="${c.spent && !cs.leads ? 'minus' : ''}"><b>${cs.cpl === null ? '—' : num(cs.cpl)}</b><small>цена заявки</small></span>
+        <span><b>${cs.deals}</b><small>сделок</small></span>
+      </div>
+      ${cs.overdue ? '<p class="minus campaignwarn">Срок вышел, а статус «Идёт»</p>' : ''}
+      <button class="chip utmcopy" data-action="copyutm" data-id="${E(c.id)}" title="${E(utmLink(c))}">${icon('link', 14)} Ссылка с метками</button>
+    </article>`;
+  }).join('') || '<div class="card empty">В этом статусе кампаний нет.</div>'}</div>`;
+
+  const withLeads = list.map(c => ({ c, s: campaignStats(c) })).filter(x => x.s.cpl !== null);
+  const chart = withLeads.length > 1
+    ? `<div class="card chartcard"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Цена заявки по кампаниям</h2>
         <small class="muted">меньше — лучше</small></div>
-        ${barChart(withLeads.map(c => ({ name: c.channel, value: c.cpl })), 'Цена заявки по каналам')}</div>`
+        ${barChart(withLeads.map(x => ({ name: x.c.name, value: x.s.cpl })), 'Цена заявки по кампаниям')}</div>`
     : '';
 
-  const table = `<div class="card tablewrap"><table class="table adtable">
-    <thead><tr><th>Канал</th><th>План</th><th>Потрачено</th><th>Заявок</th><th>Цена заявки</th><th>Сделок</th><th>Сумма сделок</th></tr></thead>
+  const table = `<div class="head"><h2>По каналам</h2><small class="muted">за всё время</small></div>
+    <div class="card tablewrap"><table class="table adtable">
+    <thead><tr><th>Канал</th><th>Кампаний</th><th>Бюджет</th><th>Потрачено</th><th>Заявок</th><th>Цена заявки</th><th>Сделок</th></tr></thead>
     <tbody>${st.channels.map(c => `<tr>
-      <td><b>${E(c.channel)}</b></td><td>${rub(c.planned)}</td><td>${rub(c.spent)}</td>
+      <td><b>${E(c.channel)}</b></td><td>${c.campaigns}</td><td>${rub(c.budget)}</td><td>${rub(c.spent)}</td>
       <td>${c.leads}</td><td class="${c.spent && !c.leads ? 'minus' : ''}">${c.spent && !c.leads ? 'заявок нет' : rub(c.cpl)}</td>
-      <td>${c.deals}</td><td>${c.dealSum ? rub(c.dealSum) : '—'}</td></tr>`).join('')
-      || '<tr><td colspan="7" class="muted">За этот период расходов нет.</td></tr>'}</tbody></table></div>`;
-
-  const log = `<div class="head"><h2>Записи бюджета</h2><small class="muted">по месяцам</small></div>
-    <div class="card tablewrap"><table class="table">
-    <thead><tr><th>Месяц</th><th>Канал</th><th>Направление</th><th>План</th><th>Потрачено</th><th></th></tr></thead>
-    <tbody>${[...db.ad_budget].sort((a, b) => String(b.month).localeCompare(String(a.month))).map(r => `<tr>
-      <td>${E(monthName(monthKey(r.month)))}</td><td>${E(r.channel)}</td><td>${tag(r.direction)}</td>
-      <td>${rub(r.planned)}</td><td>${rub(r.spent)}</td>
-      <td><button class="del" data-action="delad" data-id="${E(r.id)}" aria-label="Удалить запись">${icon('close', 15)}</button></td>
-    </tr>`).join('')}</tbody></table></div>`;
+      <td>${c.deals}</td></tr>`).join('')}</tbody></table></div>`;
 
   return head + metrics
-    + `<div class="head"><h2>По каналам</h2>${periods}</div>`
-    + chart + table + log
-    + `<div class="notice">Заявки считаются по источнику: если в «Заявках» не указано, откуда человек пришёл,
-      канал недополучит обращение, и цена заявки выйдет завышенной.</div>`;
+    + `<div class="head"><h2>Кампании</h2>${filters}</div>`
+    + cards + chart + table
+    + `<div class="notice">Ссылку с метками ставят в объявление. Чтобы заявки с сайта привязывались к кампании сами,
+      форма на сайте должна сохранять utm_campaign — это настраивается на сайте. Пока — выбирайте кампанию в карточке заявки.</div>`;
 }
 
-// Ввод расхода: один канал за месяц. Повторный ввод того же месяца, канала
-// и направления заменяет прежнюю строку, а не плодит дубликаты.
-function editAd() {
-  modal(`<h2>Расход на рекламу</h2><form id="adf">
-    <div class="formgrid">
-      <div><label>Месяц</label><input type="month" name="month" required value="${thisMonth()}"></div>
-      <div><label>Канал</label><select name="channel">${opts(AD_CHANNELS, AD_CHANNELS[0])}</select></div>
-      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, 'Студия')}</select></div>
-      <div><label>План, ₽</label><input type="number" name="planned" min="0" step="1" value="0"></div>
-      <div><label>Потрачено, ₽</label><input type="number" name="spent" min="0" step="1" value="0"></div>
-    </div>
-    <label>Заметка</label><input name="note" maxlength="500" placeholder="Что крутили: объявление, аудитория, ставка">
-    <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
-  $('#adf').onsubmit = async e => {
-    e.preventDefault();
-    const f = Object.fromEntries(new FormData(e.target));
-    const row = {
-      month: f.month + '-01', channel: f.channel, direction: f.direction,
-      planned: Number(f.planned) || 0, spent: Number(f.spent) || 0, note: f.note || ''
-    };
-    const same = db.ad_budget.find(r => monthKey(r.month) === f.month && r.channel === row.channel && r.direction === row.direction);
-    try {
-      const saved = same ? await api.update('ad_budget', { ...same, ...row }) : await api.insert('ad_budget', { id: uid(), ...row });
-      upsertLocal('ad_budget', saved);
-      noteLocal(same ? 'update' : 'insert', 'ad_budget', { ...saved, title: `${row.channel}, ${f.month}` });
-      $('#modal').close();
-      render();
-      toast(same ? 'Запись за месяц обновлена' : 'Расход записан');
-    } catch (err) { handleError(err); }
+function editCampaign(id) {
+  const exists = db.campaigns.some(c => c.id === id);
+  const c = db.campaigns.find(x => x.id === id) || {
+    id: uid(), name: '', channel: AD_CHANNELS[0], direction: 'Студия', goal: CAMPAIGN_GOALS[0], status: 'Готовим',
+    starts_on: today(), ends_on: '', budget: 0, spent: 0, audience: '', creative: '', landing: '',
+    utm_medium: 'cpc', utm_campaign: '', utm_content: '', note: ''
   };
+  modal(`<h2>Кампания</h2><form id="cpf">
+    <label>Название</label>
+    <input name="name" required maxlength="120" value="${E(c.name)}" placeholder="Осенняя съёмка для кафе">
+    <div class="formgrid">
+      <div><label>Канал</label><select name="channel">${opts(AD_CHANNELS, c.channel)}</select></div>
+      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, c.direction)}</select></div>
+      <div><label>Цель</label><select name="goal">${opts(CAMPAIGN_GOALS, c.goal)}</select></div>
+      <div><label>Статус</label><select name="status">${opts(CAMPAIGN_STATUS, c.status)}</select></div>
+      <div><label>Начало</label><input type="date" name="starts_on" value="${E(c.starts_on || '')}"></div>
+      <div><label>Окончание</label><input type="date" name="ends_on" value="${E(c.ends_on || '')}"></div>
+      <div><label>Бюджет, ₽</label><input type="number" name="budget" min="0" step="1" value="${E(String(c.budget || 0))}"></div>
+      <div><label>Потрачено, ₽</label><input type="number" name="spent" min="0" step="1" value="${E(String(c.spent || 0))}"></div>
+    </div>
+    <label>Аудитория</label><input name="audience" maxlength="500" value="${E(c.audience)}" placeholder="Владельцы кафе в Перми, 25–45">
+    <label>Креатив — что показываем</label><textarea name="creative" maxlength="1000" style="min-height:80px">${E(c.creative)}</textarea>
+    <fieldset class="utmset"><legend>Ссылка с метками</legend>
+      <label>Куда ведёт</label><input name="landing" maxlength="500" value="${E(c.landing)}" placeholder="${E(LANDINGS[c.direction])}">
+      <div class="formgrid">
+        <div><label>Тип трафика</label><select name="utm_medium">${opts(UTM_MEDIUMS, c.utm_medium)}</select></div>
+        <div><label>Метка кампании</label><input name="utm_campaign" maxlength="60" pattern="[a-z0-9_\\-]{1,60}" value="${E(c.utm_campaign)}"
+          placeholder="соберётся из названия"></div>
+        <div><label>Метка объявления</label><input name="utm_content" maxlength="60" pattern="[a-z0-9_\\-]{0,60}" value="${E(c.utm_content)}"
+          placeholder="например, video-a"></div>
+      </div>
+      <p class="utmpreview"><code id="utmout"></code></p>
+      <small class="muted">Метки только латиницей: кириллица в ссылке превращается в %D0%… и ломает отчёты.</small>
+    </fieldset>
+    <label>Заметка</label><textarea name="note" maxlength="1000" style="min-height:70px">${E(c.note)}</textarea>
+    ${exists ? `<p class="muted">Последняя правка: ${E(memberName(c._by))}, ${ago(c._at)}</p>` : ''}
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${exists ? `<button type="button" class="danger" data-action="delcampaign" data-id="${E(c.id)}">Удалить</button>` : ''}</div></form>`);
+  const f = $('#cpf');
+  // Метка кампании собирается из названия, пока её не трогали руками.
+  let touched = Boolean(c.utm_campaign);
+  const preview = () => {
+    const data = Object.fromEntries(new FormData(f));
+    if (!touched) f.utm_campaign.value = slugify(data.name);
+    $('#utmout').textContent = utmLink({ ...c, ...data, utm_campaign: f.utm_campaign.value });
+  };
+  f.utm_campaign.addEventListener('input', () => { touched = true; });
+  f.addEventListener('input', preview);
+  f.addEventListener('change', preview);
+  preview();
+  submitForm(f, 'campaigns', c, exists, 'Кампания сохранена');
 }
 
-function delAd(id) {
-  const r = db.ad_budget.find(x => x.id === id);
-  if (!r) return;
-  askDelete('Удалить запись бюджета?', `${E(r.channel)}, ${E(monthName(monthKey(r.month)))}.`, async () => {
-    await api.remove('ad_budget', id);
-    db.ad_budget = db.ad_budget.filter(x => x.id !== id);
-    noteLocal('delete', 'ad_budget', { ...r, title: r.channel });
+function delCampaign(id) {
+  const c = db.campaigns.find(x => x.id === id);
+  if (!c) return;
+  askDelete('Удалить кампанию?', `«${E(c.name)}» исчезнет, привязанные заявки останутся без кампании.`, async () => {
+    await api.remove('campaigns', id);
+    db.campaigns = db.campaigns.filter(x => x.id !== id);
+    db.leads = db.leads.map(l => l.campaign_id === id ? { ...l, campaign_id: null } : l);
+    noteLocal('delete', 'campaigns', { ...c, title: c.name });
   });
+}
+
+async function copyUtm(id) {
+  const c = db.campaigns.find(x => x.id === id);
+  if (!c) return;
+  const link = utmLink(c);
+  try {
+    await navigator.clipboard.writeText(link);
+    toast('Ссылка с метками скопирована');
+  } catch {
+    // Без доступа к буферу — показываем ссылку, чтобы скопировать руками.
+    modal(`<h2>Ссылка с метками</h2><p class="muted">Выделите и скопируйте:</p>
+      <input class="input" readonly value="${E(link)}" onfocus="this.select()" style="width:100%">`);
+  }
 }
 
 // Нейроцепочка: знания → контент → ИИ → каналы → результат.
@@ -1616,14 +1699,16 @@ function businessGaps() {
       `Ближайшее — «${first.title.slice(0, 60)}${first.title.length > 60 ? '…' : ''}». Решение без проверки становится забытым намерением.`]);
   }
 
-  if (db.ad_budget.length && !db.ad_budget.some(r => monthKey(r.month) === thisMonth())) {
-    gaps.push(['ads', 'Бюджет этого месяца не внесён',
-      `${monthName(thisMonth())} без расходов на рекламу — цену заявки не посчитать.`]);
-  }
-  const idle = adStats('quarter').channels.filter(c => c.spent > 0 && !c.leads);
+  const running = db.campaigns.filter(c => c.status === 'Идёт');
+  const idle = running.filter(c => Number(c.spent) > 0 && !campaignStats(c).leads);
   if (idle.length) {
-    gaps.push(['ads', `Канал тратит без заявок: ${idle.map(c => c.channel).join(', ')}`,
-      'За три месяца деньги ушли, а обращений из этого канала не записано. Либо не отмечен источник, либо канал не работает.']);
+    gaps.push(['ads', `Кампания тратит без заявок: ${idle.map(c => c.name).join(', ')}`,
+      'Деньги идут, а ни одна заявка к кампании не привязана. Либо не отмечена кампания в заявке, либо объявление не работает.']);
+  }
+  const stale = running.filter(c => campaignStats(c).overdue);
+  if (stale.length) {
+    gaps.push(['ads', `Срок вышел, а кампания «Идёт»: ${stale.map(c => c.name).join(', ')}`,
+      'Обновите статус — иначе в расходах и на обзоре висит то, что уже не крутится.']);
   }
 
   if (!db.leads.length) {
@@ -1763,12 +1848,14 @@ function graphData() {
     link(id, hub(l.source, 'Источник'));
     link(id, hub(l.direction, 'Направление'));
   }
-  // Расход на канал цепляется к тому же признаку «Источник», что и заявки:
-  // на карте сразу видно, куда ушли деньги и что оттуда пришло.
-  for (const ch of new Set(db.ad_budget.map(r => r.channel))) {
-    const spent = db.ad_budget.filter(r => r.channel === ch).reduce((n, r) => n + Number(r.spent || 0), 0);
-    link(add('ad:' + ch, 'ad', `Реклама: ${ch} · ${num(spent)} ₽`, { open: 'ads' }), hub(ch, 'Источник'));
+  // Кампания цепляется к тому же признаку «Источник», что и заявки, а
+  // привязанные к ней заявки — прямо к ней: это настоящая связь записей,
+  // по ней видно, какое объявление что принесло.
+  for (const c of db.campaigns) {
+    const id = add('cp:' + c.id, 'ad', c.name, { ref: c.id, open: 'cp' });
+    link(id, hub(c.channel, 'Источник'));
   }
+  for (const l of db.leads) if (l.campaign_id) link('l:' + l.id, 'cp:' + l.campaign_id);
   // настоящие ссылки между записями
   for (const f of db.files) link('k:' + f.record, hub('С файлами', 'Материалы'));
   for (const m of db.metrics) link('p:' + m.post, hub('С замерами', 'Результат'));
@@ -2123,7 +2210,7 @@ function graphOpen(id) {
   else if (node.open === 'd') { go('decisions'); editDecision(node.ref); }
   else if (node.open === 'l') { go('leads'); editLead(node.ref); }
   else if (node.open === 'brand') { graph.open = false; go('brand'); editBrand(node.ref); }
-  else if (node.open === 'ads') { graph.open = false; go('ads'); }
+  else if (node.open === 'cp') { graph.open = false; go('ads'); editCampaign(node.ref); }
 }
 
 function renderChain() {
@@ -2200,16 +2287,17 @@ function render() {
   if (page === 'home') {
     // На главной — маркетинг: сколько ушло на рекламу, сколько она принесла
     // обращений и во что обошлось одно. Выручка студии ведётся в CRM.
-    const a = adStats().month;
+    const a = adStats();
     const ls = leadStats();
     const reach = totals();
 
     const cards = [
-      ['Реклама за месяц', db.ad_budget.length ? num(a.spent) : '—',
-        !db.ad_budget.length ? 'Внесите бюджет в «Рекламе»' : a.planned ? `из ${num(a.planned)} по плану` : 'план не задан',
+      ['Идут кампании', db.campaigns.length ? a.running.length : '—',
+        !db.campaigns.length ? 'Заведите кампанию в «Рекламе»'
+          : a.running.length ? `потрачено ${num(a.runningSpent)} из ${num(a.runningBudget)}` : 'ни одна не запущена',
         'ads', ''],
       ['Цена заявки', a.cpl === null ? '—' : num(a.cpl),
-        a.leads ? `заявок из рекламы: ${a.leads}` : 'заявок из рекламы в этом месяце нет', 'ads', ''],
+        a.leads ? `заявок из кампаний: ${a.leads}` : 'заявок из кампаний пока нет', 'ads', ''],
       ['Заявки за 30 дней', db.leads.length ? ls.recent : '—',
         db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads', ''],
       // Охват — маркетинговая цифра, ей место на главной. Просроченные
@@ -2580,6 +2668,7 @@ function submitForm(form, table, original, exists, okText) {
         ? (el.type === 'number' ? 0 : null)
         : (el.type === 'number' ? Number(el.value) : el.value);
     }
+    for (const k of Object.keys(o)) if (k.endsWith('_id') && o[k] === '') o[k] = null;
     try {
       const saved = exists ? await api.update(table, o) : await api.insert(table, o);
       upsertLocal(table, saved);
@@ -2881,6 +2970,11 @@ function editLead(id) {
       <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, l.direction)}</select></div>
       <div><label>Статус</label><select name="status">${opts(LEAD_STATUS, l.status)}</select></div>
     </div>
+    <label>Кампания — если пришёл по рекламе</label>
+    <select name="campaign_id"><option value="">Без кампании</option>
+      ${[...db.campaigns].sort((a, b) => (a.status === 'Идёт' ? 0 : 1) - (b.status === 'Идёт' ? 0 : 1)).map(c =>
+        `<option value="${E(c.id)}" ${l.campaign_id === c.id ? 'selected' : ''}>${E(c.name)} · ${E(c.channel)}</option>`).join('')}
+    </select>
     <label>Чего хотел</label>
     <input name="request" maxlength="1000" value="${E(l.request)}" placeholder="Ролик для маркетплейса, смета на съёмку">
     <label>Сумма, ₽ — если дошло до денег</label>
@@ -3137,6 +3231,7 @@ function search() {
       ...db.content.map(p => ({ ...p, kind: 'p', note: 'Публикация · ' + p.status })),
       ...db.decisions.map(d => ({ ...d, body: d.why || '', kind: 'd', note: 'Решение · ' + d.status })),
       ...db.leads.map(l => ({ ...l, title: l.name, body: l.request || '', kind: 'l', note: 'Заявка · ' + l.source })),
+      ...db.campaigns.map(c => ({ ...c, title: c.name, body: `${c.creative} ${c.audience}`, kind: 'cp', note: 'Кампания · ' + c.channel })),
       ...db.brand.map(b => ({ ...b, body: b.data?.body || '', kind: 'brand', note: 'Брендбук · ' + (b.section || 'Прочее') }))
     ].filter(x => (x.title + ' ' + x.body).toLowerCase().includes(q)).slice(0, 25);
     $('#results').innerHTML = all.map(x => `<button class="result" data-result="${x.kind}" data-id="${E(x.id)}">${E(x.title)}
@@ -3308,7 +3403,7 @@ function exportJson() {
     knowledge: strip(db.knowledge), content: strip(db.content),
     tasks: strip(db.tasks), metrics: strip(db.metrics),
     brand: strip(db.brand), decisions: strip(db.decisions),
-    ad_budget: strip(db.ad_budget), leads: strip(db.leads),
+    campaigns: strip(db.campaigns), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications)
   }, null, 2), 'adervis-backup-' + new Date().toISOString().slice(0, 10) + '.json');
 }
@@ -3406,7 +3501,7 @@ document.addEventListener('click', async e => {
     document.body.classList.remove('menu');
     return;
   }
-  const b = e.target.closest('button,article[data-k],article[data-p],article[data-d],tr[data-l],g[data-node]');
+  const b = e.target.closest('button,article[data-k],article[data-p],article[data-d],article[data-cp],tr[data-l],g[data-node]');
   if (!b) return;
   if (b.dataset.node) { graphOpen(b.dataset.node); return; }
   if (b.dataset.page) { go(b.dataset.page); return; }
@@ -3414,6 +3509,7 @@ document.addEventListener('click', async e => {
   if (b.dataset.p) { editP(b.dataset.p); return; }
   if (b.dataset.d) { editDecision(b.dataset.d); return; }
   if (b.dataset.l) { editLead(b.dataset.l); return; }
+  if (b.dataset.cp) { editCampaign(b.dataset.cp); return; }
   if (b.dataset.result) {
     $('#modal').close();
     const id = b.dataset.id;
@@ -3423,6 +3519,7 @@ document.addEventListener('click', async e => {
       p: () => editP(id),
       d: () => { go('decisions'); editDecision(id); },
       l: () => { go('leads'); editLead(id); },
+      cp: () => { go('ads'); editCampaign(id); },
       brand: () => { go('brand'); editBrand(id); }
     };
     (open[b.dataset.result] || open.p)();
@@ -3434,9 +3531,10 @@ document.addEventListener('click', async e => {
     case 'newp': editP(); break;
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
-    case 'newad': editAd(); break;
-    case 'delad': delAd(b.dataset.id); break;
-    case 'adperiod': adPeriod = b.dataset.id; render(); break;
+    case 'newcampaign': editCampaign(); break;
+    case 'delcampaign': delCampaign(b.dataset.id); break;
+    case 'campaignfilter': campaignFilter = b.dataset.id; render(); break;
+    case 'copyutm': copyUtm(b.dataset.id); break;
     case 'newdecision': editDecision(); break;
     case 'deldecision': delDecision(b.dataset.id); break;
     case 'leadstatus': leadFilter.status = b.dataset.id; render(); break;
@@ -3652,7 +3750,7 @@ $('#search').onclick = search;
 const CREATE_ITEMS = [
   ['newlead', 'Заявку', 'кто обратился и откуда узнал', 'leads'],
   ['newdecision', 'Решение', 'что решили, почему и как проверим', 'decisions'],
-  ['newad', 'Расход на рекламу', 'канал, план и сколько потрачено', 'ads'],
+  ['newcampaign', 'Кампанию', 'канал, цель, бюджет и ссылка с метками', 'ads'],
   ['newk', 'Запись базы знаний', 'факт о компании с источником', 'knowledge'],
   ['newp', 'Публикацию', 'материал для канала', 'content'],
   ['newtask', 'Задачу', 'общий список для обоих руководителей', 'tasks']

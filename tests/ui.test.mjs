@@ -40,7 +40,7 @@ const fake = (seedData) => {
     metrics: [],
     files: [],
     publications: [],
-    ad_budget: [],
+    campaigns: [],
     decisions: [],
     leads: [
       { id: 'l1', came_on: '2026-09-10', name: 'Графсил', source: 'Рекомендация', direction: 'Студия',
@@ -212,6 +212,7 @@ const fake = (seedData) => {
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
 await ctx.addInitScript(fake, seed);
 const page = await ctx.newPage();
 const errors = [];
@@ -242,8 +243,8 @@ check('свой вошёл', await page.isVisible('#shell'));
 check('в боковом меню его имя', (await page.textContent('#myname')) === 'Артём');
 // На обзоре — состояние дела, а не объём базы: пока денег не внесли, стоит прочерк с подсказкой.
 const homeCards = await page.$$eval('.metric', c => c.map(x => x.innerText.replace(/\s+/g, ' ')));
-check('обзор начинается с рекламы, а не с выручки', /реклама за месяц/i.test(homeCards[0]), homeCards[0]);
-check('пустой бюджет объясняет, что внести', /внесите бюджет/i.test(homeCards[0]), homeCards[0]);
+check('обзор начинается с рекламы, а не с выручки', /идут кампании/i.test(homeCards[0]), homeCards[0]);
+check('пустая реклама объясняет, что завести', /заведите кампанию/i.test(homeCards[0]), homeCards[0]);
 check('на обзоре есть цена заявки', /цена заявки/i.test(homeCards[1]), homeCards[1]);
 check('обзор показывает заявки и охват',
   /заявки за 30 дней/i.test(homeCards[2]) && /охват публикаций/i.test(homeCards[3]), homeCards.join(' | '));
@@ -269,53 +270,73 @@ check('имя пользователя остаётся на виду', await pa
 await page.evaluate(() => { document.querySelector('#nav').scrollTop = 0; });
 await page.screenshot({ path: path.join(OUT, 'intel-home.png') });
 
-// --- 1в. реклама: бюджет по каналам и цена заявки
-// Учёта денег в приложении больше нет — только бюджет на рекламу. Канал
-// совпадает с источником заявки, поэтому считается цена обращения.
+// --- 1в. реклама: кампании, метки и цена заявки
+// Учёта денег в приложении нет — есть рекламные кампании. Заявка
+// привязывается к кампании, и видно, какое объявление что принесло.
 check('раздела «Деньги» в меню больше нет', (await page.$$('#nav button[data-page=money]')).length === 0);
 await nav('ads');
-check('пустой бюджет объясняет, что внести и зачем',
-  (await page.textContent('#view')).includes('Название канала совпадает с источником'));
-const nowMonth = new Date().toISOString().slice(0, 7);
-const addAd = async (ch, plan, spent) => {
-  await page.click('[data-action=newad]');
-  await page.fill('#adf input[name=month]', nowMonth);
-  await page.selectOption('#adf select[name=channel]', ch);
-  await page.fill('#adf input[name=planned]', plan);
-  await page.fill('#adf input[name=spent]', spent);
-  await page.click('#adf button.primary');
-  await page.waitForFunction(() => !document.querySelector('#modal').open);
+check('пустая реклама объясняет, что завести и зачем', (await page.textContent('#view')).includes('Кампаний пока нет'));
+const addCampaign = async (name, ch, budget, spent) => {
+  await page.click('[data-action=newcampaign]');
+  await page.fill('#cpf input[name=name]', name);
+  await page.selectOption('#cpf select[name=channel]', ch);
+  await page.selectOption('#cpf select[name=status]', 'Идёт');
+  await page.fill('#cpf input[name=budget]', budget);
+  await page.fill('#cpf input[name=spent]', spent);
 };
-await addAd('2ГИС', '8000', '6000');
-await addAd('ВКонтакте', '12000', '10000');
+await addCampaign('Осенняя съёмка для кафе', '2ГИС', '20000', '9000');
+const utmPreview = await page.textContent('#utmout');
+check('метка кампании собирается латиницей из русского названия',
+  utmPreview.includes('utm_campaign=osennyaya-semka-dlya-kafe'), utmPreview);
+check('источник в ссылке — латиницей, а не %D0%…', utmPreview.includes('utm_source=2gis') && !/%D0/.test(utmPreview), utmPreview);
+check('ссылка ведёт на страницу направления', utmPreview.startsWith('https://adervis.ru/?'), utmPreview);
+await page.click('#cpf button.primary');
+await page.waitForFunction(() => !document.querySelector('#modal').open);
+await addCampaign('Промо ролика ВК', 'ВКонтакте', '15000', '10000');
+await page.click('#cpf button.primary');
+await page.waitForFunction(() => !document.querySelector('#modal').open);
+const camp = (await state()).campaigns.find(c => c.name === 'Осенняя съёмка для кафе');
+check('кампания сохранена с меткой', camp && camp.utm_campaign === 'osennyaya-semka-dlya-kafe', JSON.stringify(camp && camp.utm_campaign));
+// заявку из 2ГИС привязываем к кампании
+await nav('leads');
+await page.click('tr[data-l=l3]');
+await page.waitForSelector('#lf');
+await page.selectOption('#lf select[name=campaign_id]', camp.id);
+await page.click('#lf button.primary');
+await page.waitForFunction(id => window.__STATE__.leads.find(l => l.id === 'l3').campaign_id === id, camp.id);
+check('заявка привязана к кампании', (await state()).leads.find(l => l.id === 'l3').campaign_id === camp.id);
+await nav('ads');
+const campCard = async name => (await page.$$eval('article.campaign', cs => cs.map(c => c.innerText.replace(/\s+/g, ' '))))
+  .find(t => t.includes(name)) || '';
+const cafe = await campCard('Осенняя съёмка');
+check('у кампании своя цена заявки: потрачено ÷ её заявок', /1 заявок 9\s?000 цена заявки/.test(cafe), cafe);
+check('кампания с расходом без заявок подсвечена',
+  await page.$$eval('article.campaign', cs => cs.some(c => c.innerText.includes('Промо ролика') && c.querySelector('.campaignnums .minus'))));
 const adTiles = await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')));
-check('бюджет месяца сложен по каналам и сверен с планом',
-  /16\s?000 ₽/.test(adTiles[0]) && /20\s?000 ₽/.test(adTiles[0]), adTiles[0]);
-// знак рубля обязан остаться на одной строке с числом
+check('сверху — сколько кампаний идёт и сколько они потратили',
+  /идут кампании 2/i.test(adTiles[0]) && /19\s?000 ₽ из 35\s?000 ₽/.test(adTiles[0]), adTiles[0]);
 check('крупное число не разрывается переносом', await page.$$eval('.metric .value', vs => vs.every(v => {
   const line = parseFloat(getComputedStyle(v).lineHeight) || parseFloat(getComputedStyle(v).fontSize) * 1.2;
   return v.getBoundingClientRect().height <= line * 1.4;
 })));
-await page.click('[data-action=adperiod][data-id=all]');
-const adRow = async ch => (await page.$$eval('.adtable tbody tr', rs => rs.map(r => r.innerText.replace(/\s+/g, ' '))))
-  .find(r => r.startsWith(ch)) || '';
-const gis = await adRow('2ГИС');
-check('цена заявки по каналу: потрачено ÷ заявок из этого канала', /6\s?000 ₽ 1 6\s?000 ₽/.test(gis), gis);
-check('канал с расходом без заявок отмечен честно', (await adRow('ВКонтакте')).includes('заявок нет'), await adRow('ВКонтакте'));
-check('выбранный период объявлен для чтения с экрана',
-  await page.$eval('[data-action=adperiod][data-id=all]', b => b.getAttribute('aria-pressed') === 'true'));
-check('цена заявки нарисована графиком по каналам',
-  (await page.$$eval('.chart .rowlabel', t => t.map(x => x.textContent))).includes('2ГИС'));
-await addAd('2ГИС', '8000', '9000');
-check('повторный ввод канала за месяц заменяет запись, а не дублирует',
-  (await state()).ad_budget.length === 2, String((await state()).ad_budget.length));
-check('цена заявки пересчитана после правки', /9\s?000 ₽ 1 9\s?000 ₽/.test(await adRow('2ГИС')), await adRow('2ГИС'));
+const gisRow = (await page.$$eval('.adtable tbody tr', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ')))).find(r => r.startsWith('2ГИС')) || '';
+check('по каналам: цена заявки считается по источнику', /2ГИС 1 20\s?000 ₽ 9\s?000 ₽ 1 9\s?000 ₽/.test(gisRow), gisRow);
+// ссылка с метками копируется ровно та, что уйдёт в объявление
+await page.click(`article.campaign[data-cp="${camp.id}"] [data-action=copyutm]`);
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('скопирована'));
+const copied = await page.evaluate(() => navigator.clipboard.readText());
+check('копируется ссылка кампании с метками', copied.includes('utm_campaign=osennyaya-semka-dlya-kafe') && copied.includes('utm_medium=cpc'), copied);
+await page.click('[data-action=campaignfilter][data-id="Идёт"]');
+check('отбор по статусу оставляет идущие кампании', (await page.$$('article.campaign')).length === 2);
+check('выбранный отбор объявлен для чтения с экрана',
+  await page.$eval('[data-action=campaignfilter][data-id="Идёт"]', b => b.getAttribute('aria-pressed') === 'true'));
+await page.click('[data-action=campaignfilter][data-id="Все"]');
 await page.screenshot({ path: path.join(OUT, 'intel-ads.png'), fullPage: true });
-// подсказка на обзоре: канал тратит, а заявок нет
+// подсказка на обзоре: кампания тратит, а заявок нет
 await nav('home');
 const adGaps = await page.$$eval('.gapcard', cs => cs.map(c => c.innerText.replace(/\s+/g, ' ')));
-check('обзор предупреждает о канале, который тратит без заявок',
-  adGaps.some(g => /Канал тратит без заявок: ВКонтакте/.test(g)), adGaps.join(' | '));
+check('обзор предупреждает о кампании, которая тратит без заявок',
+  adGaps.some(g => /Кампания тратит без заявок: Промо ролика ВК/.test(g)), adGaps.join(' | '));
 
 // --- 1г. решения
 await nav('decisions');
@@ -439,12 +460,14 @@ check('новая заявка по умолчанию новая', (await state
 await page.click('#create');
 await page.waitForSelector('.createlist');
 const createItems = await page.$$eval('.createitem', b => b.map(x => x.dataset.action));
-check('в «Создать» есть заявка, решение и расход на рекламу',
-  ['newlead', 'newdecision', 'newad'].every(a => createItems.includes(a)), createItems.join(', '));
+check('в «Создать» есть заявка, решение и кампания',
+  ['newlead', 'newdecision', 'newcampaign'].every(a => createItems.includes(a)), createItems.join(', '));
 check('первым стоит то, что относится к открытому разделу', createItems[0] === 'newlead', createItems[0]);
 check('пункт текущего раздела помечен', await page.$eval('.createitem', b => b.classList.contains('here')));
 await page.click('#modal [data-action=close]');
 check('сумма ушла числом, а не строкой', (await state()).leads.find(l => l.name === 'Белазарь').amount === 0);
+check('заявка без кампании сохраняется без связи, а не с пустым ключом',
+  (await state()).leads.find(l => l.name === 'Белазарь').campaign_id === null);
 // пустая дата не должна уходить на сервер пустой строкой: такую не примет ни одна колонка типа date
 await nav('decisions');
 await page.click('[data-action=newdecision]');
@@ -498,7 +521,17 @@ check('на карте есть записи всех заведённых ви�
 check('признаки вынесены отдельными узлами', nodeKinds.filter(k => k === 'hub').length >= 3,
   String(nodeKinds.filter(k => k === 'hub').length));
 check('узлы соединены линиями', (await page.$$('.glink')).length > 0);
-check('расход на рекламу стоит на карте', (await page.$$('.gnode.ad')).length === 2, String((await page.$$('.gnode.ad')).length));
+check('кампании стоят на карте', (await page.$$('.gnode.ad')).length === 2, String((await page.$$('.gnode.ad')).length));
+check('заявка и её кампания связаны напрямую', await page.evaluate(() => {
+  const at = sel => { const c = document.querySelector(sel + ' circle:not(.ghit)'); return c && [c.getAttribute('cx'), c.getAttribute('cy')]; };
+  const lead = at('g[data-node="l:l3"]');
+  const camp = [...document.querySelectorAll('g.gnode.ad')].map(g => at(`g[data-node="${g.dataset.node}"]`));
+  return !!lead && [...document.querySelectorAll('.glink')].some(l => {
+    const a = [l.getAttribute('x1'), l.getAttribute('y1')], b = [l.getAttribute('x2'), l.getAttribute('y2')];
+    const eq = (p, q) => p && q && p[0] === q[0] && p[1] === q[1];
+    return camp.some(c => (eq(a, lead) && eq(b, c)) || (eq(b, lead) && eq(a, c)));
+  });
+}));
 check('расход и заявки одного канала сходятся в одном узле «Источник»', await page.evaluate(() => {
   const hub = document.querySelector('g[data-node="hub:Источник:2ГИС"]');
   if (!hub) return false;
@@ -821,7 +854,7 @@ const [dl] = await Promise.all([
 const backup = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
 check('копия называется по дате', /^adervis-backup-\d{4}-\d{2}-\d{2}\.json$/.test(dl.suggestedFilename()), dl.suggestedFilename());
 check('локальная версия по-прежнему прочитает копию', backup.version === 2);
-const missing = ['knowledge', 'content', 'tasks', 'metrics', 'brand', 'decisions', 'ad_budget', 'leads', 'files', 'publications']
+const missing = ['knowledge', 'content', 'tasks', 'metrics', 'brand', 'decisions', 'campaigns', 'leads', 'files', 'publications']
   .filter(t => !Array.isArray(backup[t]));
 check('в копию попали все разделы', missing.length === 0, missing.join(', '));
 check('брендбук лежит в копии, а не теряется', backup.brand.some(b => b.id === 'clearspace') && backup.brand.length >= 10,
