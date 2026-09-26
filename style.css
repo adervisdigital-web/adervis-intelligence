@@ -1158,3 +1158,16 @@ h1,.sectionhead,.hero h1,.covertitle,.slidetitle{
 
 /* Кнопка действия в шапке раздела не переносится по словам. */
 .head > .primary{white-space:nowrap;flex:none}
+
+/* Первое сообщение компании и связи кампании с публикацией. */
+.pitchset{border:1px solid var(--line);border-radius:12px;padding:6px 14px 14px;margin:18px 0 4px}
+.pitchset legend{padding:0 6px;font-size:12px;font-weight:700;color:var(--muted)}
+.pitchset .formactions{flex-wrap:wrap;justify-content:flex-start}
+.pitchset .formactions button{display:inline-flex;gap:6px;align-items:center}
+.pitchlinks{margin-top:8px;font-size:13px;overflow-wrap:anywhere}
+.promoted{display:inline-flex;gap:5px;align-items:center;font-size:12px}
+.gnode.magnet circle:not(.ghit){fill:var(--g-magnet)}
+.glegend.magnet{color:var(--g-magnet)}
+:root{--g-magnet:#be185d}
+html[data-theme=dark]{--g-magnet:#f472b6}
+.pitchset .pitchsent{border-color:var(--gold)}

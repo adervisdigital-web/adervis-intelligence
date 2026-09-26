@@ -102,7 +102,7 @@ const fake = (seedData) => {
     lead_magnets: [
       { id: 'lm-audit', name: 'Разбор визуала за 15 минут', direction: 'Студия', format: 'Видеоразбор', status: 'Работает',
         audience: 'Кафе и салоны', promise: 'Три правки визуала за неделю', exchange: 'Ссылка и контакт',
-        next_step: 'Съёмка под найденные проблемы', channels: 'Сайт', note: '', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' },
+        next_step: 'Съёмка под найденные проблемы', channels: 'Сайт', note: '', pitch: 'Здравствуйте! Посмотрели {компания} в городе {город}.', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' },
       { id: 'lm-idea', name: 'Шаблон сметы', direction: 'CRM', format: 'Шаблон', status: 'Идея',
         audience: '', promise: 'Таблица сметы', exchange: 'Почта', next_step: '', channels: '', note: '', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
     ]
@@ -1090,6 +1090,38 @@ await page.click('#mgf button.primary');
 await page.waitForFunction(() => window.__STATE__.lead_magnets.some(m => m.name === 'Калькулятор цены ролика'));
 check('новый магнит заводится идеей', (await state()).lead_magnets.find(m => m.name === 'Калькулятор цены ролика').status === 'Идея');
 await page.screenshot({ path: path.join(OUT, 'intel-magnets.png'), fullPage: true });
+
+// первое сообщение компании — из лид-магнита
+await nav('prospects');
+const bro = (await state()).prospects.find(x => x.name === 'Бариста Бро');
+await page.click(`tr[data-pr="${bro.id}"]`);
+check('текст сообщения подставлен из карточки',
+  (await page.inputValue('#pitchtext')) === 'Здравствуйте! Посмотрели Бариста Бро в городе Пермь.', await page.inputValue('#pitchtext'));
+await page.fill('#prf input[name=name]', 'Бариста Бро и Ко');
+check('текст следует за правкой названия', (await page.inputValue('#pitchtext')).includes('Бариста Бро и Ко'));
+await page.fill('#prf input[name=email]', 'hi@bro.ru');
+check('есть ссылка написать на почту с этим текстом',
+  (await page.$eval('#pitchlinks a', a => a.href)).startsWith('mailto:hi@bro.ru?subject=ADERVIS&body=%D0%97'));
+await page.click('[data-action=pitchsent]');
+await page.waitForFunction(id => window.__STATE__.prospects.find(x => x.id === id).status === 'Написали', bro.id);
+const broSaved = (await state()).prospects.find(x => x.id === bro.id);
+check('компания отмечена: написали, какой магнит предложили',
+  broSaved.magnet_id === 'lm-audit' && /написали, предложили «Разбор визуала за 15 минут»/.test(broSaved.note), JSON.stringify([broSaved.magnet_id, broSaved.note]));
+check('правки формы сохранились вместе с отметкой', broSaved.name === 'Бариста Бро и Ко' && broSaved.email === 'hi@bro.ru');
+check('в буфере — ровно отправленный текст',
+  (await page.evaluate(() => navigator.clipboard.readText())) === 'Здравствуйте! Посмотрели Бариста Бро и Ко в городе Пермь.');
+await nav('magnets');
+check('магнит считает холодные сообщения', (await page.textContent('article[data-mg="lm-audit"]')).includes('написали 1, ответили 0'), await page.textContent('article[data-mg="lm-audit"]'));
+
+// кампания помнит, какой пост продвигает
+await nav('ads');
+const promo = (await state()).campaigns[0];
+await page.click(`article[data-cp="${promo.id}"]`);
+await page.selectOption('#cpf select[name=content_id]', 'p1');
+await page.click('#cpf button.primary');
+await page.waitForFunction(id => window.__STATE__.campaigns.find(c => c.id === id).content_id === 'p1', promo.id);
+check('на карточке кампании виден продвигаемый пост',
+  (await page.textContent(`article[data-cp="${promo.id}"] .promoted`)).includes('Один ролик для всех экранов'));
 
 // --- 6. задачи
 await nav('tasks');

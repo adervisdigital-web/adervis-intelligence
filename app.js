@@ -62,13 +62,13 @@ const FIELDS = {
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
   brand: ['id', 'title', 'kind', 'sort', 'data', 'section'],
   campaigns: ['id', 'name', 'channel', 'direction', 'goal', 'status', 'starts_on', 'ends_on', 'budget', 'spent',
-    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note'],
+    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
   leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id'],
   prospects: ['id', 'name', 'city', 'category', 'address', 'website', 'phone', 'email', 'socials', 'direction',
-    'source', 'status', 'external_id', 'lead_id', 'note'],
+    'source', 'status', 'external_id', 'lead_id', 'note', 'magnet_id'],
   kpi_targets: ['id', 'target'],
-  lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note']
+  lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 
@@ -1558,6 +1558,9 @@ function renderAds() {
         <span><b>${cs.deals}</b><small>сделок</small></span>
       </div>
       ${cs.overdue ? '<p class="minus campaignwarn">Срок вышел, а статус «Идёт»</p>' : ''}
+      ${(() => { const post = c.content_id && db.content.find(p => p.id === c.content_id); if (!post) return '';
+        const v = lastViews(post.id);
+        return `<small class="promoted">${icon('content', 13)} Продвигает «${E(post.title.slice(0, 50))}»${v !== null ? ` · ${num(v)} просм.` : ''}</small>`; })()}
       <button class="chip utmcopy" data-action="copyutm" data-id="${E(c.id)}" title="${E(utmLink(c))}">${icon('link', 14)} Ссылка с метками</button>
     </article>`;
   }).join('') || '<div class="card empty">В этом статусе кампаний нет.</div>'}</div>`;
@@ -1974,8 +1977,10 @@ function magnetStats(m) {
   const list = db.leads.filter(l => l.magnet_id === m.id);
   const deals = list.filter(l => l.status === 'Сделка');
   const closed = list.filter(l => ['Сделка', ...LOST].includes(l.status));
+  const sent = db.prospects.filter(p => p.magnet_id === m.id && ['Написали', 'Ответили', 'Заявка', 'Не интересно'].includes(p.status));
   return { leads: list.length, deals: deals.length, amount: sumOf(deals, 'amount'),
-    rate: closed.length ? Math.round(100 * deals.length / closed.length) : null };
+    rate: closed.length ? Math.round(100 * deals.length / closed.length) : null,
+    sent: sent.length, replied: sent.filter(p => p.status !== 'Написали').length };
 }
 
 function renderMagnets() {
@@ -2011,6 +2016,8 @@ function renderMagnets() {
         <span><b>${st.deals}</b><small>сделок</small></span>
         <span><b>${st.rate === null ? '—' : st.rate + '%'}</b><small>в сделку</small></span>
       </div>
+      ${st.sent ? `<small class="muted">Холодные сообщения: написали ${st.sent}, ответили ${st.replied}</small>`
+        : m.pitch ? '<small class="muted">Есть готовое первое сообщение</small>' : ''}
     </article>`;
   };
   return head + metrics + MAGNET_STATUS.map(stt => {
@@ -2026,7 +2033,7 @@ function editMagnet(id) {
   const exists = db.lead_magnets.some(m => m.id === id);
   const m = db.lead_magnets.find(x => x.id === id) || {
     id: uid(), name: '', direction: 'Студия', format: 'Разбор', status: 'Идея', audience: '', promise: '',
-    exchange: '', next_step: '', channels: '', note: ''
+    exchange: '', next_step: '', channels: '', note: '', pitch: ''
   };
   const st = exists ? magnetStats(m) : null;
   modal(`<h2>Лид-магнит</h2><form id="mgf">
@@ -2041,6 +2048,9 @@ function editMagnet(id) {
     <label>Что человек получает — одной фразой</label><textarea name="promise" maxlength="500" style="min-height:70px">${E(m.promise)}</textarea>
     <label>Что просим взамен</label><input name="exchange" maxlength="200" value="${E(m.exchange)}" placeholder="Телефон или Telegram">
     <label>Платный шаг после магнита</label><input name="next_step" maxlength="300" value="${E(m.next_step)}" placeholder="Созвон и смета на съёмку">
+    <label>Первое сообщение компании</label>
+    <textarea name="pitch" maxlength="2000" style="min-height:140px" placeholder="Здравствуйте! Посмотрели {компания}…">${E(m.pitch || '')}</textarea>
+    <small class="muted">Подставится из карточки компании: {компания}, {вид бизнеса}, {город}. Одно наблюдение про компанию и одно предложение — без прайса.</small>
     <label>Заметка</label><textarea name="note" maxlength="2000" style="min-height:90px">${E(m.note)}</textarea>
     ${st ? `<p class="muted">Принёс заявок: ${st.leads}, сделок: ${st.deals}${st.amount ? ` на ${num(st.amount)} ₽` : ''} · последняя правка: ${E(memberName(m._by))}, ${ago(m._at)}</p>` : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
@@ -2147,6 +2157,70 @@ function renderProspects() {
       массовые рассылки без согласия запрещены законом о рекламе, а шаблонное письмо всё равно не читают.</div>`;
 }
 
+// Первое сообщение компании — из лид-магнита. Текст подставляется из
+// карточки и остаётся редактируемым: шаблон — начало, а не рассылка.
+const pitchMagnets = () => db.lead_magnets.filter(m => m.pitch && m.status !== 'Выключен');
+
+function fillPitch(text, f) {
+  const v = n => (f.elements[n]?.value || '').trim();
+  return String(text || '')
+    .replaceAll('{компания}', v('name') || 'вашей компании')
+    .replaceAll('{вид бизнеса}', v('category').toLowerCase() || 'вашего бизнеса')
+    .replaceAll('{город}', v('city') || 'вашем городе');
+}
+
+function pitchBlock(p) {
+  const list = pitchMagnets();
+  if (!list.length) return '';
+  const pick = list.find(m => m.id === p.magnet_id) || list.find(m => m.direction === p.direction && m.status === 'Работает') || list[0];
+  return `<fieldset class="pitchset"><legend>Первое сообщение</legend>
+    <label for="pitchmagnet">Что предлагаем</label>
+    <select id="pitchmagnet">${list.map(m => `<option value="${E(m.id)}" ${m.id === pick.id ? 'selected' : ''}>${E(m.name)}${m.status === 'Работает' ? '' : ' · ' + E(m.status.toLowerCase())}</option>`).join('')}</select>
+    <textarea id="pitchtext" aria-label="Текст сообщения" style="min-height:150px"></textarea>
+    <div class="pitchlinks" id="pitchlinks"></div>
+    <div class="formactions"><button type="button" data-action="pitchcopy">${icon('copy', 15)} Скопировать</button>
+      ${OUTREACH.indexOf(p.status) < 2 ? `<button type="button" class="pitchsent" data-action="pitchsent">Скопировать и отметить «Написали»</button>` : ''}</div>
+  </fieldset>`;
+}
+
+function wirePitch() {
+  const f = $('#prf'), sel = $('#pitchmagnet');
+  if (!sel) return;
+  let touched = false;
+  const links = () => {
+    const email = f.elements.email.value.split(/[,\s]+/).find(x => x.includes('@'));
+    const socials = f.elements.socials.value.split('\n').map(x => x.trim()).filter(x => /^https:\/\//.test(x));
+    const body = encodeURIComponent($('#pitchtext').value);
+    $('#pitchlinks').innerHTML = [
+      email ? `<a href="mailto:${E(email)}?subject=${encodeURIComponent('ADERVIS')}&body=${body}">Написать на почту</a>` : '',
+      ...socials.slice(0, 4).map(u => `<a href="${E(u)}" target="_blank" rel="noopener noreferrer">${E(u.replace(/^https:\/\/(www\.)?/, ''))}</a>`)
+    ].filter(Boolean).join(' · ') || '<small class="muted">Контактов для отправки нет — добавьте почту или соцсеть</small>';
+  };
+  const refill = () => {
+    if (!touched) $('#pitchtext').value = fillPitch(db.lead_magnets.find(m => m.id === sel.value)?.pitch, f);
+    links();
+  };
+  $('#pitchtext').oninput = () => { touched = true; links(); };
+  sel.onchange = () => { touched = false; refill(); };
+  f.addEventListener('input', e => { if (e.target.id !== 'pitchtext') refill(); });
+  refill();
+}
+
+// «Отметить» записывает в карточку, какой магнит предложили и когда, и
+// сохраняет её вместе со всем, что успели поправить в форме.
+async function pitchCopy(mark) {
+  const text = $('#pitchtext').value;
+  try { await navigator.clipboard.writeText(text); } catch (e) { toast('Не удалось скопировать — выделите текст вручную'); return; }
+  if (!mark) { toast('Сообщение скопировано'); return; }
+  const f = $('#prf');
+  const m = db.lead_magnets.find(x => x.id === $('#pitchmagnet').value);
+  f.elements.status.value = 'Написали';
+  f.elements.magnet_id.value = m.id;
+  const line = `${new Date().toLocaleDateString('ru')}: написали, предложили «${m.name}»`;
+  f.elements.note.value = (line + (f.elements.note.value ? '\n' + f.elements.note.value : '')).slice(0, 2000);
+  f.requestSubmit();
+}
+
 async function orgSearch() {
   finder = { ...finder, query: $('#orgq').value.trim(), city: $('#orgcity').value.trim(), busy: true, error: '', orgs: [] };
   render();
@@ -2168,7 +2242,7 @@ async function orgAdd(list) {
       const saved = await api.insert('prospects', {
         id: uid(), name: o.name.slice(0, 200), city: finder.city.slice(0, 80), category: o.category.slice(0, 120),
         address: o.address.slice(0, 300), website: o.website.slice(0, 300), phone: o.phone.slice(0, 200), email: '', socials: '',
-        direction: 'Студия', source: 'Яндекс.Карты', status: 'Найден', external_id: o.external_id.slice(0, 80), lead_id: null, note: o.hours ? 'Часы работы: ' + o.hours.slice(0, 200) : ''
+        direction: 'Студия', source: 'Яндекс.Карты', status: 'Найден', external_id: o.external_id.slice(0, 80), lead_id: null, magnet_id: null, note: o.hours ? 'Часы работы: ' + o.hours.slice(0, 200) : ''
       });
       upsertLocal('prospects', saved);
       n++;
@@ -2201,7 +2275,7 @@ function editProspect(id, preset = {}) {
   const exists = db.prospects.some(p => p.id === id);
   const p = db.prospects.find(x => x.id === id) || {
     id: uid(), name: '', city: finder.city || '', category: '', address: '', website: '', phone: '', email: '', socials: '',
-    direction: 'Студия', source: 'Вручную', status: 'Найден', external_id: '', lead_id: null, note: '', ...preset
+    direction: 'Студия', source: 'Вручную', status: 'Найден', external_id: '', lead_id: null, note: '', magnet_id: null, ...preset
   };
   const lead = p.lead_id && db.leads.find(l => l.id === p.lead_id);
   modal(`<h2>Компания</h2><form id="prf">
@@ -2222,11 +2296,14 @@ function editProspect(id, preset = {}) {
     </div>
     <label>Соцсети — по одной в строке</label><textarea name="socials" maxlength="1000" style="min-height:70px">${E(p.socials)}</textarea>
     <label>Заметка: чем можем помочь, кому писали, что ответили</label><textarea name="note" maxlength="2000" style="min-height:90px">${E(p.note)}</textarea>
+    ${pitchBlock(p)}
+    <input type="hidden" name="magnet_id" value="${E(p.magnet_id || '')}">
     ${lead ? `<div class="notice">Стала заявкой: <button type="button" class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button></div>` : ''}
     ${exists ? `<p class="muted">Источник: ${E(p.source)} · последняя правка: ${E(memberName(p._by))}, ${ago(p._at)}</p>` : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists && !lead ? `<button type="button" data-action="prlead" data-id="${E(p.id)}">${icon('leads', 15)} Стала заявкой</button>` : ''}
       ${exists ? `<button type="button" class="danger" data-action="delprospect" data-id="${E(p.id)}">Удалить</button>` : ''}</div></form>`);
+  wirePitch();
   submitForm($('#prf'), 'prospects', p, exists, 'Компания сохранена');
 }
 
@@ -2399,7 +2476,7 @@ function editCampaign(id) {
   const c = db.campaigns.find(x => x.id === id) || {
     id: uid(), name: '', channel: AD_CHANNELS[0], direction: 'Студия', goal: CAMPAIGN_GOALS[0], status: 'Готовим',
     starts_on: today(), ends_on: '', budget: 0, spent: 0, audience: '', creative: '', landing: '',
-    utm_medium: 'cpc', utm_campaign: '', utm_content: '', note: ''
+    utm_medium: 'cpc', utm_campaign: '', utm_content: '', note: '', content_id: null
   };
   modal(`<h2>Кампания</h2><form id="cpf">
     <label>Название</label>
@@ -2414,6 +2491,11 @@ function editCampaign(id) {
       <div><label>Бюджет, ₽</label><input type="number" name="budget" min="0" step="1" value="${E(String(c.budget || 0))}"></div>
       <div><label>Потрачено, ₽</label><input type="number" name="spent" min="0" step="1" value="${E(String(c.spent || 0))}"></div>
     </div>
+    <label>Что продвигаем — публикация из контент-плана</label>
+    <select name="content_id"><option value="">Без публикации</option>
+      ${[...db.content].sort((a, b) => (b.status === 'Опубликовано') - (a.status === 'Опубликовано')).map(p =>
+        `<option value="${E(p.id)}" ${c.content_id === p.id ? 'selected' : ''}>${E(p.title.slice(0, 70))} · ${E(p.channel)}</option>`).join('')}
+    </select>
     <label>Аудитория</label><input name="audience" maxlength="500" value="${E(c.audience)}" placeholder="Владельцы кафе в Перми, 25–45">
     <label>Креатив — что показываем</label><textarea name="creative" maxlength="1000" style="min-height:80px">${E(c.creative)}</textarea>
     <fieldset class="utmset"><legend>Ссылка с метками</legend>
@@ -2636,7 +2718,7 @@ let graph = { open: false, focus: null, sig: '', pos: null, scale: 0, ox: 0, oy:
 
 const GRAPH_KIND = {
   knowledge: 'Знания', brand: 'Брендбук', content: 'Публикации',
-  decision: 'Решения', lead: 'Заявки', ad: 'Реклама', hub: 'Признак'
+  decision: 'Решения', lead: 'Заявки', ad: 'Реклама', magnet: 'Лид-магниты', hub: 'Признак'
 };
 
 function graphData() {
@@ -2685,6 +2767,10 @@ function graphData() {
     link(id, hub(c.channel, 'Источник'));
   }
   for (const l of db.leads) if (l.campaign_id) link('l:' + l.id, 'cp:' + l.campaign_id);
+  // Лид-магнит связан с заявками, которые принёс; кампания — с постом, который продвигает.
+  for (const m of db.lead_magnets) link(add('mg:' + m.id, 'magnet', m.name, { ref: m.id, open: 'mg' }), hub(m.direction, 'Направление'));
+  for (const l of db.leads) if (l.magnet_id) link('l:' + l.id, 'mg:' + l.magnet_id);
+  for (const c of db.campaigns) if (c.content_id) link('cp:' + c.id, 'p:' + c.content_id);
   // настоящие ссылки между записями
   for (const f of db.files) link('k:' + f.record, hub('С файлами', 'Материалы'));
   for (const m of db.metrics) link('p:' + m.post, hub('С замерами', 'Результат'));
@@ -3040,6 +3126,7 @@ function graphOpen(id) {
   else if (node.open === 'l') { go('leads'); editLead(node.ref); }
   else if (node.open === 'brand') { graph.open = false; go('brand'); editBrand(node.ref); }
   else if (node.open === 'cp') { graph.open = false; go('ads'); editCampaign(node.ref); }
+  else if (node.open === 'mg') { graph.open = false; go('magnets'); editMagnet(node.ref); }
 }
 
 function renderChain() {
@@ -3491,7 +3578,7 @@ function submitForm(form, table, original, exists, okText) {
         ? (el.type === 'number' ? 0 : null)
         : (el.type === 'number' ? Number(el.value) : el.value);
     }
-    for (const k of ['campaign_id', 'lead_id', 'magnet_id']) if (o[k] === '') o[k] = null;
+    for (const k of ['campaign_id', 'lead_id', 'magnet_id', 'content_id']) if (o[k] === '') o[k] = null;
     try {
       const saved = exists ? await api.update(table, o) : await api.insert(table, o);
       upsertLocal(table, saved);
@@ -4417,6 +4504,8 @@ document.addEventListener('click', async e => {
       socials: finder.site.socials.join('\n') }); break;
     case 'prsite': prospectFromSite(b); break;
     case 'prlead': prospectToLead(b.dataset.id); break;
+    case 'pitchcopy': pitchCopy(false); break;
+    case 'pitchsent': pitchCopy(true); break;
     case 'openlead': go('leads'); editLead(b.dataset.id); break;
     case 'contentnet': contentNet = b.dataset.id; render(); break;
     case 'contentview': contentView = b.dataset.id; render(); break;
