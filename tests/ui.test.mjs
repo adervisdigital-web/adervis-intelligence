@@ -78,6 +78,8 @@ const fake = (seedData) => {
         data: { figure: 'dirs', body: '— Градиент только для крупных плашек' } },
       { id: 'mark-patterns', title: 'Паттерны из знака', kind: 'figure', sort: 86, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'marks', body: '— Паттерн остаётся фоном' } },
+      { id: 'type-roles', title: 'Типографика: роли и шкала', kind: 'figure', sort: 42, section: 'Шрифт и текст', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'type', body: '— Eurostile — только короткие крупные строки' } },
       { id: 'p-crm', title: 'CRM: акцент в деле', kind: 'figure', sort: 10, section: 'ADERVIS CRM', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'product', dir: 'CRM', product: 'ADERVIS CRM', body: '— Градиент только на крупных плашках' } },
       { id: 'p-stock', title: 'Stock: акцент в деле', kind: 'figure', sort: 10, section: 'ADERVIS Stock', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
@@ -980,6 +982,8 @@ for (const [name, label] of [['contrast', 'Сочетания цветов и к
   const el = await page.$(`.figure[aria-label="${label}"]`);
   if (el) await el.screenshot({ path: path.join(OUT, `figure-${name}.png`) });
 }
+const typeFig = await page.$('.typesheet');
+if (typeFig) await typeFig.screenshot({ path: path.join(OUT, 'figure-type.png') });
 const prodFig = await page.$('.productsheet');
 if (prodFig) await prodFig.screenshot({ path: path.join(OUT, 'figure-product.png') });
 const iconsFig = await page.$('.iconsheet');
@@ -1091,6 +1095,20 @@ const steps = await page.evaluate(() => {
 });
 check('размеры идут по шкале, без почти одинаковых соседей',
   steps.every((x, i) => i === 0 || x - steps[i - 1] >= 1.2), steps.join(' / '));
+// роли шрифтов: широкий акцидентный — только для коротких крупных строк
+const roles = await page.evaluate(() => {
+  const f = sel => { const e = document.querySelector(sel); return e ? getComputedStyle(e).fontFamily : ''; };
+  return { h1: f('h1'), card: f('.brandcard h2'), num: f('.tnum'), body: f('.tbody') };
+});
+check('заголовок страницы набран акцидентным шрифтом', /Eurostile|Unbounded/.test(roles.h1), roles.h1);
+check('заголовок карточки — текстовым, а не широким', /TT Fors|Golos/.test(roles.card) && !/Eurostile|Unbounded/.test(roles.card.split(',')[0]), roles.card);
+check('крупные числа — текстовым шрифтом', /TT Fors|Golos/.test(roles.num.split(',')[0]), roles.num);
+const measured = await page.$$eval('.typemeasure', cs => cs.map(c => c.textContent));
+// в проверках фирменных файлов нет: подпись обязана честно назвать запасной шрифт
+check('под образцом назван шрифт, который реально на экране',
+  measured[0].includes('Unbounded (запасной)'), measured[0]);
+check('под образцами видно фактический шрифт, вес и кегль',
+  measured.length === 6 && measured.every(t => /· \d{3} · \d+ пт/.test(t)), measured.slice(0, 2).join(' | '));
 check('заголовок карточки крупнее основного текста',
   await page.$eval('.brandcard h2', h => parseFloat(getComputedStyle(h).fontSize) >= 20));
 check('темы разложены по разделам', (await page.$$('.sectionhead')).length >= 1);
@@ -1099,7 +1117,7 @@ check('в оглавлении видно число тем в разделе',
 
 // полнота брендбука
 const progress = (await page.textContent('.brandbar')).replace(/\s+/g, ' ');
-check('видно, сколько тем заполнено', /Заполнено 16 из 17/.test(progress), progress);
+check('видно, сколько тем заполнено', /Заполнено 17 из 18/.test(progress), progress);
 check('пустая тема названа поимённо', /Ждут содержимого.*Фото и видео/.test(progress), progress);
 check('из полноты можно сразу открыть пустую тему',
   (await page.$$('.brandbar [data-action=editbrand]')).length > 0);
@@ -1135,8 +1153,8 @@ await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
 const slideCount = await page.$$eval('.slide', s => s.length);
 // обложка + знак + 13 тем + финал
-check('слайды собраны по темам', slideCount === 20, String(slideCount));
-check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 12, String((await page.$$('.slide .sfigure')).length));
+check('слайды собраны по темам', slideCount === 21, String(slideCount));
+check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 13, String((await page.$$('.slide .sfigure')).length));
 check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
 const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
 check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));

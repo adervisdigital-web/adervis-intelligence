@@ -465,23 +465,35 @@ const FONT_STACK = new Proxy({}, { get: (_, family) => fontStack(String(family))
 // Фирменные шрифты коммерческие: их файлы лежат в закрытом хранилище, а не
 // в коде приложения. Подгружаем их вошедшему участнику по временной ссылке.
 const loadedFonts = new Set();
+// Раньше грузилось одно начертание на гарнитуру — Regular у TT Fors и
+// Medium у Eurostile. Весь жирный текст интерфейса браузер тогда рисовал
+// сам, размазывая обычное начертание. Теперь каждое начертание — свой
+// файл со своим весом, и жирный — это настоящий Bold.
 async function loadBrandFonts() {
   const block = db.brand.find(b => b.kind === 'fonts');
   for (const item of (block?.data?.items || [])) {
     const family = safeFamily(item.family);
-    if (!family || !item.file || loadedFonts.has(family)) continue;
+    if (!family || loadedFonts.has(family)) continue;
+    const files = item.files && typeof item.files === 'object'
+      ? Object.entries(item.files)
+      : item.file ? [['400', item.file]] : [];
+    if (!files.length) continue;
     // Помечаем попытку сразу: иначе при недоступном файле приложение будет
     // дёргать хранилище на каждой перерисовке.
     loadedFonts.add(family);
-    try {
-      const face = new FontFace(family, `url("${await api.fileUrl(item.file)}")`);
-      await face.load();
-      document.fonts.add(face);
-      if (page === 'brand') render();
-    } catch (e) {
-      // Шрифта нет или нет доступа — образец покажем системным шрифтом.
-      console.warn('Шрифт не загрузился:', item.family, e?.message || e);
-    }
+    const faces = await Promise.all(files.map(async ([weight, file]) => {
+      try {
+        const face = new FontFace(family, `url("${await api.fileUrl(file)}")`, { weight: String(weight), display: 'swap' });
+        await face.load();
+        document.fonts.add(face);
+        return true;
+      } catch (e) {
+        // Нет файла или доступа — останется запасной шрифт из поставки.
+        console.warn('Шрифт не загрузился:', item.family, weight, e?.message || e);
+        return false;
+      }
+    }));
+    if (faces.some(Boolean)) document.documentElement.classList.add('brandfonts');
   }
 }
 
@@ -795,6 +807,26 @@ const FIGURES = {
       ${cards}
       <text class="flabel" x="4" y="278">Услуги студии</text>
       ${svc}</svg>`;
+  },
+
+  // Образцы набраны теми же правилами, что и интерфейс: если в стилях
+  // что-то поменяют, брендбук покажет это сам, а не останется старой
+  // картинкой. Размер и вес под образцом читаются из вычисленного стиля.
+  type: () => {
+    const rows = [
+      ['h1', 'tsample tdisplay', 'Брендбук ADERVIS', 'Заголовок страницы', 'Eurostile Extended Black'],
+      ['div', 'tsample tsection', 'Цвета продуктов', 'Заголовок раздела', 'Eurostile Extended Medium'],
+      ['div', 'tsample tcard', 'Смета не заканчивается на сумме съёмочного дня', 'Заголовок карточки', 'TT Fors Bold'],
+      ['div', 'tsample tnum', '630 000 ₽', 'Крупное число', 'TT Fors Bold, табличные цифры'],
+      ['div', 'tsample tbody', 'Видео, фото, дизайн, сайты и ИИ для бизнеса. Один договор — одна команда, от идеи до публикации.', 'Основной текст', 'TT Fors Regular'],
+      ['div', 'tsample teyebrow', 'Раздел · Цвет', 'Надзаголовок', 'TT Fors Bold, капс с разрядкой']
+    ];
+    return `<div class="typesheet">${rows.map(([tag, cls, text, role, face]) => `<div class="typerow">
+      <${tag} class="${cls}">${E(text)}</${tag}>
+      <div class="typemeta"><b>${E(role)}</b><span>${E(face)}</span><code class="typemeasure"></code></div>
+    </div>`).join('')}
+    <p class="muted">Eurostile — только короткие крупные строки. Длинный заголовок карточки им не набираем:
+    широкий шрифт разводит его на три строки. Всё остальное — TT Fors.</p></div>`;
   },
 
   // Одна раскладка на три продукта: показывает, что от продукта к
@@ -2424,6 +2456,22 @@ function render() {
   $('#view').innerHTML = s;
   if (page === 'brand' && deck.on) bindDeckSwipe();
   if (page === 'chain') bindGraph();
+  const bar = $('.topbar');
+  if (bar) document.documentElement.style.setProperty('--topbar-h', Math.ceil(bar.getBoundingClientRect().height) + 'px');
+  // Под каждым образцом — фактический шрифт, вес и кегль из вычисленного
+  // стиля. Так видно, загрузился ли фирменный шрифт или стоит запасной.
+  // Стиль отдаёт объявленный список гарнитур, а не ту, что реально
+  // нарисована: без этой проверки подпись говорила бы «Eurostile», даже
+  // когда фирменный файл не загрузился и на экране запасной шрифт.
+  const loadedFaces = [...document.fonts].filter(f => f.status === 'loaded').map(f => f.family.replace(/["']/g, ''));
+  document.querySelectorAll('.typerow').forEach(row => {
+    const s = getComputedStyle(row.querySelector('.tsample'));
+    const stack = s.fontFamily.split(',').map(x => x.trim().replace(/["']/g, ''));
+    const used = stack.find(f => loadedFaces.includes(f));
+    const face = used ? (used === stack[0] ? used : `${used} (запасной)`) : 'системный';
+    row.querySelector('.typemeasure').textContent =
+      `${face} · ${s.fontWeight} · ${Math.round(parseFloat(s.fontSize))} пт`;
+  });
   // Узлы схемы — часть рисунка, поэтому обработчик отдельный.
   const map = $('#chainmap');
   if (map) {

@@ -824,3 +824,73 @@ html[data-theme=light]{
 .prodbar{flex:1;min-width:120px;height:6px;border-radius:99px;background:var(--bg);overflow:hidden}
 .prodbar i{display:block;height:100%;width:64%;border-radius:99px;
   background:linear-gradient(90deg,var(--dir),color-mix(in srgb,var(--dir) 40%,transparent))}
+
+/* --- Типографика по ролям ---------------------------------------------
+   Раньше одно правило набирало широким акцидентным шрифтом все h2 и все
+   крупные числа. Заголовки карточек разъезжались на три строки,
+   «630 000 ₽» не помещалось в плитку. Теперь у каждой гарнитуры своя
+   работа: Eurostile — короткие крупные строки, TT Fors — всё остальное. */
+:root{
+  --w-display:900;     /* Eurostile Black — заголовок страницы */
+  --w-display-2:500;   /* Eurostile Medium — заголовок раздела */
+  --w-strong:700;      /* TT Fors Bold */
+  --w-text:400;        /* TT Fors Regular */
+}
+body{font-family:var(--font-ui);font-weight:var(--w-text);line-height:1.55;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+/* Акцидентный шрифт — только там, где строка короткая. */
+h1,.sectionhead,.hero h1,.covertitle,.slidetitle{
+  font-family:var(--font-display);font-weight:var(--w-display);letter-spacing:-.005em}
+.head > h2,.head > div > h2,.head h2:only-child{
+  font-family:var(--font-display);font-weight:var(--w-display-2);letter-spacing:0}
+
+/* Заголовки карточек и всё, что бывает длинным, — текстовым шрифтом. */
+.card h2,.card h3,h3,dialog h2,.blockhead h2,.gapcard b,.link-node b,.ecorow b,.ctitle{
+  font-family:var(--font-ui);font-weight:var(--w-strong);letter-spacing:-.01em}
+.card > h2{font-size:var(--t-h3);line-height:1.3}
+.blockhead h2{font-size:var(--t-h2)}
+
+/* Числа — текстовым шрифтом, табличными цифрами и плотнее: широкий
+   акцидентный на числах делал их вдвое шире. */
+.value,.nodevalue,.cnum,.bezfigure .value,.metric .value{
+  font-family:var(--font-ui);font-weight:var(--w-strong);
+  font-variant-numeric:tabular-nums;letter-spacing:-.025em}
+
+/* Надзаголовки — капсом с разрядкой, иначе мелкий капс слипается. */
+.eyebrow{font-family:var(--font-ui);font-weight:var(--w-strong);letter-spacing:.12em}
+
+/* Длинный текст держим в читаемой длине строки. */
+.brandtext,.bodytext,.card > p,.notice{max-width:72ch}
+
+/* Слайды набирались прямыми именами шрифтов, мимо переменных: фирменные
+   Eurostile и TT Fors туда не попадали, даже когда были загружены. */
+.slide{font-family:var(--font-ui)}
+.slidetitle,.covertitle{font-family:var(--font-display)}
+
+/* Образцы типографики в брендбуке — теми же ролями, что и интерфейс. */
+.typesheet{display:grid;gap:4px}
+.typerow{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:24px;align-items:center;
+  padding:16px 0;border-bottom:1px solid var(--line)}
+.typerow:last-of-type{border-bottom:0}
+.tsample{margin:0;min-width:0;overflow-wrap:anywhere}
+.tdisplay{font-family:var(--font-display);font-weight:var(--w-display);font-size:var(--t-h1);line-height:1.08}
+.tsection{font-family:var(--font-display);font-weight:var(--w-display-2);font-size:var(--t-h2)}
+.tcard{font-family:var(--font-ui);font-weight:var(--w-strong);font-size:var(--t-h3);line-height:1.3}
+.tnum{font-family:var(--font-ui);font-weight:var(--w-strong);font-size:var(--t-display);
+  font-variant-numeric:tabular-nums;letter-spacing:-.025em;white-space:nowrap}
+.tbody{font-family:var(--font-ui);font-size:var(--t-body);line-height:1.55;max-width:60ch}
+.teyebrow{font-family:var(--font-ui);font-weight:var(--w-strong);font-size:var(--t-micro);
+  text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+.typemeta{display:grid;gap:2px;font-size:var(--t-small)}
+.typemeta span{color:var(--muted)}
+.typemeta code{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted);opacity:.8}
+@media(max-width:720px){.typerow{grid-template-columns:1fr;gap:8px}}
+
+/* Заголовок внутри карточки — всегда текстовым шрифтом. Правило шапки
+   раздела оказалось специфичнее и перебивало его в карточках брендбука. */
+.card .head h2,.card h2,.card .blockhead h2{font-family:var(--font-ui);font-weight:var(--w-strong);letter-spacing:-.01em}
+
+/* Липкий заголовок раздела встаёт ровно под панелью: её высоту меряет
+   приложение, а не угадывает стиль — панель меняется с кеглем и экраном. */
+.sectionhead{top:var(--topbar-h,68px)}
