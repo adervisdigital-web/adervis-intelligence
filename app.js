@@ -64,9 +64,9 @@ const FIELDS = {
   campaigns: ['id', 'name', 'channel', 'direction', 'goal', 'status', 'starts_on', 'ends_on', 'budget', 'spent',
     'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
-  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id'],
+  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id', 'next_step', 'next_on'],
   prospects: ['id', 'name', 'city', 'category', 'address', 'website', 'phone', 'email', 'socials', 'direction',
-    'source', 'status', 'external_id', 'lead_id', 'note', 'magnet_id'],
+    'source', 'status', 'external_id', 'lead_id', 'note', 'magnet_id', 'next_on'],
   kpi_targets: ['id', 'target'],
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
 };
@@ -379,13 +379,6 @@ async function loadThumbs(recordId) {
     if (!img) continue;
     try { img.src = await api.fileUrl(f.path); } catch (e) { img.replaceWith(Object.assign(document.createElement('div'), { className: 'thumb kind', textContent: '—' })); }
   }
-}
-
-function pc(p) {
-  return `<article class="card click" tabindex="0" role="button" data-p="${E(p.id)}">${tag(p.channel)}${tag(p.product)}
-    <h2 style="margin-top:14px">${E(p.title)}</h2>
-    <p class="muted">${E(p.body.slice(0, 110))}${p.body.length > 110 ? '…' : ''}</p>
-    <div class="row"><small>${E(p.author)} · ${E(p.date || 'Без даты')}</small>${tag(p.status)}</div></article>`;
 }
 
 function tasksList(manage) {
@@ -1438,7 +1431,11 @@ function adStats() {
 // Журнал решений: что решили, почему и по какому признаку поймём результат.
 // Смысл в последней колонке — через полгода видно, какие решения были верными.
 const DECISION_STATUS = ['Думаем', 'Делаем', 'Проверяем', 'Сработало', 'Не сработало', 'Отменено'];
-const today = () => new Date().toISOString().slice(0, 10);
+// Дата — по часам человека, а не по Гринвичу: в Перми с полуночи до пяти
+// утра иначе «сегодня» было бы вчерашним, и сроки съезжали на день.
+const localDate = t => { const d = new Date(t); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+const today = () => localDate(Date.now());
+const dayShift = n => localDate(Date.now() + n * 864e5);
 
 let decisionQuery = '';
 
@@ -1805,7 +1802,7 @@ async function feedApply(ids) {
   try {
     for (const { fp, match } of rows) {
       if (match.status !== 'Опубликовано' || match.url !== fp.url || !match.date) {
-        const saved = await api.update('content', { ...match, status: 'Опубликовано', url: fp.url, date: match.date || fp.date.slice(0, 10) });
+        const saved = await api.update('content', { ...match, status: 'Опубликовано', url: fp.url, date: match.date || localDate(fp.date) });
         upsertLocal('content', saved);
         noteLocal('update', 'content', saved);
       }
@@ -1826,7 +1823,7 @@ async function feedAdd(postId) {
     const saved = await api.insert('content', {
       id: uid(), title: fp.title.slice(0, 300), body: (fp.text || fp.title).slice(0, 20000),
       product: 'Studio', author: 'ADERVIS', channel: fp.network, status: 'Опубликовано',
-      date: fp.date.slice(0, 10), url: fp.url
+      date: localDate(fp.date), url: fp.url
     });
     upsertLocal('content', saved);
     noteLocal('insert', 'content', saved);
@@ -1886,7 +1883,7 @@ const FUNNEL = ['Новое', 'В работе', 'КП отправлено', '�
 const LOST = ['Отказ', 'Пропало'];
 const reachedOf = (status, prev = 0) => Math.max(Number(prev) || 0, FUNNEL.indexOf(status));
 const sumOf = (list, f) => list.reduce((n, r) => n + Number(r[f] || 0), 0);
-const periodFrom = p => p === 'all' ? '0000-00-00' : new Date(Date.now() - Number(p) * 864e5).toISOString().slice(0, 10);
+const periodFrom = p => p === 'all' ? '0000-00-00' : dayShift(-Number(p));
 const PERIODS = [['30', '30 дней'], ['90', '90 дней'], ['all', 'Всё время']];
 const periodChips = (action, cur) => `<div class="seg" role="group" aria-label="Период">${PERIODS.map(([id, t]) =>
   `<button class="chip${cur === id ? ' on' : ''}" data-action="${action}" data-id="${id}" aria-pressed="${cur === id}">${t}</button>`).join('')}</div>`;
@@ -1935,6 +1932,7 @@ function leadBoard(rows) {
     return `<article class="card click lcard" tabindex="0" role="button" data-l="${E(l.id)}" data-dir="${E(l.direction)}">
       <div class="pcardhead"><span class="netmark">${E(l.source)}</span><small class="muted">${E(shortDate(l.came_on))}</small></div>
       <h3>${E(l.name)}</h3>
+      ${l.next_on && FUNNEL.slice(0, 3).includes(l.status) ? `<small class="${l.next_on < today() ? 'minus' : l.next_on === today() ? 'duetoday' : 'muted'}">${icon('time', 12)} ${E(shortDate(l.next_on))}${l.next_step ? ' · ' + E(l.next_step) : ''}</small>` : ''}
       ${l.request ? `<p class="muted lreq">${E(l.request.slice(0, 80))}${l.request.length > 80 ? '…' : ''}</p>` : ''}
       <div class="pcardfoot"><small class="muted">${l.amount ? num(l.amount) + ' ₽' : ''}</small>
         <span class="movebtns">${i > 0 ? step(-1, `Вернуть в «${FUNNEL[i - 1]}»`, '←') : ''}${i >= 0 && i < 3 ? step(1, `Дальше: «${FUNNEL[i + 1]}»`, '→') : ''}</span></div>
@@ -1963,6 +1961,75 @@ async function moveLead(id, step) {
   } catch (e) {
     handleError(e);
   }
+}
+
+// ------------------------------------------------------------- на сегодня
+//
+// Список собирается из дат и статусов — его не нужно вести. Сюда попадает
+// то, что теряет деньги, если отложить: заявка без ответа, КП без ответа,
+// назначенный шаг, молчащая компания, кончающаяся кампания, пост на сегодня.
+// Дата без времени — считаем календарные дни; отметка времени — прошедшие сутки.
+const daysAgo = d => {
+  if (!d) return 0;
+  const v = String(d);
+  return v.length === 10 ? Math.round((Date.parse(today()) - Date.parse(v)) / 864e5) : Math.floor((Date.now() - Date.parse(v)) / 864e5);
+};
+const plural = (n, one, few, many) => n % 10 === 1 && n % 100 !== 11 ? one : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? few : many;
+const daysWord = n => `${n} ${plural(n, 'день', 'дня', 'дней')}`;
+
+function todayList() {
+  const t = today(), out = [];
+  const push = (ref, ic, title, what, when, late) => out.push({ ref, ic, title, what, when, late });
+  for (const l of db.leads) {
+    if (!FUNNEL.slice(0, 3).includes(l.status)) continue;
+    if (l.next_on) {
+      if (l.next_on <= t) push('l:' + l.id, 'leads', l.name, l.next_step || 'Следующий шаг по заявке', l.next_on, l.next_on < t);
+    } else if (l.status === 'Новое' && daysAgo(l.came_on) >= 1) {
+      push('l:' + l.id, 'leads', l.name, `Заявка без ответа ${daysWord(daysAgo(l.came_on))}`, l.came_on, true);
+    } else if (l.status === 'КП отправлено' && daysAgo(l._at) >= 3) {
+      push('l:' + l.id, 'proposal', l.name, `КП без ответа ${daysWord(daysAgo(l._at))} — напомнить`, localDate(l._at), true);
+    }
+  }
+  for (const p of db.prospects) {
+    if (['Заявка', 'Не интересно'].includes(p.status)) continue;
+    if (p.next_on) {
+      if (p.next_on <= t) push('pr:' + p.id, 'clients', p.name, p.status === 'Написали' ? 'Напомнить о себе' : 'Вернуться к компании', p.next_on, p.next_on < t);
+    } else if (p.status === 'Написали' && daysAgo(p._at) > 5) {
+      push('pr:' + p.id, 'clients', p.name, `Молчат ${daysWord(daysAgo(p._at))} — одно напоминание`, localDate(p._at), true);
+    }
+  }
+  for (const c of db.campaigns.filter(c => c.status === 'Идёт' && c.ends_on)) {
+    const left = -daysAgo(c.ends_on);
+    if (left < 0) push('cp:' + c.id, 'ads', c.name, 'Срок кампании вышел — обновите статус и расход', String(c.ends_on), true);
+    else if (left <= 2) push('cp:' + c.id, 'ads', c.name, left ? `Кампания заканчивается через ${daysWord(left)} — продлить или подвести итог` : 'Кампания заканчивается сегодня', String(c.ends_on), false);
+  }
+  for (const p of db.content.filter(p => p.date && p.date <= t && p.status !== 'Опубликовано')) {
+    push('p:' + p.id, 'content', p.title, p.date === t ? `Выходит сегодня в ${p.channel}` : `Должна была выйти ${shortDate(p.date)} — ${p.status.toLowerCase()}`, p.date, p.date < t);
+  }
+  return out.sort((a, b) => (b.late - a.late) || String(a.when).localeCompare(String(b.when)));
+}
+
+function todayPanel() {
+  const list = todayList();
+  const shown = list.slice(0, 8);
+  return `<div class="card todaycard">
+    <div class="head" style="margin:0 0 8px"><h2 style="margin:0">На сегодня</h2>
+      <small class="muted">${list.length ? `${list.length} ${plural(list.length, 'дело', 'дела', 'дел')}${list.some(x => x.late) ? ` · просрочено ${list.filter(x => x.late).length}` : ''}` : 'собирается из заявок, компаний, кампаний и плана'}</small></div>
+    ${shown.length ? `<ul class="todaylist">${shown.map(x => `<li><button class="todayrow${x.late ? ' late' : ''}" data-action="todayopen" data-id="${E(x.ref)}">
+        <span class="todayicon">${icon(x.ic, 16)}</span>
+        <span class="todaytext"><b>${E(x.title)}</b><small>${E(x.what)}</small></span>
+        <span class="todaywhen">${x.late ? 'просрочено' : x.when === today() ? 'сегодня' : x.when === dayShift(1) ? 'завтра' : E(shortDate(x.when))}</span></button></li>`).join('')}</ul>
+      ${list.length > shown.length ? `<p class="muted">И ещё ${list.length - shown.length} — откройте заявки и поиск клиентов.</p>` : ''}`
+      : '<p class="muted todayempty">Срочного нет. Хорошее время написать новым компаниям из поиска клиентов.</p>'}
+  </div>`;
+}
+
+function todayOpen(ref) {
+  const [kind, id] = [ref.slice(0, ref.indexOf(':')), ref.slice(ref.indexOf(':') + 1)];
+  if (kind === 'l') { go('leads'); editLead(id); }
+  else if (kind === 'pr') { go('prospects'); editProspect(id); }
+  else if (kind === 'cp') { go('ads'); editCampaign(id); }
+  else if (kind === 'p') { go('content'); editP(id); }
 }
 
 // ------------------------------------------------------------ лид-магниты
@@ -2218,6 +2285,8 @@ async function pitchCopy(mark) {
   f.elements.magnet_id.value = m.id;
   const line = `${new Date().toLocaleDateString('ru')}: написали, предложили «${m.name}»`;
   f.elements.note.value = (line + (f.elements.note.value ? '\n' + f.elements.note.value : '')).slice(0, 2000);
+  // не ответят — через пять дней компания сама появится в «На сегодня»
+  if (!f.elements.next_on.value) f.elements.next_on.value = dayShift(5);
   f.requestSubmit();
 }
 
@@ -2242,7 +2311,7 @@ async function orgAdd(list) {
       const saved = await api.insert('prospects', {
         id: uid(), name: o.name.slice(0, 200), city: finder.city.slice(0, 80), category: o.category.slice(0, 120),
         address: o.address.slice(0, 300), website: o.website.slice(0, 300), phone: o.phone.slice(0, 200), email: '', socials: '',
-        direction: 'Студия', source: 'Яндекс.Карты', status: 'Найден', external_id: o.external_id.slice(0, 80), lead_id: null, magnet_id: null, note: o.hours ? 'Часы работы: ' + o.hours.slice(0, 200) : ''
+        direction: 'Студия', source: 'Яндекс.Карты', status: 'Найден', external_id: o.external_id.slice(0, 80), lead_id: null, magnet_id: null, next_on: null, note: o.hours ? 'Часы работы: ' + o.hours.slice(0, 200) : ''
       });
       upsertLocal('prospects', saved);
       n++;
@@ -2275,7 +2344,7 @@ function editProspect(id, preset = {}) {
   const exists = db.prospects.some(p => p.id === id);
   const p = db.prospects.find(x => x.id === id) || {
     id: uid(), name: '', city: finder.city || '', category: '', address: '', website: '', phone: '', email: '', socials: '',
-    direction: 'Студия', source: 'Вручную', status: 'Найден', external_id: '', lead_id: null, note: '', magnet_id: null, ...preset
+    direction: 'Студия', source: 'Вручную', status: 'Найден', external_id: '', lead_id: null, note: '', magnet_id: null, next_on: '', ...preset
   };
   const lead = p.lead_id && db.leads.find(l => l.id === p.lead_id);
   modal(`<h2>Компания</h2><form id="prf">
@@ -2286,7 +2355,10 @@ function editProspect(id, preset = {}) {
       <div><label>Статус</label><select name="status">${opts(PROSPECT_STATUS, p.status)}</select></div>
       <div><label>Что можем предложить</label><select name="direction">${opts(DIRECTIONS, p.direction)}</select></div>
     </div>
-    <label>Адрес</label><input name="address" maxlength="300" value="${E(p.address)}">
+    <div class="formgrid">
+      <div><label>Адрес</label><input name="address" maxlength="300" value="${E(p.address)}"></div>
+      <div><label>Когда напомнить</label><input type="date" name="next_on" value="${E(p.next_on || '')}"></div>
+    </div>
     <label>Сайт</label>
     <div class="inlinerow"><input name="website" maxlength="300" value="${E(p.website)}" placeholder="zerno-perm.ru">
       <button type="button" data-action="prsite">${icon('search', 15)} Контакты с сайта</button></div>
@@ -2343,7 +2415,8 @@ async function prospectToLead(id) {
     const lead = await api.insert('leads', {
       id: uid(), came_on: today(), name: p.name, source: 'Поиск клиентов', direction: p.direction,
       request: p.category ? `${p.category}: из поиска клиентов` : 'Из поиска клиентов', amount: 0, status: 'Новое',
-      note: [p.phone, p.email, p.website].filter(Boolean).join(' · ').slice(0, 1000), campaign_id: null, reached: 0, magnet_id: null
+      note: [p.phone, p.email, p.website].filter(Boolean).join(' · ').slice(0, 1000), campaign_id: null, reached: 0, magnet_id: null,
+      next_step: 'Первый созвон', next_on: today()
     });
     upsertLocal('leads', lead);
     noteLocal('insert', 'leads', { ...lead, title: lead.name });
@@ -2614,12 +2687,6 @@ function businessGaps() {
   if (stale.length) {
     gaps.push(['ads', `Срок вышел, а кампания «Идёт»: ${stale.map(c => c.name).join(', ')}`,
       'Обновите статус — иначе в расходах и на обзоре висит то, что уже не крутится.']);
-  }
-
-  const silent = db.prospects.filter(p => p.status === 'Написали' && p._at && Date.now() - Date.parse(p._at) > 5 * 864e5);
-  if (silent.length) {
-    gaps.push(['prospects', `Пора напомнить: ${silent.length} ${silent.length === 1 ? 'компания молчит' : 'компаний молчат'} больше 5 дней`,
-      `${silent.slice(0, 3).map(p => p.name).join(', ')}${silent.length > 3 ? '…' : ''}. Одно вежливое напоминание часто приносит ответ.`]);
   }
 
   if (!db.leads.length) {
@@ -3227,9 +3294,10 @@ function render() {
       <div><div class="eyebrow">ADERVIS DIGITAL</div>
       <h1>Обзор</h1>
       <p>Студия, CRM и Stock в одном месте. Ниже — то, что требует внимания сегодня.</p></div>
-      <div class="heroactions"><button data-page="leads">+ Заявка</button><button data-page="money">Деньги →</button></div></div>
+      <div class="heroactions"><button data-action="newlead">+ Заявка</button><button data-page="prospects">Поиск клиентов →</button></div></div>
       <div class="grid metrics">${cards.map(([a, b, c, to, extra]) => `<button class="card metric click" data-page="${to}">
         <div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small>${extra}</button>`).join('')}</div>
+      ${todayPanel()}
       ${(() => {
         const top = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
         if (!top.length) return '';
@@ -3242,8 +3310,10 @@ function render() {
         <div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Последние изменения</h2><button data-page="settings">Весь журнал →</button></div>${feed(6)}</div>
         <div class="card"><h2>Подготовить к работе</h2>${tasksList(false)}</div>
       </div>
-      <div class="head"><h2>На редакционном столе</h2><button data-page="content">Весь контент →</button></div>
-      <div class="grid three">${db.content.slice(0, 3).map(pc).join('') || '<div class="empty">Материалов пока нет.</div>'}</div>
+      <div class="head"><h2>Ближайшие публикации</h2><button data-page="content">Контент-план →</button></div>
+      <div class="grid three homeposts">${[...db.content].filter(p => p.status !== 'Опубликовано')
+        .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999')).slice(0, 3).map(contentCard).join('')
+        || '<div class="card empty">Запланированных публикаций нет.</div>'}</div>
       <p class="muted">Показатели отражают только записи в приложении. Здесь нет придуманных заявок и охватов.</p>`;
     if (!db.knowledge.length) {
       s += `<div class="notice">База пуста. Перенесите записи из локальной версии: Настройки → Импорт JSON.
@@ -3811,7 +3881,7 @@ const LEAD_SOURCES = ['Сайт', 'Рекомендация', 'Повторны�
   'Другое', 'Не знаем'];
 
 function leadStats() {
-  const from = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const from = dayShift(-30);
   const won = db.leads.filter(l => l.status === 'Сделка');
   const closed = db.leads.filter(l => ['Сделка', 'Отказ', 'Пропало'].includes(l.status));
   const bySource = [...new Set(db.leads.map(l => l.source))].map(name => {
@@ -3897,7 +3967,7 @@ function editLead(id) {
   const exists = db.leads.some(l => l.id === id);
   const l = db.leads.find(l => l.id === id) || {
     id: uid(), came_on: today(), name: '', source: 'Не знаем', direction: 'Студия',
-    request: '', amount: 0, status: 'Новое', note: '', campaign_id: null, reached: 0, magnet_id: null
+    request: '', amount: 0, status: 'Новое', note: '', campaign_id: null, reached: 0, magnet_id: null, next_step: '', next_on: ''
   };
   modal(`<h2>Обращение</h2><form id="lf">
     <label>Кто обратился</label>
@@ -3907,6 +3977,10 @@ function editLead(id) {
       <div><label>Откуда узнали</label><select name="source">${opts(LEAD_SOURCES, l.source)}</select></div>
       <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, l.direction)}</select></div>
       <div><label>Статус</label><select name="status">${opts(LEAD_STATUS, l.status)}</select></div>
+    </div>
+    <div class="formgrid nextstep">
+      <div><label>Следующий шаг</label><input name="next_step" maxlength="200" value="${E(l.next_step || '')}" placeholder="Позвонить, уточнить бюджет"></div>
+      <div><label>Когда</label><input type="date" name="next_on" value="${E(l.next_on || '')}"></div>
     </div>
     <label>Кампания — если пришёл по рекламе</label>
     <select name="campaign_id"><option value="">Без кампании</option>
@@ -4355,7 +4429,7 @@ function exportJson() {
     campaigns: strip(db.campaigns), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications),
     prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), kpi_targets: strip(db.kpi_targets)
-  }, null, 2), 'adervis-backup-' + new Date().toISOString().slice(0, 10) + '.json');
+  }, null, 2), 'adervis-backup-' + today() + '.json');
 }
 
 const ACCESS = ['Публичное', 'Внутреннее'];
@@ -4492,6 +4566,7 @@ document.addEventListener('click', async e => {
     case 'metricperiod': metricPeriod = b.dataset.id; render(); break;
     case 'kpitarget': editTarget(b.dataset.id); break;
     case 'newprospect': editProspect(); break;
+    case 'todayopen': todayOpen(b.dataset.id); break;
     case 'newmagnet': editMagnet(); break;
     case 'delmagnet': delMagnet(b.dataset.id); break;
     case 'delprospect': delProspect(b.dataset.id); break;

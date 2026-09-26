@@ -14,6 +14,8 @@ fs.mkdirSync(OUT, { recursive: true });
 const seed = JSON.parse(fs.readFileSync(SEEDFILE, 'utf8'));
 
 let fails = 0;
+// Дата по местным часам — так же, как считает приложение.
+const localDay = (d = 0) => { const x = new Date(Date.now() + d * 864e5); return new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
 
 const TYPES = {
@@ -910,7 +912,7 @@ await page.click('[data-action=feedapplyall]');
 await page.waitForFunction(() => window.__STATE__.content.find(p => p.title === 'Кейс Лукойл').status === 'Опубликовано');
 const applied = (await state()).content.find(p => p.title === 'Кейс Лукойл');
 check('отметка ставит ссылку на пост и дату выхода',
-  applied.url === 'https://t.me/Adervis_digital/70' && applied.date === nowIso.slice(0, 10), JSON.stringify([applied.url, applied.date]));
+  applied.url === 'https://t.me/Adervis_digital/70' && applied.date === localDay(0), JSON.stringify([applied.url, applied.date]));
 const appliedViews = (await state()).metrics.filter(m => m.post === applied.id);
 check('просмотры записаны замером на сегодня', appliedViews.length === 1 && appliedViews[0].views === 1200, JSON.stringify(appliedViews));
 check('учтённый пост помечен', (await page.textContent('.feedrow')).includes('Учтено'));
@@ -1122,6 +1124,42 @@ await page.click('#cpf button.primary');
 await page.waitForFunction(id => window.__STATE__.campaigns.find(c => c.id === id).content_id === 'p1', promo.id);
 check('на карточке кампании виден продвигаемый пост',
   (await page.textContent(`article[data-cp="${promo.id}"] .promoted`)).includes('Один ролик для всех экранов'));
+
+// --- 5к. на сегодня
+check('отметка «Написали» сама ставит напоминание через 5 дней',
+  (await state()).prospects.find(x => x.name === 'Бариста Бро и Ко').next_on === localDay(5));
+check('компания из поиска стала заявкой с первым шагом на сегодня',
+  (await state()).leads.find(l => l.name === 'Зерно').next_on === localDay(0));
+await page.evaluate(() => {
+  const s = window.__STATE__, iso = d => { const x = new Date(Date.now() + d * 864e5); return new Date(x - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); }, at = new Date().toISOString();
+  s.leads.push({ id: 'tl1', came_on: iso(-3), name: 'Молчащая заявка', source: 'Сайт', direction: 'Студия', request: '', amount: 0,
+    status: 'Новое', note: '', campaign_id: null, reached: 0, magnet_id: null, next_step: '', next_on: null, _at: at, _by: 'artem@adervis.ru' });
+  s.leads.push({ id: 'tl2', came_on: iso(-1), name: 'Пекарня', source: 'Сайт', direction: 'Студия', request: '', amount: 0,
+    status: 'В работе', note: '', campaign_id: null, reached: 1, magnet_id: null, next_step: 'Позвонить и уточнить бюджет', next_on: iso(0), _at: at, _by: 'artem@adervis.ru' });
+  s.leads.push({ id: 'tl3', came_on: iso(-1), name: 'Будущий шаг', source: 'Сайт', direction: 'Студия', request: '', amount: 0,
+    status: 'В работе', note: '', campaign_id: null, reached: 1, magnet_id: null, next_step: 'Потом', next_on: iso(3), _at: at, _by: 'artem@adervis.ru' });
+  s.campaigns.push({ id: 'tc1', name: 'Кончается завтра', channel: 'ВКонтакте', direction: 'Студия', goal: 'Заявки', status: 'Идёт',
+    starts_on: iso(-10), ends_on: iso(1), budget: 1000, spent: 500, audience: '', creative: '', landing: '', utm_medium: 'cpc',
+    utm_campaign: 'konchaetsya', utm_content: '', note: '', content_id: null, _at: at, _by: 'artem@adervis.ru' });
+});
+await page.click('#refresh');
+await nav('home');
+const todayRows = await page.$$eval('.todayrow', r => r.map(x => x.innerText.replace(/\s+/g, ' ')));
+check('заявка без ответа попала в список', todayRows.some(r => /Молчащая заявка Заявка без ответа 3 дня/.test(r)), todayRows.join(' | '));
+check('назначенный на сегодня шаг — со своим текстом', todayRows.some(r => /Пекарня Позвонить и уточнить бюджет/.test(r)));
+check('шаг на будущее сегодня не мешает', !todayRows.some(r => r.includes('Будущий шаг')));
+check('кампания, которая кончается завтра, названа', todayRows.some(r => /Кончается завтра Кампания заканчивается через 1 день/.test(r)));
+check('просроченное стоит выше сегодняшнего', todayRows.findIndex(r => r.includes('просрочено')) < todayRows.findIndex(r => r.includes('Пекарня')));
+check('просрочка названа словом, а не только цветом', await page.$$eval('.todayrow.late .todaywhen', w => w.every(x => x.textContent === 'просрочено')));
+await page.screenshot({ path: path.join(OUT, 'intel-today.png'), fullPage: true });
+await page.click('.todayrow:has-text("Пекарня")');
+await page.waitForSelector('#lf');
+check('клик по делу открывает карточку заявки', (await page.inputValue('#lf input[name=next_step]')) === 'Позвонить и уточнить бюджет');
+await page.fill('#lf input[name=next_on]', localDay(2));
+await page.click('#lf button.primary');
+await page.waitForFunction(() => !document.querySelector('#modal').open);
+await nav('home');
+check('перенесённый шаг ушёл из «На сегодня»', !(await page.textContent('.todaycard')).includes('Пекарня'));
 
 // --- 6. задачи
 await nav('tasks');

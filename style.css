@@ -1171,3 +1171,22 @@ h1,.sectionhead,.hero h1,.covertitle,.slidetitle{
 :root{--g-magnet:#be185d}
 html[data-theme=dark]{--g-magnet:#f472b6}
 .pitchset .pitchsent{border-color:var(--gold)}
+
+/* --- На сегодня: список дел, собранный из данных. Просроченное —
+   сверху, с красной полосой и словом «просрочено», не только цветом. */
+.todaycard{margin:16px 0}
+.todaylist{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.todayrow{width:100%;display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;
+  padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--line);border-radius:10px;background:var(--panel);min-height:52px}
+.todayrow:hover{border-color:var(--gold)}
+.todayrow.late{border-left-color:#d64545}
+.todayicon{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:var(--bg);color:var(--muted)}
+.todaytext{display:grid;gap:1px;min-width:0}
+.todaytext b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.todaytext small{font-size:12px}
+.todaywhen{font-size:12px;color:var(--muted);white-space:nowrap}
+.todayrow.late .todaywhen{color:#d64545;font-weight:700}
+.todayempty{margin:4px 0 0}
+.duetoday{color:var(--ink);font-weight:700}
+.lcard small svg{vertical-align:-2px}
+@media(max-width:720px){.todayrow{grid-template-columns:28px minmax(0,1fr)}.todaywhen{grid-column:2}}
