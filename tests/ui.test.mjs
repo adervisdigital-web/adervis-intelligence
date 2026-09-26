@@ -608,7 +608,9 @@ check('у каждого раздела своя иконка', (await page.$$('
 check('иконки нарисованы, а не написаны символами',
   await page.$$eval('#nav button i', els => els.every(e => e.querySelector('svg') && !/[⌂▦◈◇▤✎▣✦⌁◎✓↗⚙⛓]/.test(e.textContent))));
 check('иконки берут цвет от текста',
-  await page.$eval('#nav button svg', s => s.getAttribute('stroke') === 'currentColor'));
+  await page.$eval('#nav button svg', s => s.getAttribute('fill') === 'currentColor'));
+check('в меню иконки в обычном весе, не залитые',
+  await page.$$eval('#nav button svg', ss => ss.every(s => s.dataset.weight === 'regular')));
 check('в панели сверху тоже иконки',
   (await page.$$eval('#menu svg, #search svg, #theme svg, #refresh svg, #create svg', s => s.length)) === 5);
 check('активный раздел подсвечен золотым',
@@ -865,21 +867,50 @@ check('высокий контраст признан годным',
 check('негодное сочетание помечено отдельно',
   (await page.$$eval('.figure .fnote.bad', t => t.length)) > 0);
 // страницы элементов
-check('набор иконок показан целиком', (await page.$$('.iconcell')).length >= 30, String((await page.$$('.iconcell')).length));
-// в брендбуке иконки подписаны по-русски, а не ключами из кода
-const iconLabels = await page.$$eval('.iconcell span', ss => ss.map(x => x.textContent.trim()));
-check('иконки подписаны по-русски', iconLabels.every(t => /[а-яА-ЯёЁ]/.test(t)),
+// единый набор на все продукты: сайт, CRM, Stock и это приложение
+const iconCount = (await page.$$('.iconsheet .iconcell')).length;
+check('в брендбуке весь набор из всех продуктов', iconCount >= 90, String(iconCount));
+const iconLabels = await page.$$eval('.iconsheet .icname', ss => ss.map(x => x.textContent.trim()));
+check('иконки подписаны по-русски', iconLabels.every(t => /[а-яА-ЯёЁ]/.test(t) || /^(Telegram|YouTube|Behance|Google|PDF|КП)$/.test(t)),
   iconLabels.filter(t => !/[а-яА-ЯёЁ]/.test(t)).slice(0, 5).join(', '));
+check('подписи не повторяются: одно слово — одна иконка', new Set(iconLabels).size === iconLabels.length,
+  iconLabels.filter((t, i) => iconLabels.indexOf(t) !== i).join(', '));
 check('рядом оставлен ключ для разработчика',
-  (await page.$$eval('.iconcell code', cs => cs.map(c => c.textContent))).includes('leads'));
-check('похожие имена различимы по подписи',
-  iconLabels.includes('Заявки') && iconLabels.includes('Обращение'));
-check('у каждой иконки раздела есть своя подпись',
-  (await page.$$('.iconcell')).length === iconLabels.length);
-check('у всех иконок одна толщина штриха',
-  (await page.$$eval('.iconcell svg', s => [...new Set(s.map(x => x.getAttribute('stroke-width')))])).length === 1);
-check('иконки нарисованы контуром, без заливки',
-  await page.$$eval('.iconcell svg', s => s.every(x => x.getAttribute('fill') === 'none')));
+  (await page.$$eval('.iconsheet code', cs => cs.map(c => c.textContent))).includes('leads'));
+check('у каждой иконки есть своя подпись', iconCount === iconLabels.length);
+check('весь набор на одной сетке',
+  (await page.$$eval('.iconsheet svg', s => [...new Set(s.map(x => x.getAttribute('viewBox')))])).join() === '0 0 256 256');
+check('у каждой иконки есть пара: контур и заливка той же формы',
+  await page.$$eval('.iconsheet .icwrap', ws => ws.every(w =>
+    w.querySelector('[data-weight=regular]') && w.querySelector('[data-weight=fill]'))));
+// нажатие: контур наливается цветом и остаётся выбранным
+await (await page.$('.iconsheet')).screenshot({ path: path.join(OUT, 'figure-icons.png') });
+const firstCell = '.iconsheet .iconcell';
+await page.click(firstCell);
+await page.waitForSelector('.iconsheet .iconcell.picked');
+await page.waitForTimeout(300);
+const picked = await page.$eval('.iconsheet .iconcell.picked', c => ({
+  pressed: c.getAttribute('aria-pressed'),
+  fill: +getComputedStyle(c.querySelector('[data-weight=fill]')).opacity,
+  reg: +getComputedStyle(c.querySelector('[data-weight=regular]')).opacity
+}));
+check('выбранная иконка залита, контур ушёл', picked.fill === 1 && picked.reg === 0, JSON.stringify(picked));
+check('выбор объявлен для чтения с экрана', picked.pressed === 'true');
+check('выбранную иконку можно скачать', (await page.$$('[data-action=icondl]')).length === 2);
+// цвет от продукта: та же иконка в цвете CRM и Stock разная
+const colorIn = async dir => {
+  await page.click(`[data-action=icondir][data-id="${dir}"]`);
+  await page.waitForTimeout(250);
+  return page.$eval('.iconsheet .iconcell.picked', c => getComputedStyle(c).color);
+};
+const crm = await colorIn('CRM');
+await (await page.$('.iconsheet')).screenshot({ path: path.join(OUT, 'figure-icons-crm.png') });
+const stock = await colorIn('Stock');
+check('цвет иконки следует за продуктом', crm !== stock, `${crm} / ${stock}`);
+check('выбор цвета отмечен и для чтения с экрана',
+  await page.$eval('[data-action=icondir][data-id="Stock"]', b => b.getAttribute('aria-pressed') === 'true'));
+await page.click(`[data-action=icondir][data-id=""]`);
+await page.click('.iconsheet .iconcell.picked');
 check('элементы интерфейса показаны живыми компонентами', (await page.$$('.uikit button')).length >= 5);
 check('выключенная кнопка действительно выключена',
   await page.$eval('.uikit button:disabled', b => getComputedStyle(b).opacity === '0.5' && b.disabled));

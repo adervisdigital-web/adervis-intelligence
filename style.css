@@ -894,3 +894,47 @@ h1,.sectionhead,.hero h1,.covertitle,.slidetitle{
 /* Липкий заголовок раздела встаёт ровно под панелью: её высоту меряет
    приложение, а не угадывает стиль — панель меняется с кеглем и экраном. */
 .sectionhead{top:var(--topbar-h,68px)}
+
+/* --- Живой лист иконок ------------------------------------------------
+   Каждая клетка — кнопка. Контур и заливка лежат друг на друге: при
+   нажатии контур уходит, заливка вырастает с лёгкой пружиной, при выборе
+   остаётся. Цвет — от выбранного продукта, иначе от текста. */
+.iconsheet{--acc:var(--dir,var(--ink))}
+.iconbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:0 0 14px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.iconbar-right{display:flex;gap:6px;flex-wrap:wrap}
+.icongroup{margin-top:18px}
+.icongrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-top:10px}
+
+.iconsheet .iconcell{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;
+  min-height:104px;padding:16px 8px 10px;border-radius:14px;cursor:pointer;
+  background:var(--panel);border:1px solid var(--line);color:var(--ink);
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .15s,background-color .15s,color .15s,box-shadow .2s}
+.iconsheet .iconcell:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--acc) 45%,var(--line));
+  color:var(--acc)}
+.iconsheet .iconcell:active{transform:scale(.93);transition-duration:.08s}
+.iconsheet .iconcell:focus-visible{outline:3px solid #9278ff;outline-offset:2px}
+.iconsheet .iconcell.picked{color:var(--acc);border-color:var(--acc);
+  background:color-mix(in srgb,var(--acc) 9%,var(--panel));
+  box-shadow:0 0 0 1px var(--acc),0 10px 28px -12px color-mix(in srgb,var(--acc) 55%,transparent)}
+
+.icwrap{position:relative;width:26px;height:26px;display:grid;place-items:center}
+.icwrap .ic{grid-area:1/1;transition:opacity .16s,transform .22s cubic-bezier(.34,1.56,.64,1)}
+.icwrap .ic[data-weight=fill]{opacity:0;transform:scale(.55)}
+.iconcell:active .icwrap .ic[data-weight=regular],
+.iconcell.picked .icwrap .ic[data-weight=regular]{opacity:0;transform:scale(1.25)}
+.iconcell:active .icwrap .ic[data-weight=fill],
+.iconcell.picked .icwrap .ic[data-weight=fill]{opacity:1;transform:scale(1)}
+
+.iconsheet .icname{font-size:12px;line-height:1.25;text-align:center}
+.iconsheet .iconcell code{font-size:9.5px;opacity:.6}
+.iconfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:18px 0 6px;
+  padding:12px 14px;border-radius:12px;background:var(--bg)}
+.iconfoot a.chip{text-decoration:none}
+
+/* Кто попросил систему поменьше движения — получает смену состояния
+   без пружины и сдвигов. */
+@media (prefers-reduced-motion: reduce){
+  .iconsheet .iconcell,.icwrap .ic{transition:none}
+  .iconsheet .iconcell:hover,.iconsheet .iconcell:active{transform:none}
+}

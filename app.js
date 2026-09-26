@@ -20,71 +20,23 @@ function toast(text, ms = 3500) {
 
 // Иконки — один набор в фирменной геометрии. По брендбуку: только SVG внутри
 // страницы, без эмодзи; цвет наследуется от текста.
-const ICONS = {
-  home: '<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z"/>',
-  money: '<path d="M9 20V5h4.5a4 4 0 0 1 0 8H9"/><path d="M6 13h7M6 16.5h7"/>',
-  decisions: '<path d="M6 21V4"/><path d="M6 5h11l-2.2 3.6L17 12H6z"/>',
-  leads: '<path d="M4 13h4l1.8 2.6h4.4L16 13h4"/><path d="M5.2 13 6.8 5.6h10.4L18.8 13v5.4a1 1 0 0 1-1 1H6.2a1 1 0 0 1-1-1z"/>',
-  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8.2 11V8.2a3.8 3.8 0 0 1 7.6 0V11"/>',
-  eye: '<path d="M2.6 12S6.2 6.2 12 6.2 21.4 12 21.4 12 17.8 17.8 12 17.8 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.9"/>',
-  check: '<path d="m4.8 12.6 4.9 4.9L19.2 7.2"/>',
-  warn: '<path d="M12 4.6 21 19.4H3z"/><path d="M12 10.2v4"/><path d="M12 16.9v.3"/>',
-  link: '<path d="M10.2 13.8a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 1 0-5.7-5.7l-1.4 1.4"/><path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 1 0 5.7 5.7l1.4-1.4"/>',
-  download: '<path d="M12 4.2v10.6"/><path d="m7.6 10.4 4.4 4.4 4.4-4.4"/><path d="M5 19.2h14"/>',
-  chain: '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><circle cx="19" cy="12" r="2"/><path d="m6.7 11 3.8-3.8M6.7 13l3.8 3.8M13.5 7.2 17.3 11M13.5 16.8 17.3 13"/>',
-  knowledge: '<path d="M6 4h9a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z"/><path d="M6 17h11"/>',
-  brand: '<path d="M12 3 21 12 12 21 3 12z"/><path d="M12 8.5 15.5 12 12 15.5 8.5 12z"/>',
-  products: '<path d="M12 4 4 8l8 4 8-4z"/><path d="m4 12 8 4 8-4"/><path d="m4 16 8 4 8-4"/>',
-  cases: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>',
-  content: '<path d="M4 20h4L20 8l-4-4L4 16z"/><path d="m14 6 4 4"/>',
-  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
-  assistant: '<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><path d="m6.5 6.5 3 3M14.5 14.5l3 3M17.5 6.5l-3 3M9.5 14.5l-3 3"/>',
-  analytics: '<path d="M5 19v-8M10 19V5M15 19v-6M20 19v-9"/>',
-  competitors: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>',
-  tasks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
-  roadmap: '<path d="M4 20 20 4"/><path d="M14 4h6v6"/>',
-  settings: '<path d="M5 8h14M5 16h14"/><circle cx="10" cy="8" r="2"/><circle cx="15" cy="16" r="2"/>',
-  search: '<circle cx="11" cy="11" r="6"/><path d="m15.5 15.5 4.5 4.5"/>',
-  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
-  theme: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
-  refresh: '<path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 5v5h-5"/>',
-  close: '<path d="m6 6 12 12M18 6 6 18"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  // предметные иконки студии — та же геометрия и та же толщина штриха
-  video: '<rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3z"/>',
-  photo: '<rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/><path d="M8.5 6 10 4h4l1.5 2"/>',
-  design: '<path d="M4 17c6 0 10-10 16-10"/><circle cx="4" cy="17" r="2"/><circle cx="20" cy="7" r="2"/>',
-  estimate: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
-  client: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>',
-  shooting: '<rect x="3" y="9" width="18" height="11" rx="2"/><path d="m3 9 2.4-4 16 1.4L21 9"/><path d="m8 9-2-3.6M13 9.4l-2-3.7M18 9.9l-2-3.7"/>',
-  editing: '<path d="M3 8h18M3 16h18"/><rect x="6" y="5" width="5" height="6" rx="1"/><rect x="13" y="13" width="6" height="6" rx="1"/>',
-  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
-  lead: '<path d="M5 12 7 5h10l2 7v6a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M3.5 12H8l2 3h4l2-3h4.5"/>',
-  time: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
-  place: '<path d="M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
-  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'
-};
+// Иконки — единый набор ADERVIS из icons-data.js: тот же, что лежит в
+// брендбуке и в brand/icons для остальных продуктов. Раньше здесь был свой
+// набор, нарисованный вручную, а на сайте, в CRM и в Stock — ещё три,
+// каждый на своей сетке и со своей толщиной линии.
+const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
+// Старые имена из кода приложения, чтобы не переписывать все вызовы.
+const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads' };
+const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
+const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
-// Подписи иконок для брендбука. В наборе рядом живут «lead» и «leads» —
-// по ключам их не различить, поэтому имя человеческое, а ключ остаётся
-// рядом мелким: он нужен тому, кто будет искать иконку в коде.
-const ICON_RU = {
-  home: 'Обзор', money: 'Деньги', leads: 'Заявки', decisions: 'Решения', chain: 'Нейроцепочка',
-  knowledge: 'База знаний', brand: 'Брендбук', products: 'Продукты', cases: 'Кейсы',
-  content: 'Контент-студия', calendar: 'Календарь', assistant: 'AI-зона', analytics: 'Аналитика',
-  competitors: 'Конкуренты', tasks: 'Задачи', roadmap: 'Развитие', settings: 'Настройки',
-  video: 'Видео', photo: 'Фото', design: 'Дизайн', shooting: 'Съёмка', editing: 'Монтаж',
-  mic: 'Звук', estimate: 'Смета', client: 'Клиент', lead: 'Обращение', file: 'Файл',
-  time: 'Сроки', place: 'Локация',
-  plus: 'Добавить', search: 'Поиск', refresh: 'Обновить', menu: 'Меню', theme: 'Тема',
-  close: 'Закрыть', check: 'Готово', warn: 'Внимание', link: 'Ссылка', download: 'Скачать',
-  lock: 'Внутреннее', eye: 'Публичное'
+const icon = (name, size = 20, weight = 'regular') => {
+  const i = ICON_SET[ICON_ALIAS[name] || name];
+  return i
+    ? `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 256 256" fill="currentColor"
+        data-weight="${weight}" aria-hidden="true">${weight === 'fill' ? i.fill : i.regular}</svg>`
+    : '';
 };
-
-const icon = (name, size = 20) => ICONS[name]
-  ? `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`
-  : '';
 
 const rtf = new Intl.RelativeTimeFormat('ru', { numeric: 'auto' });
 function ago(iso) {
@@ -856,21 +808,46 @@ const FIGURES = {
   },
 
   // Набор иконок. Одна геометрия, одна толщина штриха, размеры токенами.
+  // Единый набор на все продукты. Каждая иконка — кнопка: при нажатии
+  // контур наливается цветом (вес Fill) и слегка пружинит, при выборе
+  // остаётся залитой. Цвет берётся из выбранного продукта — так видно, как
+  // иконка ляжет на CRM, Stock или студию, без отдельной отрисовки.
   icons: () => {
-    const groups = [
-      ['Разделы приложения', ['home', 'money', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products', 'cases', 'content', 'calendar', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings']],
-      ['Работа студии', ['video', 'photo', 'design', 'shooting', 'editing', 'mic', 'estimate', 'client', 'lead', 'file', 'time', 'place']],
-      ['Действия', ['plus', 'search', 'refresh', 'menu', 'theme', 'close', 'download', 'link']],
-      ['Состояния', ['check', 'warn', 'lock', 'eye']]
-    ];
-    return `<div class="iconsheet">${groups.map(([title, names]) => `<div class="icongroup">
-      <div class="eyebrow">${E(title)}</div>
-      <div class="icongrid">${names.map(n => `<div class="iconcell">${icon(n, 24)}
-        <span>${E(ICON_RU[n] || n)}</span><code>${E(n)}</code></div>`).join('')}</div>
-    </div>`).join('')}
-    <p class="muted">Размеры: 16 в строке текста, 20 в меню, 24 в карточках, 32 в крупных блоках.
-    Толщина штриха одна — 1,7. Заливкой не пользуемся: только контур.
-    Мелким под названием — имя иконки в коде, по нему её находят разработчики.</p></div>`;
+    const groups = [];
+    for (const i of window.ADERVIS_ICONS || []) {
+      let g = groups.find(x => x.name === i.group);
+      if (!g) groups.push(g = { name: i.group, items: [] });
+      g.items.push(i);
+    }
+    const total = groups.reduce((n, g) => n + g.items.length, 0);
+    return `<div class="iconsheet" data-dir="${E(iconSheet.dir)}">
+      <div class="iconbar">
+        <div class="iconbar-left"><b>${total} иконок</b><span class="muted"> · одна сетка, один вес, основа Phosphor</span></div>
+        <div class="iconbar-right" role="group" aria-label="Цвет иконок">
+          ${[['Нейтральный', ''], ['Студия', 'Студия'], ['CRM', 'CRM'], ['Stock', 'Stock']].map(([t, d]) =>
+            `<button class="chip${iconSheet.dir === d ? ' on' : ''}" data-action="icondir" data-id="${E(d)}"
+              aria-pressed="${iconSheet.dir === d}">${E(t)}</button>`).join('')}
+        </div>
+      </div>
+      ${groups.map(g => `<div class="icongroup">
+        <div class="eyebrow">${E(g.name)} <span class="muted">· ${g.items.length}</span></div>
+        <div class="icongrid">${g.items.map(i => `<button class="iconcell${iconSheet.pick === i.key ? ' picked' : ''}"
+            data-action="iconpick" data-id="${E(i.key)}" aria-pressed="${iconSheet.pick === i.key}"
+            title="${E(i.ru)} — нажмите, чтобы выбрать">
+            <span class="icwrap">${icon(i.key, 26)}${icon(i.key, 26, 'fill')}</span>
+            <span class="icname">${E(i.ru)}</span><code>${E(i.key)}</code></button>`).join('')}</div>
+      </div>`).join('')}
+      <div class="iconfoot">
+        ${iconSheet.pick ? `<span>Выбрано: <b>${E(ICON_RU[iconSheet.pick] || iconSheet.pick)}</b></span>
+          <button class="chip" data-action="icondl" data-id="${E(iconSheet.pick)}">Скачать SVG</button>
+          <button class="chip" data-action="icondl" data-id="${E(iconSheet.pick)}-fill">Скачать залитую</button>` : '<span class="muted">Нажмите на иконку, чтобы выбрать её и скачать.</span>'}
+        <a class="chip" href="brand/icons/sprite.svg" download="adervis-icons-sprite.svg">Весь набор одним спрайтом</a>
+      </div>
+      <p class="muted">Размеры: 16 в строке текста, 20 в меню, 24–26 в карточках, 32 в крупных блоках.
+      Обычное состояние — контур, нажатое и выбранное — заливка той же формы. Цвет всегда от текста или
+      от продукта, отдельно иконки не красим. Знаки площадок (VK и другие) берутся из их официальных
+      брендбуков, их мы не перерисовываем.</p>
+    </div>`;
   },
 
   // Живые элементы интерфейса во всех состояниях — не картинка, а сами компоненты.
@@ -1686,6 +1663,8 @@ function chainMap(s) {
 // есть в данных: общий раздел, направление, канал, источник, статус —
 // плюс настоящие ссылки файлов на записи и замеров на публикации.
 // Ничего не додумывается: если линии нет, значит записи ничем не связаны.
+
+let iconSheet = { dir: '', pick: '' };
 
 let graph = { open: false, focus: null, sig: '', pos: null, scale: 0, ox: 0, oy: 0 };
 
@@ -3454,6 +3433,18 @@ document.addEventListener('click', async e => {
     case 'newlead': editLead(); break;
     case 'dellead': delLead(b.dataset.id); break;
     case 'graphfull': graph.open = !graph.open; render(); break;
+    case 'icondir': iconSheet.dir = b.dataset.id; render(); break;
+    case 'iconpick': iconSheet.pick = iconSheet.pick === b.dataset.id ? '' : b.dataset.id; render(); break;
+    case 'icondl': {
+      const [key, fill] = b.dataset.id.split(/-(?=fill$)/);
+      const i = ICON_SET[key];
+      if (!i) break;
+      download(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="currentColor">${fill ? i.fill : i.regular}</svg>
+`,
+        `adervis-${key}${fill ? '-fill' : ''}.svg`);
+      toast('Иконка сохранена файлом');
+      break;
+    }
     case 'graphclear': graph.focus = null; render(); break;
     case 'graphzoom': graphZoom(b.dataset.z === 'in' ? 1.3 : 1 / 1.3); break;
     case 'brief': brief(); break;
