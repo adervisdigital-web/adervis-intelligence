@@ -744,26 +744,27 @@ h3{font-size:var(--t-h3);line-height:1.3}
   --crm-gradient:linear-gradient(120deg,var(--c-crm-1) 0%,var(--c-crm-2) 100%);
   --glow-crm:0 0 48px rgba(155,77,255,.38);
 
-  /* Stock — из PremiumStok (public/index.html): свой зелёный с тёмным
-     вариантом под светлую тему. */
-  --c-stock-1:#87e64b;
-  --c-stock-2:#6bb23e;
+  /* Stock — золото капсулы из его логотипа: градиент #f6bd3a → #c8901f.
+     Зелёный #87e64b на портале Stock — это цвет Envato, им помечены файлы
+     площадки; фирменным цветом Stock он не является. */
+  --c-stock-1:#f6bd3a;
+  --c-stock-2:#c8901f;
   --stock-gradient:linear-gradient(120deg,var(--c-stock-1) 0%,var(--c-stock-2) 100%);
-  --glow-stock:0 0 48px rgba(135,230,75,.30);
+  --glow-stock:0 0 48px rgba(200,144,31,.32);
 
   /* Направления бизнеса берут цвет своего продукта. Медиа — единственное,
      у которого своего цвета пока нет нигде; до решения держим нейтральный
      и не выдаём его за фирменный. */
   --c-studio:#f6bd3a;
   --c-crm:#9b4dff;
-  --c-stock:#87e64b;
+  --c-stock:#c8901f;   /* бронза: тёмный конец капсулы, иначе два золота не различить */
   --c-media:#8d95a6;
 }
 html[data-theme=light]{
   --c-studio:#a87908;
   --c-photo:#a8760d;
   --c-crm:#6c00ff;
-  --c-stock:#3f7a1c;
+  --c-stock:#8a5f10;
   --c-media:#5d6575;
   --glow-gold:0 0 32px rgba(246,189,58,.22);
 }
@@ -938,3 +939,26 @@ h1,.sectionhead,.hero h1,.covertitle,.slidetitle{
   .iconsheet .iconcell,.icwrap .ic{transition:none}
   .iconsheet .iconcell:hover,.iconsheet .iconcell:active{transform:none}
 }
+
+/* Комплект для соцсетей в брендбуке. */
+.socgroup{margin-top:18px}
+.socgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:10px}
+.socgrid.wide{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.soccell{margin:0}
+.soccell a{display:block;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#090909;
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .15s}
+.soccell a:hover{transform:translateY(-2px);border-color:var(--gold)}
+.soccell a:focus-visible{outline:3px solid #9278ff;outline-offset:2px}
+.soccell img{display:block;width:100%;height:auto}
+.soccell figcaption{display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:var(--t-small)}
+@media (prefers-reduced-motion: reduce){.soccell a{transition:none}.soccell a:hover{transform:none}}
+
+/* Логотипы продукта в брендбуке: каждый на своём фоне, по клику скачивается. */
+.logogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.logoitem{margin:0}
+.logoplate{display:grid;place-items:center;height:150px;border-radius:12px;padding:20px;border:1px solid var(--line);
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .15s}
+.logoplate:hover{transform:translateY(-2px);border-color:var(--gold)}
+.logoplate img{max-width:100%;max-height:100%}
+.logoitem figcaption{display:grid;gap:2px;margin-top:6px;font-size:var(--t-small)}
+@media (prefers-reduced-motion: reduce){.logoplate{transition:none}.logoplate:hover{transform:none}}

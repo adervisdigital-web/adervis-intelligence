@@ -729,7 +729,7 @@ const FIGURES = {
     const products = [
       { id: 'Студия', name: 'Студия', note: 'фирменное золото', c1: '#f6bd3a', c2: '#ffd673', glow: 'rgba(246,189,58,.28)' },
       { id: 'CRM', name: 'ADERVIS CRM', note: 'градиент продукта', c1: '#6c00ff', c2: '#9b4dff', glow: 'rgba(155,77,255,.38)' },
-      { id: 'Stock', name: 'ADERVIS Stock', note: 'зелёный продукта', c1: '#87e64b', c2: '#6bb23e', glow: 'rgba(135,230,75,.30)' },
+      { id: 'Stock', name: 'ADERVIS Stock', note: 'золото капсулы, как в логотипе', c1: '#f6bd3a', c2: '#c8901f', glow: 'rgba(200,144,31,.32)' },
       { id: 'Медиа', name: 'Медиа', note: 'своего цвета пока нет', c1: '#8d95a6', c2: '#5d6575', glow: 'rgba(141,149,166,.22)' }
     ];
     const services = [
@@ -759,6 +759,55 @@ const FIGURES = {
       ${cards}
       <text class="flabel" x="4" y="278">Услуги студии</text>
       ${svc}</svg>`;
+  },
+
+  // Логотип ADERVIS Stock. В исходниках портала файлы названы по цвету букв:
+  // «logo-gold-dark» — тёмные буквы, то есть для светлого фона. Такое имя
+  // почти гарантирует, что кто-то поставит его на тёмное и получит одну
+  // капсулу без надписи. Здесь имена по фону, на котором файл работает.
+  stocklogo: () => {
+    const v = [
+      ['stock-logo-on-dark.svg', '#141414', 'Для тёмного фона', 'светлые буквы'],
+      ['stock-logo-on-light.svg', '#f4f4f2', 'Для светлого фона', 'тёмные буквы'],
+      ['stock-favicon.svg', '#f4f4f2', 'Знак, фавикон', 'капсула на тёмной плашке'],
+      ['stock-mark-gold.svg', '#141414', 'Знак на золоте', 'для аватаров и иконок приложений']
+    ];
+    return `<div class="logogrid">${v.map(([file, bg, name, note]) => `<figure class="logoitem">
+      <a class="logoplate" href="brand/stock/${file}" download="adervis-${file}" style="background:${bg}"
+        title="Скачать: ${E(name)}"><img src="brand/stock/${file}" alt="ADERVIS Stock — ${E(name)}"></a>
+      <figcaption><b>${E(name)}</b><span class="muted">${E(note)}</span></figcaption></figure>`).join('')}</div>
+      <div class="notice">В исходниках портала файлы названы по цвету букв, а не по фону:
+      <code>logo-gold-dark</code> — это тёмные буквы, для <b>светлого</b> фона. Здесь они переименованы по фону,
+      на котором работают. Капсула всегда золотая: градиент #f6bd3a → #c8901f.</div>`;
+  },
+
+  // Комплект для соцсетей: всё собрано из элементов этого брендбука
+  // генератором tools/social/build.mjs, цены и описания — с сайта.
+  social: () => {
+    const groups = [
+      ['Обложки и аватар', [
+        ['avatar', 'Аватар', '1000×1000'], ['vk-cover', 'Шапка ВКонтакте', '1920×768'],
+        ['youtube-banner', 'Шапка YouTube', '2560×1440']]],
+      ['Меню ВКонтакте', ['consult', 'video', 'reviews', 'cases', 'bonus', 'contract'].map((k, i) =>
+        [`vk-menu/${k}`, ['Консультация', 'Видео', 'Отзывы', 'Кейсы', 'Бонус', 'Договор'][i], '376×256'])],
+      ['Карточки услуг', [
+        ['services/promo-video', 'Рекламный ролик', '1080×1080'], ['services/company-film', 'Видео о компании', '1080×1080'],
+        ['services/event-video', 'Съёмка мероприятия', '1080×1080'], ['services/motion', 'Анимация и моушн', '1080×1080'],
+        ['services/logo', 'Логотип', '1080×1080'], ['services/identity', 'Фирменный стиль', '1080×1080'],
+        ['services/brandbook', 'Брендбук', '1080×1080'], ['services/redesign', 'Редизайн', '1080×1080'],
+        ['services/packshot', 'Предметная съёмка', '1080×1080'], ['services/portraits', 'Портреты команды', '1080×1080'],
+        ['services/content-series', 'Контент-серия', '1080×1080'], ['services/photo-report', 'Репортаж с мероприятия', '1080×1080']]]
+    ];
+    return `<div class="socialkit">${groups.map(([title, items]) => `<div class="socgroup">
+      <div class="eyebrow">${E(title)} <span class="muted">· ${items.length}</span></div>
+      <div class="socgrid ${title === 'Обложки и аватар' ? 'wide' : ''}">${items.map(([file, name, size]) => `<figure class="soccell">
+        <a href="brand/social/${file}.png" download="adervis-${file.replace('/', '-')}.png" title="Скачать ${E(name)}">
+          <img src="brand/social/${file}.png" alt="${E(name)}" loading="lazy"></a>
+        <figcaption><b>${E(name)}</b><span class="muted">${size}</span></figcaption></figure>`).join('')}</div>
+    </div>`).join('')}
+    <p class="muted">Нажмите на картинку — она скачается в полном размере. Всё собрано из этого брендбука:
+    паттерн, знак, единые иконки, фирменные шрифты, цвета услуг с сайта. Цены и описания — с adervis.ru;
+    поменялись на сайте — перегенерировать командой из tools/social.</p></div>`;
   },
 
   // Образцы набраны теми же правилами, что и интерфейс: если в стилях

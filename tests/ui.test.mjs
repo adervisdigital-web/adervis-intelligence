@@ -80,6 +80,10 @@ const fake = (seedData) => {
         data: { figure: 'marks', body: '— Паттерн остаётся фоном' } },
       { id: 'type-roles', title: 'Типографика: роли и шкала', kind: 'figure', sort: 42, section: 'Шрифт и текст', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'type', body: '— Eurostile — только короткие крупные строки' } },
+      { id: 'stock-logo', title: 'Логотип ADERVIS Stock', kind: 'figure', sort: 5, section: 'ADERVIS Stock', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'stocklogo', body: '— Капсула всегда золотая' } },
+      { id: 'social-kit', title: 'Соцсети: комплект 2026', kind: 'figure', sort: 104, section: 'Материалы', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
+        data: { figure: 'social', body: '— Цены и описания с adervis.ru' } },
       { id: 'p-crm', title: 'CRM: акцент в деле', kind: 'figure', sort: 10, section: 'ADERVIS CRM', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
         data: { figure: 'product', dir: 'CRM', product: 'ADERVIS CRM', body: '— Градиент только на крупных плашках' } },
       { id: 'p-stock', title: 'Stock: акцент в деле', kind: 'figure', sort: 10, section: 'ADERVIS Stock', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru',
@@ -920,7 +924,8 @@ check('шкала отступов нарисована', (await page.textConten
 // цвета продуктов взяты из самих продуктов: значения обязаны совпадать
 const dirFig = await page.$eval('.figure[aria-label="Цвета продуктов и услуг"]', f => f.textContent.replace(/\s+/g, ' '));
 check('в брендбуке записан градиент CRM с сайта', /#6c00ff → #9b4dff/.test(dirFig), dirFig.slice(0, 120));
-check('в брендбуке записан зелёный Stock из портала', /#87e64b → #6bb23e/.test(dirFig), dirFig.slice(0, 160));
+check('Stock — золото капсулы из его логотипа, а не зелёный Envato', /#f6bd3a → #c8901f/.test(dirFig) && !/#87e64b/.test(dirFig),
+  dirFig.slice(0, 200));
 check('цвета услуг перечислены', /#f52424/.test(dirFig) && /#7733ff/.test(dirFig) && /#22cc54/.test(dirFig));
 check('у Медиа честно сказано, что цвета пока нет', /своего цвета пока нет/.test(dirFig));
 check('градиенты нарисованы, а не имитированы заливкой',
@@ -1013,6 +1018,18 @@ for (const [name, label] of [['contrast', 'Сочетания цветов и к
   const el = await page.$(`.figure[aria-label="${label}"]`);
   if (el) await el.screenshot({ path: path.join(OUT, `figure-${name}.png`) });
 }
+// логотип Stock: файлы по фону, а не по цвету букв; все реально открываются
+const stockLogos = await page.$$eval('.logogrid img', is => is.map(i => ({ src: i.getAttribute('src'), ok: i.complete && i.naturalWidth > 0 })));
+check('в брендбуке четыре варианта логотипа Stock', stockLogos.length === 4, String(stockLogos.length));
+check('все файлы логотипа Stock на месте и открываются', stockLogos.every(l => l.ok), JSON.stringify(stockLogos.filter(l => !l.ok)));
+check('логотип для тёмного фона стоит на тёмной плашке', await page.$eval('.logoplate[href$="stock-logo-on-dark.svg"]',
+  a => getComputedStyle(a).backgroundColor === 'rgb(20, 20, 20)'));
+check('про ловушку в именах исходников предупреждено', (await page.textContent('.logogrid + .notice')).includes('по цвету букв'));
+// комплект соцсетей: все картинки на месте и скачиваются
+const socImgs = await page.$$eval('.socialkit img', is => is.map(i => ({ src: i.getAttribute('src'), ok: i.complete && i.naturalWidth > 0 })));
+check('комплект соцсетей: 21 картинка', socImgs.length === 21, String(socImgs.length));
+check('каждая картинка комплекта открывается', socImgs.every(i => i.ok), JSON.stringify(socImgs.filter(i => !i.ok).slice(0, 3)));
+check('по клику картинка скачивается', await page.$$eval('.socialkit a', as => as.every(a => a.hasAttribute('download'))));
 const typeFig = await page.$('.typesheet');
 if (typeFig) await typeFig.screenshot({ path: path.join(OUT, 'figure-type.png') });
 const prodFig = await page.$('.productsheet');
@@ -1148,7 +1165,7 @@ check('в оглавлении видно число тем в разделе',
 
 // полнота брендбука
 const progress = (await page.textContent('.brandbar')).replace(/\s+/g, ' ');
-check('видно, сколько тем заполнено', /Заполнено 17 из 18/.test(progress), progress);
+check('видно, сколько тем заполнено', /Заполнено 19 из 20/.test(progress), progress);
 check('пустая тема названа поимённо', /Ждут содержимого.*Фото и видео/.test(progress), progress);
 check('из полноты можно сразу открыть пустую тему',
   (await page.$$('.brandbar [data-action=editbrand]')).length > 0);
@@ -1184,8 +1201,8 @@ await page.click('[data-action=deckon]');
 await page.waitForSelector('.slide.is-current');
 const slideCount = await page.$$eval('.slide', s => s.length);
 // обложка + знак + 13 тем + финал
-check('слайды собраны по темам', slideCount === 21, String(slideCount));
-check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 13, String((await page.$$('.slide .sfigure')).length));
+check('слайды собраны по темам', slideCount === 23, String(slideCount));
+check('чертежи попали на слайды', (await page.$$('.slide .sfigure')).length === 15, String((await page.$$('.slide .sfigure')).length));
 check('видно ровно один слайд', (await page.$$eval('.slide.is-current', s => s.length)) === 1);
 const ratio = await page.$eval('.slide.is-current', e => { const r = e.getBoundingClientRect(); return +(r.width / r.height).toFixed(2); });
 check('слайд в пропорции 16:9', Math.abs(ratio - 1.78) < 0.03, String(ratio));

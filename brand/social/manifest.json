@@ -1,0 +1,86 @@
+[
+ {
+  "name": "avatar",
+  "size": "1000×1000"
+ },
+ {
+  "name": "vk-cover",
+  "size": "1920×768"
+ },
+ {
+  "name": "youtube-banner",
+  "size": "2560×1440"
+ },
+ {
+  "name": "vk-menu/consult",
+  "size": "376×256"
+ },
+ {
+  "name": "vk-menu/video",
+  "size": "376×256"
+ },
+ {
+  "name": "vk-menu/reviews",
+  "size": "376×256"
+ },
+ {
+  "name": "vk-menu/cases",
+  "size": "376×256"
+ },
+ {
+  "name": "vk-menu/bonus",
+  "size": "376×256"
+ },
+ {
+  "name": "vk-menu/contract",
+  "size": "376×256"
+ },
+ {
+  "name": "services/logo",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/identity",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/brandbook",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/redesign",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/packshot",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/portraits",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/content-series",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/photo-report",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/promo-video",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/company-film",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/event-video",
+  "size": "1080×1080"
+ },
+ {
+  "name": "services/motion",
+  "size": "1080×1080"
+ }
+]
