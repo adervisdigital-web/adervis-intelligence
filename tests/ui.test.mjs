@@ -986,17 +986,19 @@ const iconsFig = await page.$('.iconsheet');
 if (iconsFig) await iconsFig.screenshot({ path: path.join(OUT, 'figure-icons.png') });
 const pat = await page.$('.patterns');
 if (pat) await pat.screenshot({ path: path.join(OUT, 'figure-patterns.png') });
-// паттерн — это контуры настоящего знака, а не перерисовка
-check('паттернов четыре', (await page.$$('.patterncell')).length === 4);
-const ringData = await page.$$eval('.patterncell:first-child path', ps => {
-  const d = ps.map(p => p.getAttribute('d'));
-  return { same: new Set(d).size === 1, count: d.length, widths: ps.map(p => +p.getAttribute('stroke-width')) };
-});
-check('все контуры построены из одного пути знака', ringData.same, `разных путей: ${ringData.count}`);
-check('контуров несколько, а не один', ringData.count >= 10, String(ringData.count));
-check('каждый следующий контур отодвинут дальше предыдущего',
-  ringData.widths.filter(w => w > 0).every((w, i, a) => i === 0 || w <= a[i - 1] + 0.01),
-  ringData.widths.slice(0, 5).join(' / '));
+// паттерн — это копии настоящего знака, а не перерисовка
+check('паттернов семь — по числу оригиналов', (await page.$$('.patterncell')).length === 7,
+  String((await page.$$('.patterncell')).length));
+const ringData = await page.$$eval('.patterncell:first-child path', ps => ps.map(p => ({
+  d: p.getAttribute('d').slice(0, 18), t: p.getAttribute('transform') || ''
+})));
+const kinds = new Set(ringData.map(r => r.d));
+check('контуры построены только из силуэта и отверстия знака', kinds.size === 2, [...kinds].join(' | '));
+check('внутри знака лишних контуров нет: отверстие нарисовано один раз',
+  ringData.filter(r => r.d.startsWith('M1580.87')).length === 1);
+const scales = ringData.map(r => +((r.t.match(/scale\(([\d.]+)\)/) || [])[1] || 0)).filter(Boolean);
+check('копий несколько, и каждая следующая крупнее предыдущей',
+  scales.length >= 6 && scales.every((x, i) => i === 0 || x > scales[i - 1]), scales.join(' / '));
 const svgFile = await Promise.all([
   page.waitForEvent('download'),
   page.click('.patterncell:first-child [data-action=patternfile]')
@@ -1004,7 +1006,7 @@ const svgFile = await Promise.all([
 const svgText = fs.readFileSync(await svgFile.path(), 'utf8');
 check('паттерн сохраняется как SVG', /^<svg[^>]+xmlns=/.test(svgText.trim()) && svgText.includes('2120'),
   svgFile.suggestedFilename());
-check('в файле лежит тот же знак', svgText.includes('M1580.87,1460.95'));
+check('в файле лежит тот же знак, оба контура кольца', svgText.includes('M1580.87,1460.95') && svgText.includes('M1644.09,1652.56'));
 // выгруженный файл должен открываться и рисоваться сам по себе
 const probe = await ctx.newPage();
 await probe.setViewportSize({ width: 1060, height: 596 });
@@ -1013,7 +1015,7 @@ const drawn = await probe.$eval('svg', s => ({
   paths: s.querySelectorAll('path').length,
   w: Math.round(s.getBoundingClientRect().width)
 }));
-check('выгруженный SVG рисуется без приложения', drawn.paths >= 20 && drawn.w === 1060, JSON.stringify(drawn));
+check('выгруженный SVG рисуется без приложения', drawn.paths >= 8 && drawn.w === 1060, JSON.stringify(drawn));
 await probe.screenshot({ path: path.join(OUT, 'pattern-export.png') });
 await probe.close();
 await page.setViewportSize({ width: 1440, height: 900 });
