@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Проверки общей базы: база данных, сборка запроса к модели, интерфейс",
   "scripts": {
-    "test": "node db.test.mjs && node prompt.test.mjs && node publish.test.mjs && node feed.test.mjs && node ui.test.mjs",
+    "test": "node db.test.mjs && node prompt.test.mjs && node publish.test.mjs && node feed.test.mjs && node prospect.test.mjs && node ui.test.mjs",
     "test:publish": "node publish.test.mjs",
     "test:db": "node db.test.mjs",
     "test:prompt": "node prompt.test.mjs",

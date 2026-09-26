@@ -26,7 +26,7 @@ function toast(text, ms = 3500) {
 // каждый на своей сетке и со своей толщиной линии.
 const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
 // Старые имена из кода приложения, чтобы не переписывать все вызовы.
-const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads' };
+const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift' };
 const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
 const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
@@ -64,7 +64,11 @@ const FIELDS = {
   campaigns: ['id', 'name', 'channel', 'direction', 'goal', 'status', 'starts_on', 'ends_on', 'budget', 'spent',
     'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
-  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id']
+  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id'],
+  prospects: ['id', 'name', 'city', 'category', 'address', 'website', 'phone', 'email', 'socials', 'direction',
+    'source', 'status', 'external_id', 'lead_id', 'note'],
+  kpi_targets: ['id', 'target'],
+  lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 
@@ -125,7 +129,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -139,7 +143,10 @@ function createApi(cfg) {
         sb.from('ai_usage').select('*').order('at', { ascending: false }).limit(200).then(must),
         selectAll('members', 'email'),
         sb.from('activity').select('*').order('at', { ascending: false }).limit(40).then(must),
-        sb.from('social_accounts').select('network,handle,note').then(must)
+        sb.from('social_accounts').select('network,handle,note').then(must),
+        selectAll('prospects', 'created_at'),
+        selectAll('kpi_targets', 'id'),
+        selectAll('lead_magnets', 'created_at')
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -151,6 +158,9 @@ function createApi(cfg) {
         campaigns: campaigns.map(r => fromRow('campaigns', r)),
         decisions: decisions.map(r => fromRow('decisions', r)),
         leads: leads.map(r => fromRow('leads', r)),
+        prospects: prospects.map(r => fromRow('prospects', r)),
+        kpi_targets: kpiTargets.map(r => fromRow('kpi_targets', r)),
+        lead_magnets: magnets.map(r => fromRow('lead_magnets', r)),
         publications, ai, members, activity, accounts
       };
     },
@@ -195,6 +205,7 @@ function createApi(cfg) {
     publish: payload => callFn('publish', payload),
     generate: payload => callFn('ai-write', payload),
     feed: payload => callFn('feed', payload),
+    prospect: payload => callFn('prospect', payload),
     // У аккаунта площадки ключ — сама площадка, поэтому запись, а не правка по номеру.
     async saveAccount(a) {
       return must(await sb.from('social_accounts').upsert({ network: a.network, handle: a.handle })
@@ -214,7 +225,8 @@ let api = null;
 let me = null;
 const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
-  decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: []
+  decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
+  prospects: [], kpi_targets: [], lead_magnets: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -235,17 +247,17 @@ let ai = {
 // Группы отвечают на вопрос «зачем я сюда иду»: вести дело, вспомнить,
 // сделать работу, настроить. Внутри группы — по частоте обращения.
 const SECTION_TITLE = {
-  home: 'Обзор', ads: 'Реклама', leads: 'Заявки', decisions: 'Решения',
+  home: 'Обзор', ads: 'Реклама', leads: 'Заявки', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
   cases: 'Кейсы', competitors: 'Конкуренты',
-  content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Аналитика',
+  content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
   chain: 'Нейроцепочка', tasks: 'Задачи и рост', roadmap: 'Развитие системы', settings: 'Настройки'
 };
 
 const NAV = [
-  ['Маркетинг', ['home', 'ads', 'leads', 'decisions']],
+  ['Маркетинг', ['home', 'ads', 'leads', 'magnets', 'prospects', 'decisions']],
   ['Знание компании', ['knowledge', 'brand', 'products', 'cases', 'competitors']],
-  ['Работа', ['content', 'assistant', 'analytics']],
+  ['Работа', ['content', 'analytics', 'assistant']],
   ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
 ];
 
@@ -388,7 +400,8 @@ function filters(categories) {
     <select class="input" id="category" aria-label="Фильтр">${['Все', ...categories].map(c => `<option ${c === category ? 'selected' : ''}>${E(c)}</option>`).join('')}</select></div>`;
 }
 
-const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук' };
+const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук',
+  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', decisions: 'решение' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -1861,6 +1874,526 @@ function editAccount(net) {
   };
 }
 
+// ----------------------------------------------------------------- воронка
+//
+// Заявка идёт по четырём шагам. Отказ бывает на любом из них, поэтому у
+// заявки хранится дальний шаг, до которого она дошла (reached): иначе
+// «отказались после КП» и «не ответили на первый звонок» неразличимы.
+const FUNNEL = ['Новое', 'В работе', 'КП отправлено', 'Сделка'];
+const LOST = ['Отказ', 'Пропало'];
+const reachedOf = (status, prev = 0) => Math.max(Number(prev) || 0, FUNNEL.indexOf(status));
+const sumOf = (list, f) => list.reduce((n, r) => n + Number(r[f] || 0), 0);
+const periodFrom = p => p === 'all' ? '0000-00-00' : new Date(Date.now() - Number(p) * 864e5).toISOString().slice(0, 10);
+const PERIODS = [['30', '30 дней'], ['90', '90 дней'], ['all', 'Всё время']];
+const periodChips = (action, cur) => `<div class="seg" role="group" aria-label="Период">${PERIODS.map(([id, t]) =>
+  `<button class="chip${cur === id ? ' on' : ''}" data-action="${action}" data-id="${id}" aria-pressed="${cur === id}">${t}</button>`).join('')}</div>`;
+
+// Горизонтальная воронка: ширина — доля от первого шага, справа — сколько
+// дошло от предыдущего. Потери подписаны словом, не только цветом.
+function funnelChart(steps, label) {
+  const top = Math.max(1, steps[0].n);
+  return `<ol class="funnel" aria-label="${E(label)}">${steps.map((s, i) => {
+    const prev = i ? steps[i - 1].n : 0;
+    const conv = i && prev ? Math.round(100 * s.n / prev) : null;
+    return `<li class="fstep">
+      <div class="fname"><b>${E(s.name)}</b>${s.lost ? `<small class="minus">потеряно: ${s.lost}</small>` : ''}</div>
+      <div class="fbarwrap"><div class="fbar" style="width:${Math.max(3, Math.round(100 * s.n / top))}%"></div><b class="fnum">${num(s.n)}</b></div>
+      <div class="fconv">${i ? `<b>${conv === null ? '—' : conv + '%'}</b><small>от прошлого шага</small>` : '<small>вход</small>'}</div>
+    </li>`;
+  }).join('')}</ol>`;
+}
+
+function leadFunnel(period) {
+  const list = db.leads.filter(l => l.came_on >= periodFrom(period));
+  const steps = FUNNEL.map((name, k) => ({
+    name, n: list.filter(l => (k === 0 || Number(l.reached) >= k)).length,
+    lost: list.filter(l => LOST.includes(l.status) && (Number(l.reached) || 0) === k).length
+  }));
+  return { list, steps, open: list.filter(l => FUNNEL.slice(0, 3).includes(l.status)).length };
+}
+
+let leadPeriod = 'all', leadView = 'table';
+
+function leadFunnelCard() {
+  const f = leadFunnel(leadPeriod);
+  return `<div class="card funnelcard">
+    <div class="head" style="margin:0 0 12px"><h2 style="margin:0">Воронка продаж</h2>${periodChips('leadperiod', leadPeriod)}</div>
+    ${f.list.length ? funnelChart(f.steps, 'Воронка заявок')
+      : '<p class="muted">За этот период заявок нет.</p>'}
+    ${f.open ? `<p class="muted funnelnote">Ещё в работе: ${f.open} — их исход пока неизвестен, поэтому конверсия дальних шагов будет расти.</p>` : ''}
+  </div>`;
+}
+
+function leadBoard(rows) {
+  const card = l => {
+    const i = FUNNEL.indexOf(l.status);
+    const step = (d, label, arrow) => `<button class="chip movebtn" data-action="movelead" data-id="${E(l.id)}" data-step="${d}"
+      aria-label="${E(label)}" title="${E(label)}">${arrow}</button>`;
+    return `<article class="card click lcard" tabindex="0" role="button" data-l="${E(l.id)}" data-dir="${E(l.direction)}">
+      <div class="pcardhead"><span class="netmark">${E(l.source)}</span><small class="muted">${E(shortDate(l.came_on))}</small></div>
+      <h3>${E(l.name)}</h3>
+      ${l.request ? `<p class="muted lreq">${E(l.request.slice(0, 80))}${l.request.length > 80 ? '…' : ''}</p>` : ''}
+      <div class="pcardfoot"><small class="muted">${l.amount ? num(l.amount) + ' ₽' : ''}</small>
+        <span class="movebtns">${i > 0 ? step(-1, `Вернуть в «${FUNNEL[i - 1]}»`, '←') : ''}${i >= 0 && i < 3 ? step(1, `Дальше: «${FUNNEL[i + 1]}»`, '→') : ''}</span></div>
+    </article>`;
+  };
+  const lost = rows.filter(l => LOST.includes(l.status));
+  return `<div class="board leadboard">${FUNNEL.map(st => {
+    const list = rows.filter(l => l.status === st);
+    return `<section class="boardcol" aria-label="${E(st)}"><header><b>${E(st)}</b><span>${list.length}</span></header>
+      ${list.map(card).join('') || '<p class="muted boardempty">Пусто</p>'}</section>`;
+  }).join('')}
+    <section class="boardcol lost" aria-label="Отказ и пропало"><header><b>Отказ · пропало</b><span>${lost.length}</span></header>
+      ${lost.map(card).join('') || '<p class="muted boardempty">Пусто</p>'}</section></div>`;
+}
+
+async function moveLead(id, step) {
+  const l = db.leads.find(x => x.id === id);
+  const to = l && FUNNEL[FUNNEL.indexOf(l.status) + step];
+  if (!to) return;
+  try {
+    const saved = await api.update('leads', { ...l, status: to, reached: reachedOf(to, l.reached) });
+    upsertLocal('leads', saved);
+    noteLocal('update', 'leads', { ...saved, title: saved.name });
+    render();
+    document.querySelector(`article[data-l="${CSS.escape(id)}"]`)?.focus();
+  } catch (e) {
+    handleError(e);
+  }
+}
+
+// ------------------------------------------------------------ лид-магниты
+//
+// Лид-магнит — польза бесплатно в обмен на контакт. У каждого записано,
+// кому он, что обещает, что просим взамен и какой платный шаг идёт следом:
+// магнит без следующего шага собирает почты, а не продажи.
+const MAGNET_STATUS = ['Работает', 'Готовим', 'Идея', 'Выключен'];
+const MAGNET_FORMATS = ['Разбор', 'Видеоразбор', 'Калькулятор', 'Шаблон', 'Подборка', 'Гайд', 'Созвон', 'Пробный доступ', 'Другое'];
+
+function magnetStats(m) {
+  const list = db.leads.filter(l => l.magnet_id === m.id);
+  const deals = list.filter(l => l.status === 'Сделка');
+  const closed = list.filter(l => ['Сделка', ...LOST].includes(l.status));
+  return { leads: list.length, deals: deals.length, amount: sumOf(deals, 'amount'),
+    rate: closed.length ? Math.round(100 * deals.length / closed.length) : null };
+}
+
+function renderMagnets() {
+  const head = heading('Лид-магниты', 'Что даём бесплатно в обмен на контакт — и какой платный шаг идёт следом. Заявка привязывается к магниту, который её принёс.',
+    `<button class="primary" data-action="newmagnet">+ Лид-магнит</button>`);
+  if (!db.lead_magnets.length) {
+    return head + `<div class="card empty"><h2>Лид-магнитов нет</h2><p>Начните с одного: бесплатный разбор, калькулятор цены или шаблон.
+      Главное — чтобы после него был понятный платный шаг.</p></div>`;
+  }
+  const working = db.lead_magnets.filter(m => m.status === 'Работает');
+  const fromMagnets = db.leads.filter(l => l.magnet_id);
+  const metrics = `<div class="grid metrics">${[
+    ['Работают', working.length, `из ${db.lead_magnets.length} придуманных`],
+    ['Заявок с магнитов', fromMagnets.length, db.leads.length ? `${Math.round(100 * fromMagnets.length / db.leads.length)}% всех заявок` : 'заявок пока нет'],
+    ['Сделок с магнитов', fromMagnets.filter(l => l.status === 'Сделка').length, 'из привязанных заявок'],
+    ['Лучший', (() => { const best = db.lead_magnets.map(m => [m, magnetStats(m)]).filter(([, s]) => s.deals)
+        .sort((a, b) => b[1].deals - a[1].deals)[0]; return best ? E(best[0].name) : '—'; })(), 'по числу сделок']
+  ].map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value${String(b).length > 12 ? ' small' : ''}">${b}</div><small>${c}</small></div>`).join('')}</div>`;
+
+  const card = m => {
+    const st = magnetStats(m);
+    return `<article class="card click magnet" tabindex="0" role="button" data-mg="${E(m.id)}" data-dir="${E(m.direction)}">
+      <div class="campaignhead"><span class="eyebrow">${E(m.direction)} · ${E(m.format)}</span>${tag(m.status)}</div>
+      <h2>${E(m.name)}</h2>
+      ${m.promise ? `<p class="magnetpromise">${E(m.promise)}</p>` : ''}
+      <dl class="magnetfacts">
+        ${m.audience ? `<div><dt>Кому</dt><dd>${E(m.audience)}</dd></div>` : ''}
+        ${m.exchange ? `<div><dt>Взамен</dt><dd>${E(m.exchange)}</dd></div>` : ''}
+        <div><dt>Дальше</dt><dd class="${m.next_step ? '' : 'minus'}">${m.next_step ? E(m.next_step) : 'Платный шаг не придуман — магнит соберёт контакты, но не продажи'}</dd></div>
+      </dl>
+      <div class="campaignnums">
+        <span><b>${st.leads}</b><small>заявок</small></span>
+        <span><b>${st.deals}</b><small>сделок</small></span>
+        <span><b>${st.rate === null ? '—' : st.rate + '%'}</b><small>в сделку</small></span>
+      </div>
+    </article>`;
+  };
+  return head + metrics + MAGNET_STATUS.map(stt => {
+    const list = db.lead_magnets.filter(m => m.status === stt);
+    return list.length ? `<div class="head"><h2>${E(stt)}</h2><small class="muted">${list.length}</small></div>
+      <div class="grid three">${list.map(card).join('')}</div>` : '';
+  }).join('')
+    + `<div class="notice">Чтобы заявки с сайта сами отмечали магнит, у формы магнита на сайте должна быть своя метка
+      (например utm_content с названием магнита) — это настраивается на сайте. Пока — выбирайте магнит в карточке заявки.</div>`;
+}
+
+function editMagnet(id) {
+  const exists = db.lead_magnets.some(m => m.id === id);
+  const m = db.lead_magnets.find(x => x.id === id) || {
+    id: uid(), name: '', direction: 'Студия', format: 'Разбор', status: 'Идея', audience: '', promise: '',
+    exchange: '', next_step: '', channels: '', note: ''
+  };
+  const st = exists ? magnetStats(m) : null;
+  modal(`<h2>Лид-магнит</h2><form id="mgf">
+    <label>Название</label><input name="name" required maxlength="120" value="${E(m.name)}" placeholder="Разбор визуала за 15 минут">
+    <div class="formgrid">
+      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, m.direction)}</select></div>
+      <div><label>Формат</label><select name="format">${opts(MAGNET_FORMATS.includes(m.format) ? MAGNET_FORMATS : [...MAGNET_FORMATS, m.format], m.format)}</select></div>
+      <div><label>Статус</label><select name="status">${opts(MAGNET_STATUS, m.status)}</select></div>
+      <div><label>Где раздаём</label><input name="channels" maxlength="300" value="${E(m.channels)}" placeholder="Сайт, Telegram"></div>
+    </div>
+    <label>Кому он нужен</label><input name="audience" maxlength="300" value="${E(m.audience)}">
+    <label>Что человек получает — одной фразой</label><textarea name="promise" maxlength="500" style="min-height:70px">${E(m.promise)}</textarea>
+    <label>Что просим взамен</label><input name="exchange" maxlength="200" value="${E(m.exchange)}" placeholder="Телефон или Telegram">
+    <label>Платный шаг после магнита</label><input name="next_step" maxlength="300" value="${E(m.next_step)}" placeholder="Созвон и смета на съёмку">
+    <label>Заметка</label><textarea name="note" maxlength="2000" style="min-height:90px">${E(m.note)}</textarea>
+    ${st ? `<p class="muted">Принёс заявок: ${st.leads}, сделок: ${st.deals}${st.amount ? ` на ${num(st.amount)} ₽` : ''} · последняя правка: ${E(memberName(m._by))}, ${ago(m._at)}</p>` : ''}
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${exists ? `<button type="button" class="danger" data-action="delmagnet" data-id="${E(m.id)}">Удалить</button>` : ''}</div></form>`);
+  submitForm($('#mgf'), 'lead_magnets', m, exists, 'Лид-магнит сохранён');
+}
+
+function delMagnet(id) {
+  const m = db.lead_magnets.find(x => x.id === id);
+  if (!m) return;
+  const n = db.leads.filter(l => l.magnet_id === id).length;
+  askDelete('Удалить лид-магнит?', `«${E(m.name)}» исчезнет.${n ? ` ${n} заявок останутся, но без привязки к нему.` : ''}`, async () => {
+    await api.remove('lead_magnets', id);
+    db.lead_magnets = db.lead_magnets.filter(x => x.id !== id);
+    db.leads.forEach(l => { if (l.magnet_id === id) l.magnet_id = null; });
+    noteLocal('delete', 'lead_magnets', { ...m, title: m.name });
+  });
+}
+
+// ---------------------------------------------------------- поиск клиентов
+//
+// Компании, которым мы пишем сами. Путь: нашли → изучили → написали →
+// ответили → заявка. «Не интересно» — тоже ответ, поэтому такая компания
+// считается дошедшей до шага «Ответили» и потерянной на нём.
+const PROSPECT_STATUS = ['Найден', 'Изучили', 'Написали', 'Ответили', 'Заявка', 'Не интересно'];
+const OUTREACH = ['Найден', 'Изучили', 'Написали', 'Ответили', 'Заявка'];
+const outreachStep = p => p.status === 'Не интересно' ? 3 : OUTREACH.indexOf(p.status);
+let prospectFilter = { status: 'Все', q: '' };
+let finder = { query: '', city: 'Пермь', busy: false, error: '', orgs: [], url: '', siteBusy: false, siteError: '', site: null };
+
+const sameOrg = o => db.prospects.find(p => (o.external_id && p.external_id === o.external_id)
+  || (normText(p.name) === normText(o.name) && normText(p.address) === normText(o.address)));
+
+function renderProspects() {
+  const head = heading('Поиск клиентов', 'Компании, которым пишем сами: нашли → изучили → написали → ответили → заявка. Парсер находит организации и собирает контакты с их сайтов.',
+    `<button class="primary" data-action="newprospect">+ Компания</button>`);
+
+  const orgRows = finder.orgs.map((o, i) => {
+    const have = sameOrg(o);
+    return `<li class="orgrow"><div><b>${E(o.name)}</b>
+        <small class="muted">${E([o.category, o.address].filter(Boolean).join(' · '))}</small>
+        <small>${E([o.phone, o.website].filter(Boolean).join(' · ') || 'контактов в карточке нет')}</small></div>
+      ${have ? '<span class="tag">Уже в списке</span>' : `<button class="chip" data-action="orgadd" data-id="${i}">Добавить</button>`}</li>`;
+  }).join('');
+  const fresh = finder.orgs.filter(o => !sameOrg(o)).length;
+  const c = finder.site;
+  const tools = `<div class="grid finder">
+    <form class="card" id="orgf"><h2>Найти организации</h2>
+      <p class="muted">Поиск по Яндекс.Картам: вид бизнеса и город. Нужен ключ «API Поиска по организациям».</p>
+      <div class="formgrid"><div><label for="orgq">Кого ищем</label><input class="input" id="orgq" maxlength="100" value="${E(finder.query)}" placeholder="кофейня, автосалон, клиника"></div>
+        <div><label for="orgcity">Город</label><input class="input" id="orgcity" maxlength="60" value="${E(finder.city)}"></div></div>
+      <div class="formactions"><button class="primary" ${finder.busy ? 'disabled' : ''}>${finder.busy ? 'Ищу…' : 'Искать'}</button>
+        ${fresh > 1 ? `<button type="button" data-action="orgaddall">Добавить все новые (${fresh})</button>` : ''}</div>
+      ${finder.error ? `<div class="notice error">${E(finder.error)}</div>` : ''}
+      ${orgRows ? `<ul class="orglist">${orgRows}</ul>` : ''}
+    </form>
+    <form class="card" id="sitef"><h2>Контакты с сайта</h2>
+      <p class="muted">Открывает сайт компании и страницу «Контакты»: почта, телефоны, соцсети. Ключи не нужны.</p>
+      <label for="siteurl">Адрес сайта</label><input class="input" id="siteurl" maxlength="300" value="${E(finder.url)}" placeholder="zerno-perm.ru">
+      <div class="formactions"><button class="primary" ${finder.siteBusy ? 'disabled' : ''}>${finder.siteBusy ? 'Читаю сайт…' : 'Собрать контакты'}</button></div>
+      ${finder.siteError ? `<div class="notice error">${E(finder.siteError)}</div>` : ''}
+      ${c ? `<div class="sitefound"><b>${E(c.title || finder.url)}</b>${c.description ? `<small class="muted">${E(c.description)}</small>` : ''}
+        <dl class="netfacts">
+          <div><dt>Почта</dt><dd>${c.emails.map(E).join('<br>') || '—'}</dd></div>
+          <div><dt>Телефоны</dt><dd>${c.phones.map(E).join('<br>') || '—'}</dd></div>
+          <div><dt>Соцсети</dt><dd>${c.socials.map(s => `<a href="${E(s)}" target="_blank" rel="noopener noreferrer">${E(s.replace(/^https:\/\/(www\.)?/, ''))}</a>`).join('<br>') || '—'}</dd></div>
+        </dl>
+        <div class="formactions"><button type="button" class="primary" data-action="sitecreate">Создать карточку компании</button></div></div>` : ''}
+    </form></div>`;
+
+  const steps = OUTREACH.map((name, k) => ({
+    name, n: db.prospects.filter(p => outreachStep(p) >= k).length,
+    lost: k === 3 ? db.prospects.filter(p => p.status === 'Не интересно').length : 0
+  }));
+  const funnel = db.prospects.length ? `<div class="card funnelcard"><h2>Путь до заявки</h2>${funnelChart(steps, 'Путь компаний до заявки')}</div>` : '';
+
+  const q = prospectFilter.q.toLowerCase();
+  const rows = db.prospects
+    .filter(p => prospectFilter.status === 'Все' || p.status === prospectFilter.status)
+    .filter(p => !q || `${p.name} ${p.category} ${p.city} ${p.note}`.toLowerCase().includes(q))
+    .sort((a, b) => String(b._at || '').localeCompare(String(a._at || '')));
+  const counts = PROSPECT_STATUS.map(s => [s, db.prospects.filter(p => p.status === s).length]).filter(([, n]) => n);
+  const list = db.prospects.length ? `<div class="toolbar leadbar">
+      <input class="input" id="prq" placeholder="Название, вид бизнеса, город…" value="${E(prospectFilter.q)}" aria-label="Поиск по компаниям">
+      <div class="filters">
+        <button class="chip${prospectFilter.status === 'Все' ? ' on' : ''}" data-action="prstatus" data-id="Все" aria-pressed="${prospectFilter.status === 'Все'}">Все <b>${db.prospects.length}</b></button>
+        ${counts.map(([s, n]) => `<button class="chip${prospectFilter.status === s ? ' on' : ''}" data-action="prstatus" data-id="${E(s)}"
+          aria-pressed="${prospectFilter.status === s}">${E(s)} <b>${n}</b></button>`).join('')}
+      </div></div>
+    <div class="card tablewrap"><table class="table">
+      <thead><tr><th>Компания</th><th>Город</th><th>Контакты</th><th>Статус</th><th>Обновлено</th></tr></thead>
+      <tbody>${rows.map(p => `<tr class="clickrow" tabindex="0" role="button" data-pr="${E(p.id)}">
+        <td><b>${E(p.name)}</b>${p.category ? `<br><small class="muted">${E(p.category)}</small>` : ''}</td>
+        <td>${E(p.city)}</td>
+        <td class="contacticons">${[[p.phone, 'phone', 'телефон'], [p.email, 'mail', 'почта'], [p.website, 'website', 'сайт'], [p.socials, 'social', 'соцсети']]
+          .map(([v, ic, t]) => v ? `<span title="${t}" aria-label="${t}">${icon(ic, 15)}</span>` : '').join('') || '<small class="muted">нет</small>'}</td>
+        <td>${tag(p.status)}</td><td><small>${ago(p._at)}</small></td></tr>`).join('')}</tbody></table></div>
+    ${rows.length ? '' : '<div class="card empty">Под отбор ничего не подошло.</div>'}`
+    : `<div class="card empty"><h2>Список пуст</h2><p>Найдите организации по виду бизнеса и городу или добавьте компанию вручную.
+      Лучше всего работают те, кому нужен визуал прямо сейчас: открылись недавно, запускают новый продукт, выходят на маркетплейсы.</p></div>`;
+
+  return head + tools + funnel + `<div class="head"><h2>Компании</h2></div>` + list
+    + `<div class="notice">Собираем только контакты организаций с их публичных страниц. Пишем лично и по делу —
+      массовые рассылки без согласия запрещены законом о рекламе, а шаблонное письмо всё равно не читают.</div>`;
+}
+
+async function orgSearch() {
+  finder = { ...finder, query: $('#orgq').value.trim(), city: $('#orgcity').value.trim(), busy: true, error: '', orgs: [] };
+  render();
+  try {
+    const res = await api.prospect({ mode: 'search', query: finder.query, city: finder.city });
+    finder = { ...finder, busy: false, orgs: res.orgs || [] };
+    if (!finder.orgs.length) finder.error = 'Ничего не нашлось. Попробуйте другой вид бизнеса или город.';
+  } catch (e) {
+    finder = { ...finder, busy: false, error: e.message || 'Поиск не удался' };
+  }
+  render();
+}
+
+async function orgAdd(list) {
+  let n = 0;
+  try {
+    for (const o of list) {
+      if (sameOrg(o)) continue;
+      const saved = await api.insert('prospects', {
+        id: uid(), name: o.name.slice(0, 200), city: finder.city.slice(0, 80), category: o.category.slice(0, 120),
+        address: o.address.slice(0, 300), website: o.website.slice(0, 300), phone: o.phone.slice(0, 200), email: '', socials: '',
+        direction: 'Студия', source: 'Яндекс.Карты', status: 'Найден', external_id: o.external_id.slice(0, 80), lead_id: null, note: o.hours ? 'Часы работы: ' + o.hours.slice(0, 200) : ''
+      });
+      upsertLocal('prospects', saved);
+      n++;
+    }
+    toast(n === 1 ? 'Компания добавлена' : `Добавлено компаний: ${n}`);
+  } catch (e) {
+    handleError(e);
+  }
+  render();
+}
+
+async function siteLookup(url) {
+  const res = await api.prospect({ mode: 'site', url });
+  return { url: res.url, contacts: res.contacts };
+}
+
+async function siteSearch() {
+  finder = { ...finder, url: $('#siteurl').value.trim(), siteBusy: true, siteError: '', site: null };
+  render();
+  try {
+    const r = await siteLookup(finder.url);
+    finder = { ...finder, siteBusy: false, url: r.url, site: r.contacts };
+  } catch (e) {
+    finder = { ...finder, siteBusy: false, siteError: 'Сайт не прочитан: ' + (e.message || 'ошибка') };
+  }
+  render();
+}
+
+function editProspect(id, preset = {}) {
+  const exists = db.prospects.some(p => p.id === id);
+  const p = db.prospects.find(x => x.id === id) || {
+    id: uid(), name: '', city: finder.city || '', category: '', address: '', website: '', phone: '', email: '', socials: '',
+    direction: 'Студия', source: 'Вручную', status: 'Найден', external_id: '', lead_id: null, note: '', ...preset
+  };
+  const lead = p.lead_id && db.leads.find(l => l.id === p.lead_id);
+  modal(`<h2>Компания</h2><form id="prf">
+    <label>Название</label><input name="name" required maxlength="200" value="${E(p.name)}">
+    <div class="formgrid">
+      <div><label>Вид бизнеса</label><input name="category" maxlength="120" value="${E(p.category)}" placeholder="Кофейня"></div>
+      <div><label>Город</label><input name="city" maxlength="80" value="${E(p.city)}"></div>
+      <div><label>Статус</label><select name="status">${opts(PROSPECT_STATUS, p.status)}</select></div>
+      <div><label>Что можем предложить</label><select name="direction">${opts(DIRECTIONS, p.direction)}</select></div>
+    </div>
+    <label>Адрес</label><input name="address" maxlength="300" value="${E(p.address)}">
+    <label>Сайт</label>
+    <div class="inlinerow"><input name="website" maxlength="300" value="${E(p.website)}" placeholder="zerno-perm.ru">
+      <button type="button" data-action="prsite">${icon('search', 15)} Контакты с сайта</button></div>
+    <div class="formgrid">
+      <div><label>Телефон</label><input name="phone" maxlength="200" value="${E(p.phone)}"></div>
+      <div><label>Почта</label><input name="email" maxlength="200" value="${E(p.email)}"></div>
+    </div>
+    <label>Соцсети — по одной в строке</label><textarea name="socials" maxlength="1000" style="min-height:70px">${E(p.socials)}</textarea>
+    <label>Заметка: чем можем помочь, кому писали, что ответили</label><textarea name="note" maxlength="2000" style="min-height:90px">${E(p.note)}</textarea>
+    ${lead ? `<div class="notice">Стала заявкой: <button type="button" class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button></div>` : ''}
+    ${exists ? `<p class="muted">Источник: ${E(p.source)} · последняя правка: ${E(memberName(p._by))}, ${ago(p._at)}</p>` : ''}
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${exists && !lead ? `<button type="button" data-action="prlead" data-id="${E(p.id)}">${icon('leads', 15)} Стала заявкой</button>` : ''}
+      ${exists ? `<button type="button" class="danger" data-action="delprospect" data-id="${E(p.id)}">Удалить</button>` : ''}</div></form>`);
+  submitForm($('#prf'), 'prospects', p, exists, 'Компания сохранена');
+}
+
+// Найденное на сайте дописывается в пустые поля и к соцсетям — то, что
+// человек уже вписал руками, не затирается.
+async function prospectFromSite(btn) {
+  const f = $('#prf');
+  const url = f.elements.website.value.trim();
+  if (!url) { toast('Сначала впишите адрес сайта'); return; }
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  btn.textContent = 'Читаю сайт…';
+  try {
+    const { url: finalUrl, contacts: c } = await siteLookup(url);
+    const fill = (name, v) => { if (v && !f.elements[name].value.trim()) f.elements[name].value = v; };
+    fill('name', c.title);
+    fill('phone', c.phones.join(', '));
+    fill('email', c.emails.join(', '));
+    f.elements.website.value = finalUrl;
+    const had = f.elements.socials.value.split('\n').map(s => s.trim()).filter(Boolean);
+    f.elements.socials.value = [...new Set([...had, ...c.socials])].join('\n');
+    toast(`С сайта: почта ${c.emails.length}, телефоны ${c.phones.length}, соцсети ${c.socials.length}`);
+  } catch (e) {
+    toast('Сайт не прочитан: ' + (e.message || 'ошибка'), 8000);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+}
+
+// Ответили и хотят работать — компания становится обычной заявкой с
+// источником «Поиск клиентов», и дальше её видно в воронке продаж.
+async function prospectToLead(id) {
+  const p = db.prospects.find(x => x.id === id);
+  if (!p) return;
+  try {
+    const lead = await api.insert('leads', {
+      id: uid(), came_on: today(), name: p.name, source: 'Поиск клиентов', direction: p.direction,
+      request: p.category ? `${p.category}: из поиска клиентов` : 'Из поиска клиентов', amount: 0, status: 'Новое',
+      note: [p.phone, p.email, p.website].filter(Boolean).join(' · ').slice(0, 1000), campaign_id: null, reached: 0, magnet_id: null
+    });
+    upsertLocal('leads', lead);
+    noteLocal('insert', 'leads', { ...lead, title: lead.name });
+    const saved = await api.update('prospects', { ...p, status: 'Заявка', lead_id: lead.id });
+    upsertLocal('prospects', saved);
+    $('#modal').close();
+    render();
+    toast('Заявка заведена — она уже в воронке продаж');
+  } catch (e) {
+    handleError(e);
+  }
+}
+
+function delProspect(id) {
+  const p = db.prospects.find(x => x.id === id);
+  if (!p) return;
+  askDelete('Удалить компанию?', `«${E(p.name)}» исчезнет из поиска клиентов. Заявка, если была, останется.`, async () => {
+    await api.remove('prospects', id);
+    db.prospects = db.prospects.filter(x => x.id !== id);
+    noteLocal('delete', 'prospects', { ...p, title: p.name });
+  });
+}
+
+// ------------------------------------------------------------------ метрики
+//
+// Восемь цифр, по которым видно, работает ли маркетинг. У каждой — как
+// считается, и цель, если её задали. Реклама и сделки считаются по
+// кампаниям, шедшим в периоде: расход в кампании не разбит по дням.
+const KPI = [
+  { id: 'leads', name: 'Заявки', unit: '', better: 'more', how: 'пришли за период' },
+  { id: 'conversion', name: 'Конверсия в сделку', unit: '%', better: 'more', how: 'сделки ÷ закрытые заявки' },
+  { id: 'avg_check', name: 'Средний чек', unit: ' ₽', better: 'more', how: 'сумма сделок ÷ число сделок' },
+  { id: 'reach', name: 'Охват публикаций', unit: '', better: 'more', how: 'просмотры вышедших за период постов' },
+  { id: 'cpl', name: 'Цена заявки', unit: ' ₽', better: 'less', how: 'расход кампаний ÷ их заявки' },
+  { id: 'cac', name: 'Цена сделки', unit: ' ₽', better: 'less', how: 'расход кампаний ÷ их сделки' },
+  { id: 'romi', name: 'ROMI', unit: '%', better: 'more', how: '(сделки из рекламы − расход) ÷ расход' },
+  { id: 'reply_rate', name: 'Ответы на письма', unit: '%', better: 'more', how: 'ответили ÷ кому написали, за всё время' }
+];
+let metricPeriod = '30';
+
+function kpiValues(period) {
+  const from = periodFrom(period);
+  const leads = db.leads.filter(l => l.came_on >= from);
+  const deals = leads.filter(l => l.status === 'Сделка');
+  const closed = leads.filter(l => ['Сделка', ...LOST].includes(l.status));
+  const camps = db.campaigns.filter(c => String(c.starts_on) >= from || !c.ends_on || String(c.ends_on) >= from);
+  const spent = sumOf(camps, 'spent');
+  const cLeads = leads.filter(l => l.campaign_id && camps.some(c => c.id === l.campaign_id));
+  const cDeals = cLeads.filter(l => l.status === 'Сделка');
+  const posts = db.content.filter(p => p.status === 'Опубликовано' && (period === 'all' || (p.date && p.date >= from)));
+  const contacted = db.prospects.filter(p => ['Написали', 'Ответили', 'Заявка', 'Не интересно'].includes(p.status));
+  return {
+    leads: leads.length,
+    conversion: closed.length ? Math.round(100 * deals.length / closed.length) : null,
+    avg_check: deals.length ? Math.round(sumOf(deals, 'amount') / deals.length) : null,
+    reach: posts.length ? posts.reduce((n, p) => n + (lastViews(p.id) || 0), 0) : null,
+    cpl: cLeads.length && spent ? Math.round(spent / cLeads.length) : null,
+    cac: cDeals.length && spent ? Math.round(spent / cDeals.length) : null,
+    romi: spent && cDeals.length ? Math.round(100 * (sumOf(cDeals, 'amount') - spent) / spent) : null,
+    reply_rate: contacted.length ? Math.round(100 * contacted.filter(p => p.status !== 'Написали').length / contacted.length) : null
+  };
+}
+
+function kpiTile(k, v) {
+  const t = db.kpi_targets.find(x => x.id === k.id);
+  const target = t ? Number(t.target) : null;
+  let bar = '', state = '';
+  if (target !== null && v !== null) {
+    const pct = k.better === 'more' ? (target ? v / target : 1) : (v ? target / v : 1);
+    const ok = pct >= 1;
+    state = ok ? ' ok' : ' behind';
+    bar = `<div class="kpibar${state}" role="img" aria-label="${ok ? 'Цель выполнена' : 'До цели ' + Math.round(100 * Math.max(0, pct)) + '%'}">
+      <i style="width:${Math.min(100, Math.round(100 * Math.max(0, pct)))}%"></i></div>`;
+  }
+  const fmt = x => x === null ? '—' : num(x) + k.unit;
+  return `<div class="card metric kpi${state}">
+    <div class="eyebrow">${E(k.name)}</div>
+    <div class="value">${fmt(v)}</div>
+    ${bar}
+    <small>${target !== null ? `цель: ${k.better === 'less' ? 'не больше' : 'не меньше'} ${fmt(target)}` : E(k.how)}</small>
+    <button class="chip kpiset" data-action="kpitarget" data-id="${k.id}" aria-label="Цель: ${E(k.name)}">${target !== null ? 'Изменить цель' : 'Задать цель'}</button>
+  </div>`;
+}
+
+function renderMetricsTop() {
+  const v = kpiValues(metricPeriod);
+  const f = leadFunnel(metricPeriod);
+  return `<div class="head"><h2>Главные цифры</h2>${periodChips('metricperiod', metricPeriod)}</div>
+    <div class="grid metrics kpigrid">${KPI.map(k => kpiTile(k, v[k.id])).join('')}</div>
+    ${f.list.length ? `<div class="card funnelcard"><h2>Воронка продаж за период</h2>${funnelChart(f.steps, 'Воронка продаж за период')}</div>` : ''}
+    <div class="head"><h2>Публикации</h2><button class="primary" data-action="newmetric">+ Замер</button></div>`;
+}
+
+function editTarget(id) {
+  const k = KPI.find(x => x.id === id);
+  const t = db.kpi_targets.find(x => x.id === id);
+  modal(`<h2>Цель: ${E(k.name)}</h2><form id="kpif">
+    <p class="muted">Считается так: ${E(k.how)}. ${k.better === 'less' ? 'Чем меньше, тем лучше — цель это потолок.' : 'Цель — сколько хотим набрать за период.'}</p>
+    <label for="kpival">Цель${k.unit ? ', ' + k.unit.trim() : ''}</label>
+    <input id="kpival" type="number" min="0" step="1" required value="${t ? E(String(t.target)) : ''}">
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${t ? `<button type="button" class="danger" id="kpidel">Убрать цель</button>` : ''}</div></form>`);
+  $('#kpif').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const row = { ...(t || { id }), target: Number($('#kpival').value) };
+      const saved = t ? await api.update('kpi_targets', row) : await api.insert('kpi_targets', row);
+      upsertLocal('kpi_targets', saved);
+      $('#modal').close();
+      render();
+      toast('Цель сохранена');
+    } catch (err) {
+      handleError(err);
+    }
+  };
+  if (t) $('#kpidel').onclick = async () => {
+    try {
+      await api.remove('kpi_targets', id);
+      db.kpi_targets = db.kpi_targets.filter(x => x.id !== id);
+      $('#modal').close();
+      render();
+    } catch (err) {
+      handleError(err);
+    }
+  };
+}
+
 function editCampaign(id) {
   const exists = db.campaigns.some(c => c.id === id);
   const c = db.campaigns.find(x => x.id === id) || {
@@ -1999,6 +2532,12 @@ function businessGaps() {
   if (stale.length) {
     gaps.push(['ads', `Срок вышел, а кампания «Идёт»: ${stale.map(c => c.name).join(', ')}`,
       'Обновите статус — иначе в расходах и на обзоре висит то, что уже не крутится.']);
+  }
+
+  const silent = db.prospects.filter(p => p.status === 'Написали' && p._at && Date.now() - Date.parse(p._at) > 5 * 864e5);
+  if (silent.length) {
+    gaps.push(['prospects', `Пора напомнить: ${silent.length} ${silent.length === 1 ? 'компания молчит' : 'компаний молчат'} больше 5 дней`,
+      `${silent.slice(0, 3).map(p => p.name).join(', ')}${silent.length > 3 ? '…' : ''}. Одно вежливое напоминание часто приносит ответ.`]);
   }
 
   if (!db.leads.length) {
@@ -2638,6 +3177,8 @@ function render() {
 
   if (page === 'ads') s = renderAds();
   if (page === 'leads') s = renderLeads();
+  if (page === 'prospects') s = renderProspects();
+  if (page === 'magnets') s = renderMagnets();
   if (page === 'decisions') s = renderDecisions();
   if (page === 'chain') s = renderChain();
   if (page === 'brand') { loadBrandFonts(); setTimeout(loadShots, 0); }
@@ -2758,8 +3299,8 @@ function render() {
   }
 
   if (page === 'analytics') {
-    s = heading('Аналитика', 'Ручные замеры реальных результатов. Новая строка — отдельный снимок, а не добавка к предыдущему.',
-      `<button class="primary" data-action="newmetric">+ Результат</button>`)
+    s = heading('Метрики', 'Главные цифры маркетинга за период и цели по ним. Ниже — замеры публикаций: каждая строка — отдельный снимок.')
+      + renderMetricsTop()
       + (() => {
         const c = chartData();
         if (!db.metrics.length) return '';
@@ -2879,6 +3420,19 @@ function render() {
     if (again) { again.focus(); again.setSelectionRange(pos, pos); }
   };
 
+  const pq = $('#prq');
+  if (pq) pq.oninput = e => {
+    const pos = e.target.selectionStart;
+    prospectFilter.q = e.target.value;
+    render();
+    const again = $('#prq');
+    if (again) { again.focus(); again.setSelectionRange(pos, pos); }
+  };
+  const orgf = $('#orgf');
+  if (orgf) orgf.onsubmit = e => { e.preventDefault(); orgSearch(); };
+  const sitef = $('#sitef');
+  if (sitef) sitef.onsubmit = e => { e.preventDefault(); siteSearch(); };
+
   const lq = $('#leadq');
   if (lq) lq.oninput = e => {
     const pos = e.target.selectionStart;
@@ -2937,7 +3491,7 @@ function submitForm(form, table, original, exists, okText) {
         ? (el.type === 'number' ? 0 : null)
         : (el.type === 'number' ? Number(el.value) : el.value);
     }
-    for (const k of Object.keys(o)) if (k.endsWith('_id') && o[k] === '') o[k] = null;
+    for (const k of ['campaign_id', 'lead_id', 'magnet_id']) if (o[k] === '') o[k] = null;
     try {
       const saved = exists ? await api.update(table, o) : await api.insert(table, o);
       upsertLocal(table, saved);
@@ -3162,11 +3716,11 @@ function delDecision(id) {
 // пришло. Поэтому здесь важнее всего поле «откуда узнали», а не сделка:
 // сделки ведутся в CRM, тут считаются источники.
 
-const LEAD_STATUS = ['Новое', 'В работе', 'Сделка', 'Отказ', 'Пропало'];
+const LEAD_STATUS = ['Новое', 'В работе', 'КП отправлено', 'Сделка', 'Отказ', 'Пропало'];
 // Платные каналы — те же названия, что в «Рекламе»: по ним считается цена
 // заявки. Telegram без приписки — свой канал, «Telegram Ads» — реклама.
 const LEAD_SOURCES = ['Сайт', 'Рекомендация', 'Повторный клиент', 'ВКонтакте', 'Яндекс Директ',
-  'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Telegram', 'Behance', 'Личный контакт',
+  'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Telegram', 'Behance', 'Поиск клиентов', 'Личный контакт',
   'Другое', 'Не знаем'];
 
 function leadStats() {
@@ -3184,7 +3738,7 @@ function leadStats() {
   return {
     bySource, won, closed,
     recent: db.leads.filter(l => l.came_on >= from).length,
-    inWork: db.leads.filter(l => ['Новое', 'В работе'].includes(l.status)).length,
+    inWork: db.leads.filter(l => ['Новое', 'В работе', 'КП отправлено'].includes(l.status)).length,
     amount: won.reduce((n, l) => n + Number(l.amount || 0), 0),
     rate: closed.length ? Math.round(100 * won.length / closed.length) : null
   };
@@ -3236,25 +3790,27 @@ function renderLeads() {
         aria-pressed="${leadFilter.status === s}">${E(s)} <b>${n}</b></button>`).join('')}
     </div></div>`;
 
+  const views = `<div class="seg" role="group" aria-label="Вид">${[['table', 'Таблица'], ['board', 'Доска']].map(([id, t]) =>
+    `<button class="chip${leadView === id ? ' on' : ''}" data-action="leadview" data-id="${id}" aria-pressed="${leadView === id}">${t}</button>`).join('')}</div>`;
   const list = filters + `<div class="head"><h2>Все обращения</h2>
-      <small class="muted">${rows.length === db.leads.length ? 'свежие сверху' : `показано ${rows.length} из ${db.leads.length}`}</small></div>
-    <div class="card tablewrap"><table class="table">
+      <small class="muted">${rows.length === db.leads.length ? 'свежие сверху' : `показано ${rows.length} из ${db.leads.length}`}</small>${views}</div>`
+    + (leadView === 'board' ? leadBoard(rows) : `<div class="card tablewrap"><table class="table">
       <thead><tr><th>Когда</th><th>Кто</th><th>Откуда</th><th>Направление</th><th>Чего хотел</th><th>Сумма</th><th>Статус</th></tr></thead>
       <tbody>${rows.map(l => `<tr class="clickrow" tabindex="0" role="button" data-l="${E(l.id)}">
         <td class="date">${E(l.came_on)}</td><td><b>${E(l.name)}</b></td><td>${E(l.source)}</td>
         <td>${tag(l.direction)}</td><td>${E((l.request || '').slice(0, 60))}${(l.request || '').length > 60 ? '…' : ''}</td>
         <td>${l.amount ? num(l.amount) : '—'}</td><td>${tag(l.status)}</td></tr>`).join('')}
-      </tbody></table></div>`
+      </tbody></table></div>`)
     + (rows.length ? '' : '<div class="card empty">Под отбор ничего не подошло. Снимите фильтр или измените запрос.</div>');
 
-  return head + metrics + sources + list;
+  return head + metrics + leadFunnelCard() + sources + list;
 }
 
 function editLead(id) {
   const exists = db.leads.some(l => l.id === id);
   const l = db.leads.find(l => l.id === id) || {
     id: uid(), came_on: today(), name: '', source: 'Не знаем', direction: 'Студия',
-    request: '', amount: 0, status: 'Новое', note: ''
+    request: '', amount: 0, status: 'Новое', note: '', campaign_id: null, reached: 0, magnet_id: null
   };
   modal(`<h2>Обращение</h2><form id="lf">
     <label>Кто обратился</label>
@@ -3270,15 +3826,24 @@ function editLead(id) {
       ${[...db.campaigns].sort((a, b) => (a.status === 'Идёт' ? 0 : 1) - (b.status === 'Идёт' ? 0 : 1)).map(c =>
         `<option value="${E(c.id)}" ${l.campaign_id === c.id ? 'selected' : ''}>${E(c.name)} · ${E(c.channel)}</option>`).join('')}
     </select>
+    <label>Лид-магнит — если пришёл за ним</label>
+    <select name="magnet_id"><option value="">Без лид-магнита</option>
+      ${db.lead_magnets.filter(m => m.status !== 'Идея' || l.magnet_id === m.id).map(m =>
+        `<option value="${E(m.id)}" ${l.magnet_id === m.id ? 'selected' : ''}>${E(m.name)}</option>`).join('')}
+    </select>
     <label>Чего хотел</label>
     <input name="request" maxlength="1000" value="${E(l.request)}" placeholder="Ролик для маркетплейса, смета на съёмку">
     <label>Сумма, ₽ — если дошло до денег</label>
     <input type="number" name="amount" min="0" step="1" value="${E(String(l.amount || 0))}">
     <label>Заметка</label><textarea name="note" maxlength="1000">${E(l.note)}</textarea>
+    <input type="number" name="reached" value="${Number(l.reached) || 0}" hidden>
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(l._by))}, ${ago(l._at)}</p>` : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists ? `<button type="button" class="danger" data-action="dellead" data-id="${E(l.id)}">Удалить</button>` : ''}</div></form>`);
-  submitForm($('#lf'), 'leads', l, exists, 'Обращение записано');
+  // Дальний шаг воронки запоминается: отказ после КП — это потеря на КП.
+  const lf = $('#lf');
+  lf.elements.status.onchange = () => { lf.elements.reached.value = reachedOf(lf.elements.status.value, l.reached); };
+  submitForm(lf, 'leads', l, exists, 'Обращение записано');
 }
 
 function delLead(id) {
@@ -3527,6 +4092,8 @@ function search() {
       ...db.decisions.map(d => ({ ...d, body: d.why || '', kind: 'd', note: 'Решение · ' + d.status })),
       ...db.leads.map(l => ({ ...l, title: l.name, body: l.request || '', kind: 'l', note: 'Заявка · ' + l.source })),
       ...db.campaigns.map(c => ({ ...c, title: c.name, body: `${c.creative} ${c.audience}`, kind: 'cp', note: 'Кампания · ' + c.channel })),
+      ...db.lead_magnets.map(m => ({ ...m, title: m.name, body: `${m.promise} ${m.audience}`, kind: 'mg', note: 'Лид-магнит · ' + m.status })),
+      ...db.prospects.map(p => ({ ...p, title: p.name, body: `${p.category} ${p.city} ${p.note}`, kind: 'pr', note: 'Поиск клиентов · ' + p.status })),
       ...db.brand.map(b => ({ ...b, body: b.data?.body || '', kind: 'brand', note: 'Брендбук · ' + (b.section || 'Прочее') }))
     ].filter(x => (x.title + ' ' + x.body).toLowerCase().includes(q)).slice(0, 25);
     $('#results').innerHTML = all.map(x => `<button class="result" data-result="${x.kind}" data-id="${E(x.id)}">${E(x.title)}
@@ -3699,7 +4266,8 @@ function exportJson() {
     tasks: strip(db.tasks), metrics: strip(db.metrics),
     brand: strip(db.brand), decisions: strip(db.decisions),
     campaigns: strip(db.campaigns), leads: strip(db.leads),
-    files: strip(db.files), publications: strip(db.publications)
+    files: strip(db.files), publications: strip(db.publications),
+    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), kpi_targets: strip(db.kpi_targets)
   }, null, 2), 'adervis-backup-' + new Date().toISOString().slice(0, 10) + '.json');
 }
 
@@ -3796,7 +4364,7 @@ document.addEventListener('click', async e => {
     document.body.classList.remove('menu');
     return;
   }
-  const b = e.target.closest('button,article[data-k],article[data-p],article[data-d],article[data-cp],tr[data-l],g[data-node]');
+  const b = e.target.closest('button,article[data-mg],article[data-k],article[data-p],article[data-d],article[data-cp],article[data-l],tr[data-l],tr[data-pr],g[data-node]');
   if (!b) return;
   if (b.dataset.node) { graphOpen(b.dataset.node); return; }
   if (b.dataset.page) { go(b.dataset.page); return; }
@@ -3805,6 +4373,8 @@ document.addEventListener('click', async e => {
   if (b.dataset.d) { editDecision(b.dataset.d); return; }
   if (b.dataset.l) { editLead(b.dataset.l); return; }
   if (b.dataset.cp) { editCampaign(b.dataset.cp); return; }
+  if (b.dataset.pr) { editProspect(b.dataset.pr); return; }
+  if (b.dataset.mg) { editMagnet(b.dataset.mg); return; }
   if (b.dataset.result) {
     $('#modal').close();
     const id = b.dataset.id;
@@ -3815,6 +4385,8 @@ document.addEventListener('click', async e => {
       d: () => { go('decisions'); editDecision(id); },
       l: () => { go('leads'); editLead(id); },
       cp: () => { go('ads'); editCampaign(id); },
+      pr: () => { go('prospects'); editProspect(id); },
+      mg: () => { go('magnets'); editMagnet(id); },
       brand: () => { go('brand'); editBrand(id); }
     };
     (open[b.dataset.result] || open.p)();
@@ -3827,6 +4399,25 @@ document.addEventListener('click', async e => {
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
     case 'newcampaign': editCampaign(); break;
+    case 'leadperiod': leadPeriod = b.dataset.id; render(); break;
+    case 'leadview': leadView = b.dataset.id; render(); break;
+    case 'movelead': moveLead(b.dataset.id, Number(b.dataset.step)); break;
+    case 'metricperiod': metricPeriod = b.dataset.id; render(); break;
+    case 'kpitarget': editTarget(b.dataset.id); break;
+    case 'newprospect': editProspect(); break;
+    case 'newmagnet': editMagnet(); break;
+    case 'delmagnet': delMagnet(b.dataset.id); break;
+    case 'delprospect': delProspect(b.dataset.id); break;
+    case 'prstatus': prospectFilter.status = b.dataset.id; render(); break;
+    case 'orgadd': orgAdd([finder.orgs[Number(b.dataset.id)]]); break;
+    case 'orgaddall': orgAdd(finder.orgs); break;
+    case 'sitecreate': editProspect(undefined, {
+      name: (finder.site.title || '').slice(0, 200), website: finder.url, source: 'Сайт',
+      phone: finder.site.phones.join(', ').slice(0, 200), email: finder.site.emails.join(', ').slice(0, 200),
+      socials: finder.site.socials.join('\n') }); break;
+    case 'prsite': prospectFromSite(b); break;
+    case 'prlead': prospectToLead(b.dataset.id); break;
+    case 'openlead': go('leads'); editLead(b.dataset.id); break;
     case 'contentnet': contentNet = b.dataset.id; render(); break;
     case 'contentview': contentView = b.dataset.id; render(); break;
     case 'movep': moveP(b.dataset.id, Number(b.dataset.step)); break;

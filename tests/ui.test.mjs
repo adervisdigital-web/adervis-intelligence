@@ -44,7 +44,7 @@ const fake = (seedData) => {
     decisions: [],
     leads: [
       { id: 'l1', came_on: '2026-09-10', name: 'Графсил', source: 'Рекомендация', direction: 'Студия',
-        request: 'Брендбук', amount: 90000, status: 'Сделка', note: '', _at: '2026-09-10T10:00:00Z', _by: 'artem@adervis.ru' },
+        request: 'Брендбук', amount: 90000, status: 'Сделка', note: '', reached: 3, _at: '2026-09-10T10:00:00Z', _by: 'artem@adervis.ru' },
       { id: 'l2', came_on: '2026-09-12', name: 'МАМА CAR', source: 'Рекомендация', direction: 'Студия',
         request: 'Ролик', amount: 0, status: 'Отказ', note: 'Дорого', _at: '2026-09-12T10:00:00Z', _by: 'artem@adervis.ru' },
       { id: 'l3', came_on: '2026-09-18', name: 'Студия из Казани', source: '2ГИС', direction: 'CRM',
@@ -96,7 +96,16 @@ const fake = (seedData) => {
     ],
     members: [{ email: 'artem@adervis.ru', name: 'Артём' }, { email: 'alex@adervis.ru', name: 'Александр' }],
     activity: [],
-    accounts: [{ network: 'Telegram', handle: 'Adervis_digital', note: '' }]
+    accounts: [{ network: 'Telegram', handle: 'Adervis_digital', note: '' }],
+    prospects: [],
+    kpi_targets: [],
+    lead_magnets: [
+      { id: 'lm-audit', name: 'Разбор визуала за 15 минут', direction: 'Студия', format: 'Видеоразбор', status: 'Работает',
+        audience: 'Кафе и салоны', promise: 'Три правки визуала за неделю', exchange: 'Ссылка и контакт',
+        next_step: 'Съёмка под найденные проблемы', channels: 'Сайт', note: '', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' },
+      { id: 'lm-idea', name: 'Шаблон сметы', direction: 'CRM', format: 'Шаблон', status: 'Идея',
+        audience: '', promise: 'Таблица сметы', exchange: 'Почта', next_step: '', channels: '', note: '', _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
+    ]
   };
   window.__STORAGE__ = [];
   let session = null;
@@ -201,6 +210,12 @@ const fake = (seedData) => {
       if (window.__FEEDFAIL__) throw new Error(window.__FEEDFAIL__);
       return { ok: true, network: payload.network, posts: clone(window.__FEED__ || []), at: now() };
     },
+    async prospect(payload) {
+      window.__PROSPECT_ASKED__ = payload;
+      if (window.__PROSPECTFAIL__) throw new Error(window.__PROSPECTFAIL__);
+      if (payload.mode === 'search') return { ok: true, orgs: clone(window.__ORGS__ || []) };
+      return { ok: true, url: 'https://zerno-perm.ru/', contacts: clone(window.__SITE__) };
+    },
     async generate(payload) {
       window.__lastAiPayload = payload;
       if (window.__aiFail) throw new Error(window.__aiFail);
@@ -264,7 +279,7 @@ check('с плитки можно уйти в её раздел',
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup', g => g.map(x => x.textContent));
 check('меню разбито на группы', groups.join(',') === 'Маркетинг,Знание компании,Работа,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button')).length === 16,
+check('все разделы остались в меню', (await page.$$('#nav button')).length === 18,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
 check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
@@ -935,6 +950,146 @@ check('вид «Календарь» на месте', (await page.$$('.calendar
 check('вышедшие посты стоят в календаре в свой день',
   (await page.$$eval('.calendar .day.today .event', e => e.map(x => x.textContent))).some(t => t.includes('Кейс Лукойл')));
 await page.click('[data-action=contentview][data-id="board"]');
+
+// --- 5д. воронка продаж
+await nav('leads');
+const funnelNames = await page.$$eval('.funnelcard .fname b', b => b.map(x => x.textContent));
+check('воронка из четырёх шагов до сделки', funnelNames.join(' → ') === 'Новое → В работе → КП отправлено → Сделка', funnelNames.join(' → '));
+const expectFunnel = s => [0, 1, 2, 3].map(k => s.leads.filter(l => k === 0 || Number(l.reached) >= k).length).join(',');
+const fnumsOf = () => page.$$eval('.funnelcard .fnum', b => b.map(x => x.textContent).join(','));
+check('шаги считаются по дальнему этапу заявки', (await fnumsOf()) === expectFunnel(await state()), await fnumsOf());
+await page.click('[data-action=newlead]');
+await page.fill('#lf input[name=name]', 'Воронка: кофейня');
+await page.click('#lf button.primary');
+await page.waitForFunction(() => !document.querySelector('#modal').open);
+const fl = (await state()).leads.find(l => l.name === 'Воронка: кофейня');
+await page.click('[data-action=leadview][data-id=board]');
+check('доска заявок: четыре шага и потери', (await page.$$('.leadboard .boardcol')).length === 5);
+await page.click(`article[data-l="${fl.id}"] [data-action=movelead][data-step="1"]`);
+await page.waitForFunction(id => window.__STATE__.leads.find(l => l.id === id).status === 'В работе', fl.id);
+await page.click(`article[data-l="${fl.id}"] [data-action=movelead][data-step="1"]`);
+await page.waitForFunction(id => window.__STATE__.leads.find(l => l.id === id).status === 'КП отправлено', fl.id);
+check('стрелка запоминает дальний шаг', (await state()).leads.find(l => l.id === fl.id).reached === 2);
+const lostBefore = await page.$$eval('.funnelcard .fstep', s => (s[2].innerText.match(/потеряно: (\d+)/) || [0, 0])[1]);
+await page.click(`article[data-l="${fl.id}"]`);
+await page.selectOption('#lf select[name=status]', 'Отказ');
+await page.click('#lf button.primary');
+await page.waitForFunction(id => window.__STATE__.leads.find(l => l.id === id).status === 'Отказ', fl.id);
+check('отказ не стирает дальний шаг', (await state()).leads.find(l => l.id === fl.id).reached === 2);
+const lostAfter = await page.$$eval('.funnelcard .fstep', s => (s[2].innerText.match(/потеряно: (\d+)/) || [0, 0])[1]);
+check('отказ после КП — потеря на шаге КП', Number(lostAfter) === Number(lostBefore) + 1, `${lostBefore} → ${lostAfter}`);
+check('отказ попал в колонку потерь', await page.$eval(`article[data-l="${fl.id}"]`, a => a.closest('.boardcol').classList.contains('lost')));
+await page.click('[data-action=leadview][data-id=table]');
+await page.screenshot({ path: path.join(OUT, 'intel-funnel.png'), fullPage: true });
+
+// --- 5ж. метрики и цели
+await nav('analytics');
+check('раздел называется «Метрики»', (await page.textContent('#crumb')) === 'Метрики');
+const kpiNames = await page.$$eval('.kpi .eyebrow', e => e.map(x => x.textContent));
+check('восемь главных цифр', kpiNames.length === 8, kpiNames.join(', '));
+await page.click('[data-action=metricperiod][data-id=all]');
+const kpiText = async name => (await page.$$eval('.kpi', k => k.map(x => x.innerText.replace(/\s+/g, ' ')))).find(t => t.toUpperCase().startsWith(name.toUpperCase())) || '';
+const st7 = await state();
+const deals7 = st7.leads.filter(l => l.status === 'Сделка');
+const closed7 = st7.leads.filter(l => ['Сделка', 'Отказ', 'Пропало'].includes(l.status));
+const conv7 = Math.round(100 * deals7.length / closed7.length);
+check('конверсия считается по закрытым заявкам', (await kpiText('Конверсия в сделку')).includes(conv7 + '%'), await kpiText('Конверсия в сделку') + ' / ждали ' + conv7);
+const avg7 = Math.round(deals7.reduce((n, l) => n + Number(l.amount || 0), 0) / deals7.length).toLocaleString('ru');
+check('средний чек по сделкам', (await kpiText('Средний чек')).replace(/\s/g, '').includes(avg7.replace(/\s/g, '')), await kpiText('Средний чек') + ' / ждали ' + avg7);
+await page.click('[data-action=kpitarget][data-id=conversion]');
+await page.fill('#kpival', String(Math.max(1, conv7 - 5)));
+await page.click('#kpif button.primary');
+await page.waitForFunction(() => window.__STATE__.kpi_targets.some(t => t.id === 'conversion'));
+check('цель выполнена — видно без цвета', /цель: не меньше \d+%/.test(await kpiText('Конверсия в сделку'))
+  && await page.$eval('.kpi.ok .kpibar', b => /выполнена/.test(b.getAttribute('aria-label'))));
+await page.click('[data-action=kpitarget][data-id=cpl]');
+await page.fill('#kpival', '100');
+await page.click('#kpif button.primary');
+await page.waitForFunction(() => window.__STATE__.kpi_targets.some(t => t.id === 'cpl'));
+check('для цены заявки цель — потолок', /не больше 100 ₽/.test(await kpiText('Цена заявки')), await kpiText('Цена заявки'));
+await page.screenshot({ path: path.join(OUT, 'intel-metrics.png'), fullPage: true });
+
+// --- 5з. поиск клиентов
+await nav('prospects');
+check('пустой список объясняет, с чего начать', (await page.textContent('#view')).includes('Список пуст'));
+await page.evaluate(() => {
+  window.__ORGS__ = [
+    { external_id: '101', name: 'Зерно', address: 'Пермь, Ленина, 50', category: 'Кофейня', website: 'https://zerno-perm.ru', phone: '+7 (342) 200-10-20', hours: '8–22' },
+    { external_id: '102', name: 'Бариста Бро', address: 'Пермь, Сибирская, 9', category: 'Кофейня', website: '', phone: '', hours: '' }
+  ];
+  window.__SITE__ = { title: 'Кофейня Зерно', description: '', emails: ['hello@zerno-perm.ru'], phones: ['+7 (342) 200-10-20'],
+    socials: ['https://vk.com/zerno_perm'], contactsUrl: '' };
+});
+await page.fill('#orgq', 'кофейня');
+await page.press('#orgq', 'Enter');
+await page.waitForSelector('.orgrow');
+check('поиск ушёл с видом бизнеса и городом', JSON.stringify(await page.evaluate(() => window.__PROSPECT_ASKED__)) === JSON.stringify({ mode: 'search', query: 'кофейня', city: 'Пермь' }));
+await page.click('[data-action=orgaddall]');
+await page.waitForFunction(() => window.__STATE__.prospects.length === 2);
+check('найденные организации добавлены', (await page.$$('tr[data-pr]')).length === 2);
+check('повторно те же не добавляются', (await page.$$eval('.orgrow .tag', t => t.length)) === 2);
+const zerno = (await state()).prospects.find(x => x.name === 'Зерно');
+check('у компании источник и номер из Яндекса', zerno.source === 'Яндекс.Карты' && zerno.external_id === '101' && zerno.city === 'Пермь');
+// контакты с сайта дописываются в карточку, вписанное руками не затирается
+await page.click(`tr[data-pr="${zerno.id}"]`);
+await page.fill('#prf input[name=email]', 'boss@zerno-perm.ru');
+await page.click('[data-action=prsite]');
+await page.waitForFunction(() => document.querySelector('#prf textarea[name=socials]').value.includes('vk.com'));
+check('почта, вписанная руками, осталась', (await page.inputValue('#prf input[name=email]')) === 'boss@zerno-perm.ru');
+check('соцсети с сайта дописаны', (await page.inputValue('#prf textarea[name=socials]')) === 'https://vk.com/zerno_perm');
+await page.selectOption('#prf select[name=status]', 'Написали');
+await page.click('#prf button.primary');
+await page.waitForFunction(() => window.__STATE__.prospects.find(x => x.name === 'Зерно').status === 'Написали');
+check('внешний номер не превратился в пустую связь', (await state()).prospects.find(x => x.name === 'Зерно').external_id === '101');
+// ответили — компания становится заявкой в воронке
+await page.click(`tr[data-pr="${zerno.id}"]`);
+await page.click('[data-action=prlead]');
+await page.waitForFunction(() => window.__STATE__.prospects.find(x => x.name === 'Зерно').status === 'Заявка');
+const zLead = (await state()).leads.find(l => l.name === 'Зерно');
+check('заявка создана с источником «Поиск клиентов»', zLead && zLead.source === 'Поиск клиентов' && zLead.status === 'Новое');
+check('компания помнит свою заявку', (await state()).prospects.find(x => x.name === 'Зерно').lead_id === zLead.id);
+const outreach = await page.$$eval('.funnelcard .fnum', b => b.map(x => x.textContent));
+check('путь до заявки: 2 найдено, 1 дошла', outreach[0] === '2' && outreach[4] === '1', outreach.join(','));
+// контакты с сайта — отдельной формой
+await page.fill('#siteurl', 'zerno-perm.ru');
+await page.click('#sitef button.primary');
+await page.waitForSelector('.sitefound');
+check('с сайта показаны почта и соцсети', (await page.textContent('.sitefound')).includes('hello@zerno-perm.ru'));
+await page.evaluate(() => { window.__PROSPECTFAIL__ = 'Сайт не ответил за 10 секунд'; });
+await page.click('#sitef button.primary');
+await page.waitForFunction(() => document.querySelector('#sitef .notice'));
+check('ошибка сайта объяснена', (await page.textContent('#sitef .notice')).includes('не ответил'));
+await page.evaluate(() => { window.__PROSPECTFAIL__ = null; });
+await page.screenshot({ path: path.join(OUT, 'intel-prospects.png'), fullPage: true });
+
+// --- 5и. лид-магниты
+await nav('magnets');
+check('магниты сгруппированы по статусу', (await page.$$eval('#view .head h2', h => h.map(x => x.textContent))).join(',') === 'Работает,Идея');
+check('магнит без платного шага подсвечен словами',
+  (await page.textContent('article[data-mg="lm-idea"]')).includes('Платный шаг не придуман'));
+await nav('leads');
+await page.click('[data-action=newlead]');
+const magnetOptions = await page.$$eval('#lf select[name=magnet_id] option', o => o.map(x => x.value));
+check('в заявке можно выбрать работающий магнит, а идею — нет',
+  magnetOptions.includes('lm-audit') && !magnetOptions.includes('lm-idea'), magnetOptions.join(','));
+await page.fill('#lf input[name=name]', 'Салон «Лён»');
+await page.selectOption('#lf select[name=magnet_id]', 'lm-audit');
+await page.selectOption('#lf select[name=status]', 'Сделка');
+await page.fill('#lf input[name=amount]', '45000');
+await page.click('#lf button.primary');
+await page.waitForFunction(() => window.__STATE__.leads.some(l => l.name === 'Салон «Лён»'));
+check('заявка привязана к магниту', (await state()).leads.find(l => l.name === 'Салон «Лён»').magnet_id === 'lm-audit');
+await nav('magnets');
+const auditCard = (await page.textContent('article[data-mg="lm-audit"]')).replace(/\s+/g, ' ');
+check('магнит считает свои заявки и сделки', /1\s?заявок 1\s?сделок 100%\s?в сделку/.test(auditCard), auditCard);
+check('лучший магнит назван на верхней плитке', (await page.textContent('.metric:nth-child(4)')).includes('Разбор визуала'));
+await page.click('[data-action=newmagnet]');
+await page.fill('#mgf input[name=name]', 'Калькулятор цены ролика');
+await page.fill('#mgf input[name=next_step]', 'Созвон и смета');
+await page.click('#mgf button.primary');
+await page.waitForFunction(() => window.__STATE__.lead_magnets.some(m => m.name === 'Калькулятор цены ролика'));
+check('новый магнит заводится идеей', (await state()).lead_magnets.find(m => m.name === 'Калькулятор цены ролика').status === 'Идея');
+await page.screenshot({ path: path.join(OUT, 'intel-magnets.png'), fullPage: true });
 
 // --- 6. задачи
 await nav('tasks');
@@ -1655,7 +1810,7 @@ check('на телефоне меню поверх верхней панели',
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
 const sections = ['home', 'ads', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
-  'cases', 'content', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
+  'cases', 'content', 'prospects', 'magnets', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {
   await m.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);
