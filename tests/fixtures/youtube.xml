@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCwL-PkN9Jul92VJm5gFgY-Q"/>
+ <id>yt:channel:wL-PkN9Jul92VJm5gFgY-Q</id>
+ <yt:channelId>wL-PkN9Jul92VJm5gFgY-Q</yt:channelId>
+ <title>ADERVIS | digital agency</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCwL-PkN9Jul92VJm5gFgY-Q"/>
+ <author>
+  <name>ADERVIS | digital agency</name>
+  <uri>https://www.youtube.com/channel/UCwL-PkN9Jul92VJm5gFgY-Q</uri>
+ </author>
+ <published>2018-02-12T14:01:53+00:00</published>
+ <entry>
+  <id>yt:video:43IioSJSkdA</id>
+  <yt:videoId>43IioSJSkdA</yt:videoId>
+  <yt:channelId>UCwL-PkN9Jul92VJm5gFgY-Q</yt:channelId>
+  <title>Лукойл - SAFETY MAN</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=43IioSJSkdA"/>
+  <author>
+   <name>ADERVIS | digital agency</name>
+   <uri>https://www.youtube.com/channel/UCwL-PkN9Jul92VJm5gFgY-Q</uri>
+  </author>
+  <published>2026-06-24T12:30:17+00:00</published>
+  <updated>2026-09-18T05:11:01+00:00</updated>
+  <media:group>
+   <media:title>Лукойл - SAFETY MAN</media:title>
+   <media:content url="https://www.youtube.com/v/43IioSJSkdA?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i1.ytimg.com/vi/43IioSJSkdA/hqdefault.jpg" width="480" height="360"/>
+   <media:description></media:description>
+   <media:community>
+    <media:starRating count="0" average="0.00" min="1" max="5"/>
+    <media:statistics views="5"/>
+   </media:community>
+  </media:group>
+ </entry>
+ <entry>
+  <id>yt:video:YHzctJr1V_I</id>
+  <yt:videoId>YHzctJr1V_I</yt:videoId>
+  <yt:channelId>UCwL-PkN9Jul92VJm5gFgY-Q</yt:channelId>
+  <title>Toyota Supra Green Mamba | Extreme Mud Run</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=YHzctJr1V_I"/>
+  <author>
+   <name>ADERVIS | digital agency</name>
+   <uri>https://www.youtube.com/channel/UCwL-PkN9Jul92VJm5gFgY-Q</uri>
+  </author>
+  <published>2026-03-27T18:30:12+00:00</published>
+  <updated>2026-09-09T03:31:45+00:00</updated>
+  <media:group>
+   <media:title>Toyota Supra Green Mamba | Extreme Mud Run</media:title>
+   <media:content url="https://www.youtube.com/v/YHzctJr1V_I?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i2.ytimg.com/vi/YHzctJr1V_I/hqdefault.jpg" width="480" height="360"/>
+   <media:description>Представляем одно из наших первых видео, созданных с помощью искусственного интеллекта!
+В этом ролике вы увидите всю мощь и красоту Toyota Supra GR и таинственной Зеленой Мамбы.
+_
+Introducing one of our first videos created using artificial intelligence!
+In this video, you'll see all the power and beauty of  Toyota Supra GR and the mysterious Green Mamba.
+
+#toyota #supra #green #mamba</media:description>
+   <media:community>
+    <media:starRating count="3" average="5.00" min="1" max="5"/>
+    <media:statistics views="89"/>
+   </media:community>
+  </media:group>
+ </entry>
+</feed>

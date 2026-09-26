@@ -1009,3 +1009,77 @@ h1,.sectionhead,.hero h1,.covertitle,.slidetitle{
 .utmset legend{padding:0 6px;font-size:12px;font-weight:700;color:var(--muted)}
 .utmpreview{margin:12px 0 4px;padding:10px 12px;border-radius:9px;background:var(--bg);overflow-wrap:anywhere}
 .utmpreview code{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+
+/* --- Контент-план ---------------------------------------------------------
+   Сверху — площадка (вкладки листаются пальцем, страница вбок не едет),
+   под ней её карточка: форматы, лимиты, аккаунт и парсер. Доска идёт по
+   статусам слева направо — так же, как материал движется к выходу. */
+.nettabs{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;margin:8px 0 14px;scrollbar-width:thin}
+.nettab{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;min-height:40px;padding:8px 14px;
+  border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--ink);transition:border-color .15s,transform .15s}
+.nettab:hover{border-color:var(--gold)}
+.nettab:active{transform:scale(.97)}
+.nettab b{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.nettab.on{background:var(--dark);border-color:var(--dark);color:#fff}
+.nettab.on b{color:var(--gold)}
+.netpanel{margin-bottom:18px}
+.netpanelhead{display:flex;gap:14px;align-items:flex-start}
+.netpanelhead h2{margin:0 0 2px}
+.netpanelhead p{margin:0}
+.neticon{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:var(--bg);border:1px solid var(--line);color:var(--gold);flex:none}
+.netfacts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0 0}
+.netfacts div{border-top:1px solid var(--line);padding-top:10px}
+.netfacts dt{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.netfacts dd{margin:4px 0 0;overflow-wrap:anywhere}
+.netfacts dd .chip{margin-left:6px}
+.feedbar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:16px 0 0}
+.feedbar .primary{display:inline-flex;align-items:center;gap:8px}
+.feedpanel{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
+.feedhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.feednote{font-size:var(--t-small,12px);margin:8px 0 10px}
+.feedlist{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.feedrow{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;
+  border:1px solid var(--line);border-radius:10px}
+.feedrow.done{opacity:.72}
+.feedviews{display:grid;text-align:right}
+.feedviews b{font-size:17px;font-variant-numeric:tabular-nums}
+.feedviews small{font-size:10px}
+.feedtext{display:grid;gap:2px;min-width:0}
+.feedtext a{color:var(--ink);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.feedtext a:hover{color:var(--gold)}
+.feedact .tag{display:inline-flex;gap:4px;align-items:center}
+.plantools{justify-content:flex-start}
+.plantools .input{max-width:420px}
+.seg{display:flex;gap:6px}
+.seg .chip{min-height:36px;padding:6px 14px}
+
+.board{display:grid;grid-template-columns:repeat(5,minmax(210px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px;align-items:start}
+.boardcol{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px;display:grid;gap:8px;min-width:0}
+.boardcol header{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 4px}
+.boardcol header span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.boardempty{text-align:center;margin:10px 0;font-size:12px}
+.pcard{padding:12px;display:grid;gap:8px;border-left:3px solid var(--dir,var(--line))}
+.pcard h3{margin:0;font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+.pcardhead,.pcardfoot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pcardhead small,.pcardfoot small{font-size:11px}
+.netmark{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--muted)}
+.movebtns{display:flex;gap:4px;flex:none}
+.movebtn{min-width:36px;min-height:36px;padding:2px 8px}
+.counter{display:block;margin-top:4px;font-variant-numeric:tabular-nums}
+.counter.over{color:#d64545;font-weight:700}
+.nethint{display:flex;gap:6px;align-items:flex-start;font-size:12px;color:var(--muted);margin:10px 0 0}
+.nethint svg{flex:none;margin-top:2px}
+.calhead{justify-content:flex-start}
+.calhead h2{margin:0;min-width:180px;text-align:center}
+.day.today{border-color:var(--gold)}
+.event{display:flex;gap:5px;align-items:flex-start;text-align:left}
+.event svg{flex:none;margin-top:1px}
+.event.done{opacity:.6}
+@media(max-width:1050px){.netfacts{grid-template-columns:1fr 1fr}}
+@media(max-width:720px){
+  .board{grid-template-columns:1fr;overflow:visible}
+  .netfacts{grid-template-columns:1fr}
+  .feedrow{grid-template-columns:52px minmax(0,1fr)}
+  .feedact{grid-column:2}
+  .plantools .input{max-width:none}
+}

@@ -56,7 +56,7 @@ function ago(iso) {
 // Поля, как их видит интерфейс. В базе две колонки названы иначе: даты.
 const FIELDS = {
   knowledge: ['id', 'title', 'body', 'category', 'source', 'access', 'status'],
-  content: ['id', 'title', 'body', 'product', 'author', 'channel', 'status', 'date'],
+  content: ['id', 'title', 'body', 'product', 'author', 'channel', 'status', 'date', 'url'],
   tasks: ['id', 'title', 'done'],
   metrics: ['id', 'post', 'date', 'views', 'replies', 'leads'],
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
@@ -71,14 +71,14 @@ const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 function toRow(table, o) {
   const row = {};
   for (const f of FIELDS[table]) row[f === 'date' ? DATE_COLUMN[table] : f] = o[f];
-  if (table === 'content') row.publish_on = o.date || null;
+  if (table === 'content') { row.publish_on = o.date || null; row.url = o.url || ''; }
   return row;
 }
 
 function fromRow(table, r) {
   const o = { _at: r.updated_at, _by: r.updated_by };
   for (const f of FIELDS[table]) o[f] = r[f === 'date' ? DATE_COLUMN[table] : f];
-  if (table === 'content') o.date = r.publish_on || '';
+  if (table === 'content') { o.date = r.publish_on || ''; o.url = r.url || ''; }
   return o;
 }
 
@@ -101,6 +101,17 @@ function createApi(cfg) {
     }
   }
 
+  async function callFn(name, payload) {
+    const { data, error } = await sb.functions.invoke(name, { body: payload });
+    if (error) {
+      let message = error.message;
+      try { message = (await error.context?.json())?.error || message; } catch (e) { /* ответ без JSON */ }
+      throw new Error(message);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }
+
   return {
     async user() {
       const { data } = await sb.auth.getSession();
@@ -114,7 +125,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -127,7 +138,8 @@ function createApi(cfg) {
         selectAll('publications', 'at'),
         sb.from('ai_usage').select('*').order('at', { ascending: false }).limit(200).then(must),
         selectAll('members', 'email'),
-        sb.from('activity').select('*').order('at', { ascending: false }).limit(40).then(must)
+        sb.from('activity').select('*').order('at', { ascending: false }).limit(40).then(must),
+        sb.from('social_accounts').select('network,handle,note').then(must)
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -139,7 +151,7 @@ function createApi(cfg) {
         campaigns: campaigns.map(r => fromRow('campaigns', r)),
         decisions: decisions.map(r => fromRow('decisions', r)),
         leads: leads.map(r => fromRow('leads', r)),
-        publications, ai, members, activity
+        publications, ai, members, activity, accounts
       };
     },
 
@@ -178,27 +190,15 @@ function createApi(cfg) {
     },
     async remove(table, id) { must(await sb.from(table).delete().eq('id', id)); },
 
-    // Черновики пишет серверная функция: ключ AI-сервиса в браузер не попадает,
-    // а факты для модели она собирает из базы сама.
-    async publish(payload) {
-      const { data, error } = await sb.functions.invoke('publish', { body: payload });
-      if (error) {
-        let message = error.message;
-        try { message = (await error.context?.json())?.error || message; } catch (e) { /* ответ без JSON */ }
-        throw new Error(message);
-      }
-      if (data?.error) throw new Error(data.error);
-      return data;
-    },
-    async generate(payload) {
-      const { data, error } = await sb.functions.invoke('ai-write', { body: payload });
-      if (error) {
-        let message = error.message;
-        try { message = (await error.context?.json())?.error || message; } catch (e) { /* ответ без JSON */ }
-        throw new Error(message);
-      }
-      if (data?.error) throw new Error(data.error);
-      return data;
+    // Отправку в канал, черновики и парсер делают серверные функции: ключи
+    // сервисов в браузер не попадают. Ошибку функции показываем её словами.
+    publish: payload => callFn('publish', payload),
+    generate: payload => callFn('ai-write', payload),
+    feed: payload => callFn('feed', payload),
+    // У аккаунта площадки ключ — сама площадка, поэтому запись, а не правка по номеру.
+    async saveAccount(a) {
+      return must(await sb.from('social_accounts').upsert({ network: a.network, handle: a.handle })
+        .select('network,handle,note').single());
     },
     async upsertAll(table, list) {
       for (let i = 0; i < list.length; i += 200) {
@@ -214,7 +214,7 @@ let api = null;
 let me = null;
 const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
-  decisions: [], leads: [], publications: [], ai: [], members: [], activity: []
+  decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -238,14 +238,14 @@ const SECTION_TITLE = {
   home: 'Обзор', ads: 'Реклама', leads: 'Заявки', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
   cases: 'Кейсы', competitors: 'Конкуренты',
-  content: 'Контент-студия', calendar: 'Календарь', assistant: 'AI-рабочая зона', analytics: 'Аналитика',
+  content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Аналитика',
   chain: 'Нейроцепочка', tasks: 'Задачи и рост', roadmap: 'Развитие системы', settings: 'Настройки'
 };
 
 const NAV = [
   ['Маркетинг', ['home', 'ads', 'leads', 'decisions']],
   ['Знание компании', ['knowledge', 'brand', 'products', 'cases', 'competitors']],
-  ['Работа', ['content', 'calendar', 'assistant', 'analytics']],
+  ['Работа', ['content', 'assistant', 'analytics']],
   ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
 ];
 
@@ -1571,6 +1571,296 @@ function renderAds() {
       форма на сайте должна сохранять utm_campaign — это настраивается на сайте. Пока — выбирайте кампанию в карточке заявки.</div>`;
 }
 
+// ------------------------------------------------------------ контент-план
+//
+// Главное переключение — площадка: у каждой свои форматы, лимиты и свой
+// способ узнать, что вышло. Названия те же, что в рекламе и заявках, иначе
+// связи между разделами по названию не сходятся. Лимиты — только точно
+// известные; где жёсткого нет, так и написано.
+const NETWORKS = [
+  { name: 'ВКонтакте', icon: 'social', parser: true, formats: ['Пост', 'Клип', 'Статья', 'Видео'], limits: [],
+    tip: 'В ленте видно только начало поста — главное в первые две строки.',
+    how: 'Читает стену сообщества. Нужен сервисный ключ VK в секретах проекта (VK_SERVICE_TOKEN).',
+    placeholder: 'adervis_digital или ссылка vk.com/…' },
+  { name: 'Telegram', icon: 'telegram', parser: true, formats: ['Пост', 'Пост с фото или видео', 'Опрос'],
+    limits: [['Текст поста', 4096], ['Подпись к фото и видео', 1024]], bodyLimit: 4096,
+    tip: 'Подпись к медиа короче обычного поста: длинный текст — отдельным сообщением.',
+    how: 'Читает публичную страницу канала: последние посты и просмотры, без ключей.',
+    placeholder: 'Adervis_digital или ссылка t.me/…' },
+  { name: 'YouTube', icon: 'youtube', parser: true, formats: ['Ролик', 'Shorts'],
+    limits: [['Название', 100], ['Описание', 5000]], bodyLimit: 5000, titleLimit: 100,
+    tip: 'Название работает как заголовок в поиске — суть в первых словах.',
+    how: 'Читает ленту канала: последние 15 роликов и просмотры, без ключей.',
+    placeholder: 'номер канала UC… или ссылка youtube.com/channel/…' },
+  { name: 'Дзен', icon: 'script', parser: false, formats: ['Статья', 'Пост', 'Видео'], limits: [],
+    tip: 'Длинные разборы и кейсы — то, что не помещается в пост.', placeholder: 'ссылка на канал' },
+  { name: 'Threads', icon: 'chat', parser: false, formats: ['Пост', 'Ветка из постов'],
+    limits: [['Пост', 500]], bodyLimit: 500,
+    tip: 'Коротко и разговорно; длинное — веткой из нескольких постов.', placeholder: '@имя' },
+  { name: 'Сайт', icon: 'website', parser: false, formats: ['Статья', 'Кейс'], limits: [],
+    tip: 'Кейсы и статьи для поиска; в соцсетях ставим ссылку на них.', placeholder: 'adervis.ru' }
+];
+const NETWORK_NAMES = NETWORKS.map(n => n.name);
+const network = name => NETWORKS.find(n => n.name === name);
+const PRODUCT_DIR = { Studio: 'Студия', CRM: 'CRM', Stock: 'Stock', 'Медиаэксперименты': 'Медиа' };
+
+// Сколько знаков уйдёт на площадку. В Telegram заголовок идёт первой
+// строкой сообщения — так же собирает его функция публикации.
+function postLength(net, title, body) {
+  if (net !== 'Telegram') return body.length;
+  const first = (body.split('\n').find(l => l.trim()) || '').trim();
+  return (title && title.trim() !== first ? title.trim().length + 2 : 0) + body.length;
+}
+
+let contentNet = 'Все', contentView = 'board';
+let feedState = { network: '', posts: [], busy: false, error: '', at: '' };
+
+const shortDate = d => d ? new Date(d.slice(0, 10) + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'short' }) : '';
+const lastViews = id => {
+  const m = db.metrics.filter(x => x.post === id).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  return m ? Number(m.views) : null;
+};
+
+function contentCard(p) {
+  const n = network(p.channel);
+  const i = P_STATUS.indexOf(p.status);
+  const views = lastViews(p.id);
+  const late = p.date && p.date < today() && p.status !== 'Опубликовано';
+  const step = (d, label, arrow) => `<button class="chip movebtn" data-action="movep" data-id="${E(p.id)}" data-step="${d}"
+    aria-label="${E(label)}" title="${E(label)}">${arrow}</button>`;
+  return `<article class="card click pcard" tabindex="0" role="button" data-p="${E(p.id)}" data-dir="${E(PRODUCT_DIR[p.product] || '')}">
+    <div class="pcardhead"><span class="netmark">${icon(n?.icon || 'social', 14)}${E(p.channel)}</span>
+      <small class="${late ? 'minus' : 'muted'}">${p.date ? E(shortDate(p.date)) + (late ? ' · прошла' : '') : 'без даты'}</small></div>
+    <h3>${E(p.title)}</h3>
+    <div class="pcardfoot"><small class="muted">${E(p.author)}${views !== null ? ` · ${num(views)} просм.` : ''}${p.url ? ' · есть ссылка' : ''}</small>
+      <span class="movebtns">${i > 0 ? step(-1, `Вернуть в «${P_STATUS[i - 1]}»`, '←') : ''}${i >= 0 && i < P_STATUS.length - 1 ? step(1, `Дальше: «${P_STATUS[i + 1]}»`, '→') : ''}</span></div>
+  </article>`;
+}
+
+function renderContentPlan() {
+  const q = query.toLowerCase();
+  const items = db.content.filter(p => (contentNet === 'Все' || p.channel === contentNet)
+    && (!q || `${p.title} ${p.body}`.toLowerCase().includes(q)));
+  const net = network(contentNet);
+
+  const head = heading('Контент-план', 'Что, где и когда выходит. Площадка сверху — у каждой свои форматы и лимиты; парсер проверяет, что реально вышло.',
+    `<button class="primary" data-action="newp">+ Публикация</button>`);
+
+  const tabs = `<div class="nettabs" role="group" aria-label="Площадка">${['Все', ...NETWORK_NAMES].map(n => {
+    const count = n === 'Все' ? db.content.length : db.content.filter(p => p.channel === n).length;
+    return `<button class="nettab${contentNet === n ? ' on' : ''}" data-action="contentnet" data-id="${E(n)}" aria-pressed="${contentNet === n}">
+      ${icon(n === 'Все' ? 'content' : network(n).icon, 16)}<span>${E(n)}</span><b>${count}</b></button>`;
+  }).join('')}</div>`;
+
+  const acc = net && db.accounts.find(a => a.network === net.name);
+  const panel = net ? `<div class="card netpanel">
+      <div class="netpanelhead"><span class="neticon">${icon(net.icon, 22)}</span>
+        <div><h2>${E(net.name)}</h2><p class="muted">${E(net.tip)}</p></div></div>
+      <dl class="netfacts">
+        <div><dt>Форматы</dt><dd>${E(net.formats.join(' · '))}</dd></div>
+        <div><dt>Лимиты</dt><dd>${net.limits.length ? net.limits.map(([l, v]) => `${E(l)} — ${num(v)} зн.`).join('<br>') : 'Жёсткого лимита нет'}</dd></div>
+        <div><dt>Аккаунт</dt><dd>${acc?.handle ? `<b>${E(acc.handle)}</b>` : '<span class="muted">не указан</span>'}
+          <button class="chip" data-action="account" data-id="${E(net.name)}">${acc?.handle ? 'Изменить' : 'Указать'}</button></dd></div>
+      </dl>
+      ${net.parser
+        ? `<div class="feedbar"><button class="primary" data-action="feed" data-id="${E(net.name)}" ${feedState.busy ? 'disabled' : ''}>
+            ${icon('refresh', 16)} ${feedState.busy && feedState.network === net.name ? 'Читаю канал…' : 'Подтянуть вышедшее'}</button>
+            <small class="muted">${E(net.how)}</small></div>`
+        : '<p class="muted feedbar">Эту площадку парсер пока не читает — ссылку на вышедший пост вставьте в карточку публикации.</p>'}
+      ${feedState.network === net.name ? feedPanel() : ''}
+    </div>` : '';
+
+  const views = `<div class="seg" role="group" aria-label="Вид">${[['board', 'Доска'], ['calendar', 'Календарь']].map(([id, t]) =>
+    `<button class="chip${contentView === id ? ' on' : ''}" data-action="contentview" data-id="${id}" aria-pressed="${contentView === id}">${t}</button>`).join('')}</div>`;
+  const toolbar = `<div class="toolbar plantools"><input class="input" id="filter" aria-label="Поиск по публикациям" placeholder="Найти в плане…" value="${E(query)}">${views}</div>`;
+
+  let body;
+  if (contentView === 'calendar') {
+    const start = (new Date(year, month, 1).getDay() + 6) % 7;
+    const days = new Date(year, month + 1, 0).getDate();
+    const undated = items.filter(p => !p.date && p.status !== 'Опубликовано');
+    body = `<div class="head calhead"><button data-action="prev" aria-label="Прошлый месяц">←</button>
+        <h2>${new Date(year, month).toLocaleDateString('ru', { month: 'long', year: 'numeric' })}</h2>
+        <button data-action="next" aria-label="Следующий месяц">→</button></div>
+      <div class="calendar">${['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'].map(x => '<small>' + x + '</small>').join('')}
+      ${'<div></div>'.repeat(start)}
+      ${Array.from({ length: days }, (_, i) => {
+        const d = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(i + 1).padStart(2, '0');
+        return `<div class="day${d === today() ? ' today' : ''}"><strong>${i + 1}</strong>${items.filter(p => p.date === d)
+          .map(p => `<button class="event${p.status === 'Опубликовано' ? ' done' : ''}" data-p="${E(p.id)}"
+            title="${E(p.channel)} · ${E(p.status)}">${icon(network(p.channel)?.icon || 'social', 12)}${E(p.title)}</button>`).join('')}</div>`;
+      }).join('')}</div>
+      ${undated.length ? `<p class="muted">Без даты: ${undated.length} — назначьте дату в карточке, и публикация встанет в календарь.</p>` : ''}`;
+  } else {
+    const order = p => p.date || '9999';
+    body = `<div class="board">${P_STATUS.map(st => {
+      const list = items.filter(p => p.status === st).sort((a, b) => st === 'Опубликовано'
+        ? order(b).localeCompare(order(a)) : order(a).localeCompare(order(b)));
+      return `<section class="boardcol" aria-label="${E(st)}"><header><b>${E(st)}</b><span>${list.length}</span></header>
+        ${list.map(contentCard).join('') || '<p class="muted boardempty">Пусто</p>'}</section>`;
+    }).join('')}</div>`;
+  }
+
+  const empty = !db.content.length
+    ? `<div class="card empty"><h2>План пуст</h2><p>Добавьте публикацию или подтяните то, что уже вышло: выберите Telegram или YouTube сверху.</p></div>`
+    : '';
+  return head + tabs + panel + toolbar + (empty || body);
+}
+
+// ------------------------------------------------------------------ парсер
+//
+// Пост с площадки ищем в плане той же площадки: сначала по ссылке, потом
+// по названию внутри текста, потом по началу текста. Ложное совпадение
+// хуже пропущенного — поэтому короткие названия не сравниваем.
+const normText = s => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, ' ').trim();
+
+function matchFeed(fp, taken = new Set()) {
+  const same = db.content.filter(p => p.channel === fp.network && !taken.has(p.id));
+  const byUrl = same.find(p => p.url && p.url === fp.url);
+  if (byUrl) return byUrl;
+  const text = normText(fp.title + ' ' + fp.text);
+  const free = same.filter(p => !p.url);
+  return free.find(p => { const t = normText(p.title); return t.length >= 8 && text.includes(t); })
+    || free.find(p => { const b = normText(p.body).slice(0, 60).trim(); return b.length >= 20 && text.includes(b); })
+    || null;
+}
+
+function feedRows() {
+  const taken = new Set();
+  return feedState.posts.map(fp => {
+    const match = matchFeed(fp, taken);
+    if (match) taken.add(match.id);
+    const todays = match && db.metrics.find(m => m.post === match.id && m.date === today());
+    const done = !!match && match.url === fp.url && match.status === 'Опубликовано'
+      && (fp.views === null || (todays && Number(todays.views) === fp.views));
+    return { fp, match, done };
+  });
+}
+
+function feedPanel() {
+  if (feedState.busy) return '<p class="muted">Читаю канал…</p>';
+  if (feedState.error) return `<div class="notice error">${E(feedState.error)}</div>`;
+  if (!feedState.posts.length) return '<p class="muted">В канале не нашлось постов.</p>';
+  const rows = feedRows();
+  const pending = rows.filter(r => r.match && !r.done).length;
+  return `<div class="feedpanel">
+    <div class="feedhead"><div><b>Вышло: ${rows.length}</b>
+      <small class="muted"> · в плане нашлось ${rows.filter(r => r.match).length} · проверено ${ago(feedState.at)}</small></div>
+      ${pending ? `<button class="primary" data-action="feedapplyall">Отметить совпавшие (${pending})</button>` : ''}</div>
+    <p class="muted feednote">«Отметить» ставит публикации статус «Опубликовано», ссылку на пост и записывает просмотры на сегодня —
+      так растёт «Охват публикаций» на обзоре. Посты, которых нет в плане, можно добавить в план как вышедшие.</p>
+    <ul class="feedlist">${rows.map(({ fp, match, done }) => `<li class="feedrow${done ? ' done' : ''}">
+      <div class="feedviews"><b>${fp.views === null ? '—' : num(fp.views)}</b><small>просм.</small></div>
+      <div class="feedtext"><a href="${E(fp.url)}" target="_blank" rel="noopener noreferrer">${E(fp.title)}</a>
+        <small class="muted">${E(shortDate(fp.date))}${match ? ` · в плане: «${E(match.title)}», ${E(match.status.toLowerCase())}` : ' · в плане не найден'}</small></div>
+      <div class="feedact">${done ? `<span class="tag good">${icon('check', 13)}Учтено</span>`
+        : match ? `<button class="chip" data-action="feedapply" data-id="${E(fp.id)}">Отметить</button>`
+        : `<button class="chip" data-action="feedadd" data-id="${E(fp.id)}">В план</button>`}</div>
+    </li>`).join('')}</ul></div>`;
+}
+
+async function runFeed(net) {
+  feedState = { network: net, posts: [], busy: true, error: '', at: '' };
+  render();
+  try {
+    const res = await api.feed({ network: net });
+    feedState = { network: net, posts: res.posts || [], busy: false, error: '', at: res.at || new Date().toISOString() };
+  } catch (e) {
+    feedState = { ...feedState, busy: false, error: 'Канал не прочитан: ' + (e.message || 'ошибка площадки') };
+  }
+  render();
+}
+
+// Просмотры пишем замером на сегодня: повторная проверка в тот же день
+// обновляет его, а не плодит дубли.
+async function saveViews(postId, fp) {
+  if (fp.views === null) return;
+  const cur = db.metrics.find(m => m.post === postId && m.date === today());
+  if (cur && Number(cur.views) === fp.views) return;
+  const saved = cur
+    ? await api.update('metrics', { ...cur, views: fp.views, replies: fp.replies ?? cur.replies })
+    : await api.insert('metrics', { id: uid(), post: postId, date: today(), views: fp.views, replies: fp.replies || 0, leads: 0 });
+  upsertLocal('metrics', saved);
+}
+
+async function feedApply(ids) {
+  const rows = feedRows().filter(r => r.match && !r.done && ids.includes(r.fp.id));
+  let n = 0;
+  try {
+    for (const { fp, match } of rows) {
+      if (match.status !== 'Опубликовано' || match.url !== fp.url || !match.date) {
+        const saved = await api.update('content', { ...match, status: 'Опубликовано', url: fp.url, date: match.date || fp.date.slice(0, 10) });
+        upsertLocal('content', saved);
+        noteLocal('update', 'content', saved);
+      }
+      await saveViews(match.id, fp);
+      n++;
+    }
+    toast(n === 1 ? 'Публикация отмечена вышедшей' : `Отмечено публикаций: ${n}`);
+  } catch (e) {
+    handleError(e);
+  }
+  render();
+}
+
+async function feedAdd(postId) {
+  const fp = feedState.posts.find(x => x.id === postId);
+  if (!fp) return;
+  try {
+    const saved = await api.insert('content', {
+      id: uid(), title: fp.title.slice(0, 300), body: (fp.text || fp.title).slice(0, 20000),
+      product: 'Studio', author: 'ADERVIS', channel: fp.network, status: 'Опубликовано',
+      date: fp.date.slice(0, 10), url: fp.url
+    });
+    upsertLocal('content', saved);
+    noteLocal('insert', 'content', saved);
+    await saveViews(saved.id, fp);
+    toast('Пост добавлен в план как вышедший');
+  } catch (e) {
+    handleError(e);
+  }
+  render();
+}
+
+// Стрелки на карточке двигают публикацию по статусам без открытия редактора.
+async function moveP(id, step) {
+  const p = db.content.find(x => x.id === id);
+  const to = p && P_STATUS[P_STATUS.indexOf(p.status) + step];
+  if (!to) return;
+  try {
+    const saved = await api.update('content', { ...p, status: to });
+    upsertLocal('content', saved);
+    noteLocal('update', 'content', saved);
+    render();
+    // фокус остаётся на карточке — с клавиатуры можно двигать дальше
+    document.querySelector(`article[data-p="${CSS.escape(id)}"]`)?.focus();
+  } catch (e) {
+    handleError(e);
+  }
+}
+
+function editAccount(net) {
+  const n = network(net);
+  const acc = db.accounts.find(a => a.network === net) || { network: net, handle: '' };
+  modal(`<h2>Аккаунт: ${E(net)}</h2><form id="acf">
+    <label for="achandle">Адрес канала</label>
+    <input id="achandle" name="handle" maxlength="120" value="${E(acc.handle)}" placeholder="${E(n?.placeholder || '')}">
+    ${n?.how ? `<p class="muted">${E(n.how)}</p>` : ''}
+    <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
+  $('#acf').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      const saved = await api.saveAccount({ network: net, handle: $('#achandle').value.trim() });
+      db.accounts = [...db.accounts.filter(a => a.network !== net), saved];
+      $('#modal').close();
+      render();
+      toast('Аккаунт сохранён');
+    } catch (err) {
+      handleError(err);
+    }
+  };
+}
+
 function editCampaign(id) {
   const exists = db.campaigns.some(c => c.id === id);
   const c = db.campaigns.find(x => x.id === id) || {
@@ -2392,30 +2682,7 @@ function render() {
       <div class="grid three">${db.knowledge.filter(k => k.category === 'Услуги').map(kc).join('')}</div>`;
   }
 
-  if (page === 'content') {
-    s = heading('Контент-студия', 'Редактор, автор, канал, статус и дата. Материалы видны обоим руководителям.',
-      `<button class="primary" data-action="newp">+ Публикация</button>`)
-      + filters(['Идея', 'Черновик', 'На проверке', 'Утверждено', 'Опубликовано'])
-      + `<div class="grid three">${db.content.filter(p => (category === 'Все' || category === p.status)
-        && (p.title + ' ' + p.body).toLowerCase().includes(query.toLowerCase())).map(pc).join('')
-      || '<div class="empty">Материалов пока нет.</div>'}</div>`;
-  }
-
-  if (page === 'calendar') {
-    const start = (new Date(year, month, 1).getDay() + 6) % 7;
-    const count = new Date(year, month + 1, 0).getDate();
-    s = heading('Календарь', 'Редакционный план. Назначьте дату в публикации — она появится здесь.',
-      `<button data-action="newp" class="primary">+ Публикация</button>`)
-      + `<div class="head"><button data-action="prev">←</button><h2>${new Date(year, month).toLocaleDateString('ru', { month: 'long', year: 'numeric' })}</h2><button data-action="next">→</button></div>
-      <div class="calendar">${['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'].map(x => '<small>' + x + '</small>').join('')}
-      ${'<div></div>'.repeat(start)}
-      ${Array.from({ length: count }, (_, i) => {
-        const d = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(i + 1).padStart(2, '0');
-        return `<div class="day"><strong>${i + 1}</strong>${db.content.filter(p => p.date === d)
-          .map(p => `<button class="event" data-p="${E(p.id)}">${E(p.title)}</button>`).join('')}</div>`;
-      }).join('')}</div>
-      <p class="muted">Планирование не публикует материалы в соцсети.</p>`;
-  }
+  if (page === 'content') s = renderContentPlan();
 
   if (page === 'assistant') {
     const f = ai.form;
@@ -2428,7 +2695,7 @@ function render() {
         <div class="card"><h2>Задание</h2>
           <div class="formgrid">
             ${field('author', 'Автор', ['Артём Никитин', 'Александр Хатуов', 'ADERVIS'])}
-            ${field('channel', 'Площадка', ['Threads', 'Telegram', 'VK', 'YouTube', 'Сайт'])}
+            ${field('channel', 'Площадка', NETWORK_NAMES)}
             ${field('product', 'Направление', ['Studio', 'CRM', 'Stock', 'Медиаэксперименты'])}
             <div><label>Вариантов</label><select class="input" id="count">${opts(['1', '2', '3', '5', '7'], String(f.count))}</select></div>
           </div>
@@ -2567,7 +2834,7 @@ function render() {
       <div class="card" style="margin-top:18px"><h2>Подключения</h2>
         ${[['Supabase · база и вход', 'Подключён'], ['AI-провайдер', 'Подключён'],
           ['Telegram · публикация', db.publications.some(x => x.channel === 'Telegram') ? 'Работает' : 'Готов, нужен бот'],
-          ['VK', 'Следующий на очереди'], ['Threads', 'Нужна верификация Meta'],
+          ['ВКонтакте', 'Следующий на очереди'], ['Threads', 'Нужна верификация Meta'],
           ['Яндекс.Метрика', 'Не подключена'], ['Adervis CRM', 'Не подключена']]
           .map(([x, st]) => `<div class="row">${x}${tag(st)}</div>`).join('')}
         <p class="muted">Публикаций отправлено: ${db.publications.length}. Telegram включается двумя секретами проекта: токен бота и адрес канала.</p></div>`;
@@ -2634,6 +2901,8 @@ function render() {
 }
 
 function go(p) {
+  // Календарь стал видом контент-плана; старые ссылки на него ведут туда же.
+  if (p === 'calendar') { contentView = 'calendar'; p = 'content'; }
   page = sections.some(s => s[0] === p) ? p : 'home';
   query = ''; category = 'Все';
   document.body.classList.remove('menu');
@@ -2764,32 +3033,58 @@ async function delFile(id) {
   }
 }
 
-function editP(id) {
+function editP(id, preset = {}) {
   const exists = db.content.some(p => p.id === id);
   const p = db.content.find(p => p.id === id) || {
-    id: uid(), title: '', body: '', author: 'Артём', channel: 'Threads', product: 'Studio', status: 'Черновик', date: ''
+    id: uid(), title: '', body: '', author: 'Артём', channel: contentNet !== 'Все' ? contentNet : 'Telegram',
+    product: 'Studio', status: 'Черновик', date: '', url: '', ...preset
   };
+  const channels = NETWORK_NAMES.includes(p.channel) ? NETWORK_NAMES : [...NETWORK_NAMES, p.channel];
   const selects = [
     ['author', 'Автор', ['Артём', 'Александр', 'ADERVIS']],
-    ['channel', 'Канал', ['Threads', 'Telegram', 'VK', 'YouTube', 'Сайт']],
+    ['channel', 'Площадка', channels],
     ['product', 'Направление', ['Studio', 'CRM', 'Stock', 'Медиаэксперименты']],
-    ['status', 'Статус', ['Идея', 'Черновик', 'На проверке', 'Утверждено', 'Опубликовано']]
+    ['status', 'Статус', P_STATUS]
   ];
-  modal(`<h2>Редактор публикации</h2><form id="pf">
-    <label>Рабочее название</label><input name="title" required maxlength="300" value="${E(p.title)}">
-    <label>Текст</label><textarea name="body" required maxlength="20000">${E(p.body)}</textarea>
-    <small id="count">${p.body.length} символов</small>
+  modal(`<h2>Публикация</h2><form id="pf">
     <div class="formgrid">
       ${selects.map(([n, l, a]) => `<div><label>${l}</label><select name="${n}">${opts(a, p[n])}</select></div>`).join('')}
       <div><label>Дата публикации</label><input type="date" name="date" value="${E(p.date)}"></div>
+      <div><label>Ссылка на вышедший пост</label><input type="url" name="url" maxlength="500" value="${E(p.url || '')}"
+        placeholder="ставит парсер или вы"></div>
     </div>
-    <div class="notice">Сохранение не публикует текст. Проверьте факты и лимиты площадки.</div>
+    <label>Рабочее название</label><input name="title" required maxlength="300" value="${E(p.title)}">
+    <small class="counter" id="ptitlecount" aria-live="polite"></small>
+    <label>Текст</label><textarea name="body" required maxlength="20000">${E(p.body)}</textarea>
+    <small class="counter" id="pcount" aria-live="polite"></small>
+    <p class="nethint" id="nethint"></p>
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(p._by))}, ${ago(p._at)}</p>` : ''}
     ${exists ? publishBlock(p) : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists ? `<button type="button" class="danger" data-action="delp" data-id="${E(p.id)}">Удалить публикацию</button>` : ''}</div></form>`);
-  $('#pf textarea').oninput = e => ($('#count').textContent = e.target.value.length + ' символов');
-  submitForm($('#pf'), 'content', p, exists, 'Материал сохранён');
+  const f = $('#pf');
+  // Счётчик меряет то, что уйдёт на площадку, и сравнивает с её лимитом:
+  // лишнее видно до публикации, а не после отказа площадки.
+  const count = () => {
+    const net = network(f.elements.channel.value);
+    const len = postLength(net?.name, f.elements.title.value, f.elements.body.value);
+    const lim = net?.bodyLimit;
+    const c = $('#pcount');
+    c.textContent = lim
+      ? `${num(len)} из ${num(lim)} знаков${net.name === 'Telegram' ? ' — вместе с заголовком' : ''}${len > lim ? ` · длиннее на ${num(len - lim)}` : ''}`
+      : `${num(len)} знаков`;
+    c.classList.toggle('over', !!lim && len > lim);
+    const t = $('#ptitlecount');
+    const tl = net?.titleLimit, tlen = f.elements.title.value.length;
+    t.textContent = tl ? `Название ролика: ${tlen} из ${tl}${tlen > tl ? ' — площадка обрежет' : ''}` : '';
+    t.classList.toggle('over', !!tl && tlen > tl);
+    $('#nethint').innerHTML = net ? `${icon(net.icon, 14)} ${E(net.name)}: ${E(net.formats.join(', ').toLowerCase())}. ${E(net.tip)}` : '';
+  };
+  f.elements.body.oninput = count;
+  f.elements.title.oninput = count;
+  f.elements.channel.onchange = count;
+  count();
+  submitForm(f, 'content', p, exists, 'Материал сохранён');
 }
 
 // Публикация в канал. Кнопка появляется только у утверждённого материала:
@@ -3532,6 +3827,14 @@ document.addEventListener('click', async e => {
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
     case 'newcampaign': editCampaign(); break;
+    case 'contentnet': contentNet = b.dataset.id; render(); break;
+    case 'contentview': contentView = b.dataset.id; render(); break;
+    case 'movep': moveP(b.dataset.id, Number(b.dataset.step)); break;
+    case 'feed': runFeed(b.dataset.id); break;
+    case 'feedapply': feedApply([b.dataset.id]); break;
+    case 'feedapplyall': feedApply(feedRows().filter(r => r.match && !r.done).map(r => r.fp.id)); break;
+    case 'feedadd': feedAdd(b.dataset.id); break;
+    case 'account': editAccount(b.dataset.id); break;
     case 'delcampaign': delCampaign(b.dataset.id); break;
     case 'campaignfilter': campaignFilter = b.dataset.id; render(); break;
     case 'copyutm': copyUtm(b.dataset.id); break;

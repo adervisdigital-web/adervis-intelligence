@@ -95,7 +95,8 @@ const fake = (seedData) => {
         data: { body: 'Пишем живо и просто.\n— Без канцелярита\n— Без выдуманных цифр' } }
     ],
     members: [{ email: 'artem@adervis.ru', name: 'Артём' }, { email: 'alex@adervis.ru', name: 'Александр' }],
-    activity: []
+    activity: [],
+    accounts: [{ network: 'Telegram', handle: 'Adervis_digital', note: '' }]
   };
   window.__STORAGE__ = [];
   let session = null;
@@ -190,6 +191,16 @@ const fake = (seedData) => {
       log('update', 'content', post);
       return { ok: true, url: 'https://t.me/adervis/42', channel: payload.channel, at: now() };
     },
+    async saveAccount(a) {
+      boom();
+      state.accounts = state.accounts.filter(x => x.network !== a.network).concat({ network: a.network, handle: a.handle, note: '' });
+      return clone(state.accounts.find(x => x.network === a.network));
+    },
+    async feed(payload) {
+      window.__FEEDASKED__ = payload;
+      if (window.__FEEDFAIL__) throw new Error(window.__FEEDFAIL__);
+      return { ok: true, network: payload.network, posts: clone(window.__FEED__ || []), at: now() };
+    },
     async generate(payload) {
       window.__lastAiPayload = payload;
       if (window.__aiFail) throw new Error(window.__aiFail);
@@ -253,7 +264,7 @@ check('с плитки можно уйти в её раздел',
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup', g => g.map(x => x.textContent));
 check('меню разбито на группы', groups.join(',') === 'Маркетинг,Знание компании,Работа,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button')).length === 17,
+check('все разделы остались в меню', (await page.$$('#nav button')).length === 16,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
 check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
@@ -673,7 +684,7 @@ const mapFits = await page.$$eval('.chainmap', maps => maps.every(svg => {
 }));
 check('схема умещается в свои границы', mapFits);
 await page.click('.chainmap .cnode[data-page=content] rect');
-await page.waitForFunction(() => document.querySelector('#crumb').textContent === 'Контент-студия');
+await page.waitForFunction(() => document.querySelector('#crumb').textContent === 'Контент-план');
 check('узел схемы ведёт в раздел', true);
 await nav('chain');
 check('порядок звеньев верный',
@@ -826,6 +837,104 @@ await page.click('article[data-p="p1"]');
 check('в карточке видна ссылка на пост', (await page.$eval('#modal .notice a', a => a.href)) === 'https://t.me/adervis/42');
 check('повторно отправить нельзя', (await page.$('#modal [data-action=publish]')) === null);
 await page.keyboard.press('Escape');
+
+// --- 5г. контент-план: площадки, доска, лимиты и парсер
+await nav('content');
+check('календарь больше не отдельный пункт меню', (await page.$$('#nav button[data-page=calendar]')).length === 0);
+const netTabs = await page.$$eval('.nettab span', t => t.map(x => x.textContent));
+check('вкладки площадок: все и шесть сетей', netTabs.join(',') === 'Все,ВКонтакте,Telegram,YouTube,Дзен,Threads,Сайт', netTabs.join(','));
+check('доска разбита по пяти статусам', (await page.$$('.board .boardcol')).length === 5);
+const colOf = id => page.$eval(`article[data-p="${id}"]`, a => a.closest('.boardcol').getAttribute('aria-label'));
+check('черновик стоит в своей колонке', (await colOf('p0')) === 'Черновик', await colOf('p0'));
+await page.click('article[data-p="p0"] [data-action=movep][data-step="1"]');
+await page.waitForFunction(() => window.__STATE__.content.find(p => p.id === 'p0').status === 'На проверке');
+check('стрелка двигает публикацию дальше без редактора', (await colOf('p0')) === 'На проверке');
+check('после сдвига окно редактора не открылось', !(await page.evaluate(() => document.querySelector('#modal').open)));
+check('фокус остался на сдвинутой карточке', await page.evaluate(() => document.activeElement?.dataset.p === 'p0'));
+await page.screenshot({ path: path.join(OUT, 'intel-content.png'), fullPage: true });
+
+await page.click('[data-action=contentnet][data-id="Telegram"]');
+check('у площадки своя карточка с лимитами', /4\s?096/.test(await page.textContent('.netpanel')), await page.textContent('.netfacts'));
+check('аккаунт площадки виден', (await page.textContent('.netfacts')).includes('Adervis_digital'));
+check('на вкладке только её публикации', (await page.$$('.board article[data-p]')).length === 0);
+// новая публикация со вкладки сразу получает эту площадку
+await page.click('[data-action=newp]');
+check('площадка подставлена из вкладки', (await page.inputValue('#pf select[name=channel]')) === 'Telegram');
+await page.fill('#pf input[name=title]', 'Кейс Лукойл');
+await page.fill('#pf textarea[name=body]', 'я'.repeat(4100));
+check('счётчик ловит превышение лимита площадки',
+  await page.$eval('#pcount', c => c.classList.contains('over') && /длиннее на/.test(c.textContent)), await page.textContent('#pcount'));
+await page.selectOption('#pf select[name=channel]', 'YouTube');
+check('при смене площадки меняется и лимит', /из 5\s?000/.test(await page.textContent('#pcount')), await page.textContent('#pcount'));
+check('для YouTube считается и название ролика', /из 100/.test(await page.textContent('#ptitlecount')));
+await page.selectOption('#pf select[name=channel]', 'Telegram');
+await page.fill('#pf textarea[name=body]', 'Сняли ролик SAFETY MAN о безопасности на производстве.');
+await page.click('#pf button.primary');
+await page.waitForFunction(() => !document.querySelector('#modal').open);
+const planned = (await state()).content.find(p => p.title === 'Кейс Лукойл');
+check('публикация сохранена с площадкой и пустой ссылкой', planned && planned.channel === 'Telegram' && planned.url === '');
+
+// парсер: один пост совпадает с планом, второго в плане нет
+const nowIso = new Date().toISOString();
+await page.evaluate(iso => {
+  window.__FEED__ = [
+    { network: 'Telegram', id: '70', url: 'https://t.me/Adervis_digital/70', date: iso, title: 'Кейс Лукойл: SAFETY MAN',
+      text: 'Кейс Лукойл: SAFETY MAN\n\nСняли ролик о безопасности.', views: 1200, replies: null },
+    { network: 'Telegram', id: '69', url: 'https://t.me/Adervis_digital/69', date: iso, title: 'Битва роботов',
+      text: 'Битва роботов в Москве', views: 93, replies: null }
+  ];
+}, nowIso);
+await page.click('[data-action=feed]');
+await page.waitForSelector('.feedrow');
+check('парсер спросил нужную площадку', (await page.evaluate(() => window.__FEEDASKED__)).network === 'Telegram');
+const feedRowsText = await page.$$eval('.feedrow', r => r.map(x => x.innerText.replace(/\s+/g, ' ')));
+check('вышедший пост найден в плане по названию', /1\s?200 просм.*в плане: «Кейс Лукойл»/.test(feedRowsText[0]), feedRowsText[0]);
+check('пост не из плана так и помечен', /в плане не найден/.test(feedRowsText[1]), feedRowsText[1]);
+await page.screenshot({ path: path.join(OUT, 'intel-content-telegram.png'), fullPage: true });
+await page.click('[data-action=feedapplyall]');
+await page.waitForFunction(() => window.__STATE__.content.find(p => p.title === 'Кейс Лукойл').status === 'Опубликовано');
+const applied = (await state()).content.find(p => p.title === 'Кейс Лукойл');
+check('отметка ставит ссылку на пост и дату выхода',
+  applied.url === 'https://t.me/Adervis_digital/70' && applied.date === nowIso.slice(0, 10), JSON.stringify([applied.url, applied.date]));
+const appliedViews = (await state()).metrics.filter(m => m.post === applied.id);
+check('просмотры записаны замером на сегодня', appliedViews.length === 1 && appliedViews[0].views === 1200, JSON.stringify(appliedViews));
+check('учтённый пост помечен', (await page.textContent('.feedrow')).includes('Учтено'));
+// повторная проверка в тот же день обновляет замер, а не плодит дубли
+await page.evaluate(() => { window.__FEED__[0].views = 1350; });
+await page.click('[data-action=feed]');
+await page.waitForSelector('[data-action=feedapply]');
+await page.click('[data-action=feedapply]');
+await page.waitForFunction(id => window.__STATE__.metrics.some(m => m.post === id && m.views === 1350), applied.id);
+check('повторная проверка обновляет замер дня', (await state()).metrics.filter(m => m.post === applied.id).length === 1);
+await page.click('[data-action=feedadd]');
+await page.waitForFunction(() => window.__STATE__.content.some(p => p.title === 'Битва роботов'));
+const added = (await state()).content.find(p => p.title === 'Битва роботов');
+check('пост не из плана добавляется как вышедший',
+  added.status === 'Опубликовано' && added.channel === 'Telegram' && added.url.endsWith('/69'), JSON.stringify(added));
+check('вкладка считает свои публикации', /Telegram\s*2/.test(await page.textContent('[data-action=contentnet][data-id="Telegram"]')));
+
+// ошибка площадки объясняется словами функции
+await page.click('[data-action=contentnet][data-id="YouTube"]');
+await page.evaluate(() => { window.__FEEDFAIL__ = 'Не указан аккаунт YouTube: впишите его в карточке площадки'; });
+await page.click('[data-action=feed]');
+await page.waitForSelector('.feedpanel, .netpanel .notice');
+check('ошибка парсера показана в карточке площадки', (await page.textContent('.netpanel')).includes('Не указан аккаунт YouTube'));
+await page.evaluate(() => { window.__FEEDFAIL__ = null; });
+await page.click('[data-action=account][data-id="YouTube"]');
+await page.fill('#achandle', 'UCwL-PkN9Jul92VJm5gFgY-Q');
+await page.click('#acf button.primary');
+await page.waitForFunction(() => window.__STATE__.accounts.some(a => a.network === 'YouTube'));
+check('аккаунт площадки сохраняется', (await page.textContent('.netfacts')).includes('UCwL-PkN9Jul92VJm5gFgY-Q'));
+await page.click('[data-action=contentnet][data-id="Дзен"]');
+check('площадка без парсера честно об этом говорит', (await page.textContent('.netpanel')).includes('парсер пока не читает'));
+
+// календарь — второй вид того же плана
+await page.click('[data-action=contentnet][data-id="Все"]');
+await page.click('[data-action=contentview][data-id="calendar"]');
+check('вид «Календарь» на месте', (await page.$$('.calendar .day')).length >= 28);
+check('вышедшие посты стоят в календаре в свой день',
+  (await page.$$eval('.calendar .day.today .event', e => e.map(x => x.textContent))).some(t => t.includes('Кейс Лукойл')));
+await page.click('[data-action=contentview][data-id="board"]');
 
 // --- 6. задачи
 await nav('tasks');
@@ -1546,7 +1655,7 @@ check('на телефоне меню поверх верхней панели',
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
 const sections = ['home', 'ads', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
-  'cases', 'content', 'calendar', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
+  'cases', 'content', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {
   await m.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);
