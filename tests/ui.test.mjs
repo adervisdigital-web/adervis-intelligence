@@ -1978,6 +1978,10 @@ for (const id of sections) {
       .filter(b => b.getBoundingClientRect().height > 0 && b.getBoundingClientRect().height < 36).length;
     return { scroll: doc.scrollWidth > window.innerWidth + 1, over, tap };
   });
+  // снимки разделов продаж на телефоне — для глаз, не для проверки
+  if (['home', 'leads', 'prospects', 'magnets', 'analytics', 'content'].includes(id)) {
+    await m.screenshot({ path: path.join(OUT, `intel-mobile-${id}.png`), fullPage: true });
+  }
   if (r.scroll) wide.push(id + ' (' + r.over.join(', ') + ')');
   if (r.tap) small.push(id + ':' + r.tap);
 }

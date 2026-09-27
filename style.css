@@ -1207,3 +1207,15 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .niches td{white-space:nowrap}
 .niches td:first-child{white-space:normal}
 .pitchgaps{display:block;margin-top:6px}
+
+/* Строка задачи: высота нажатия уже даёт сама метка (44px) — лишний
+   отступ строки делал список вдвое длиннее. */
+.row:has(> .task){padding:2px 0}
+.task{align-items:center}
+/* На телефоне у воронки остаётся только процент — подпись «от прошлого
+   шага» ломалась в три строки; смысл понятен из первой строки «вход». */
+@media(max-width:720px){
+  .fconv small{display:none}
+  .fstep:first-child .fconv small{display:inline}
+  .fconv{align-self:center}
+}
