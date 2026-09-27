@@ -64,9 +64,9 @@ const FIELDS = {
   campaigns: ['id', 'name', 'channel', 'direction', 'goal', 'status', 'starts_on', 'ends_on', 'budget', 'spent',
     'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
-  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id', 'next_step', 'next_on'],
+  leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id', 'next_step', 'next_on', 'lost_reason'],
   prospects: ['id', 'name', 'city', 'category', 'address', 'website', 'phone', 'email', 'socials', 'direction',
-    'source', 'status', 'external_id', 'lead_id', 'note', 'magnet_id', 'next_on'],
+    'source', 'status', 'external_id', 'lead_id', 'note', 'magnet_id', 'next_on', 'lost_reason'],
   kpi_targets: ['id', 'target'],
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
 };
@@ -1881,6 +1881,24 @@ function editAccount(net) {
 // «отказались после КП» и «не ответили на первый звонок» неразличимы.
 const FUNNEL = ['Новое', 'В работе', 'КП отправлено', 'Сделка'];
 const LOST = ['Отказ', 'Пропало'];
+// Причины отказа — короткий общий список: по нему видно, что чинить.
+const LOST_REASONS = ['Дорого', 'Выбрали других', 'Уже есть подрядчик', 'Не сейчас', 'Не наш профиль', 'Не отвечает', 'Другое'];
+const reasonField = (cur, show, label) => `<div class="lostfield" ${show ? '' : 'hidden'}>
+  <label>${label}</label><select name="lost_reason"><option value="">Не выбрано</option>${opts(LOST_REASONS, cur)}</select></div>`;
+
+function lostCard() {
+  const lost = db.leads.filter(l => LOST.includes(l.status));
+  if (!lost.length) return '';
+  const rows = LOST_REASONS.map(r => ({ name: r, value: lost.filter(l => l.lost_reason === r).length })).filter(r => r.value)
+    .sort((a, b) => b.value - a.value);
+  const blank = lost.filter(l => !l.lost_reason).length;
+  return `<div class="card chartcard"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Почему теряем</h2>
+      <small class="muted">отказов и пропавших: ${lost.length}</small></div>
+    ${rows.length ? barChart(rows, 'Причины отказов') : ''}
+    ${blank ? `<p class="muted chartnote">Без причины: ${blank}. Отметьте её в карточке заявки — иначе непонятно, что чинить.</p>` : ''}
+  </div>`;
+}
+
 const reachedOf = (status, prev = 0) => Math.max(Number(prev) || 0, FUNNEL.indexOf(status));
 const sumOf = (list, f) => list.reduce((n, r) => n + Number(r[f] || 0), 0);
 const periodFrom = p => p === 'all' ? '0000-00-00' : dayShift(-Number(p));
@@ -2239,6 +2257,29 @@ function importCompanies() {
   };
 }
 
+// Кто отвечает: те же компании, разложенные по виду бизнеса. Показываем
+// только ниши, где уже писали, — иначе в таблице одни нули.
+function nichesCard() {
+  const contacted = db.prospects.filter(p => ['Написали', 'Ответили', 'Заявка', 'Не интересно'].includes(p.status));
+  if (!contacted.length) return '';
+  const key = p => (p.category || 'Без вида бизнеса').split(',')[0].trim();
+  const rows = [...new Set(contacted.map(key))].map(name => {
+    const all = contacted.filter(p => key(p) === name);
+    const replied = all.filter(p => p.status !== 'Написали').length;
+    return { name, sent: all.length, replied, leads: all.filter(p => p.status === 'Заявка').length,
+      no: all.filter(p => p.status === 'Не интересно').length, rate: Math.round(100 * replied / all.length) };
+  }).sort((a, b) => b.rate - a.rate || b.sent - a.sent);
+  const reasons = LOST_REASONS.map(r => [r, db.prospects.filter(p => p.status === 'Не интересно' && p.lost_reason === r).length]).filter(([, n]) => n);
+  return `<div class="head"><h2>Кто отвечает</h2><small class="muted">по видам бизнеса, кому уже писали</small></div>
+    <div class="card tablewrap"><table class="table niches">
+      <thead><tr><th>Вид бизнеса</th><th>Написали</th><th>Ответили</th><th>Доля ответов</th><th>Заявок</th><th>Не интересно</th></tr></thead>
+      <tbody>${rows.map(r => `<tr><td><b>${E(r.name)}</b></td><td>${r.sent}</td><td>${r.replied}</td>
+        <td><span class="ratebar" role="img" aria-label="${r.rate}%"><i style="width:${r.rate}%"></i></span> ${r.rate}%</td>
+        <td>${r.leads}</td><td>${r.no}</td></tr>`).join('')}</tbody></table>
+      ${reasons.length ? `<p class="muted chartnote">Почему не интересно: ${reasons.map(([r, n]) => `${E(r.toLowerCase())} — ${n}`).join(', ')}.</p>` : ''}
+    </div>`;
+}
+
 function renderProspects() {
   const head = heading('Поиск клиентов', 'Компании, которым пишем сами: нашли → изучили → написали → ответили → заявка. Парсер находит организации и собирает контакты с их сайтов.',
     `<div class="headactions"><button data-action="importprospects">${icon('upload', 15)} Вставить список</button>
@@ -2308,7 +2349,7 @@ function renderProspects() {
     : `<div class="card empty"><h2>Список пуст</h2><p>Найдите организации по виду бизнеса и городу или добавьте компанию вручную.
       Лучше всего работают те, кому нужен визуал прямо сейчас: открылись недавно, запускают новый продукт, выходят на маркетплейсы.</p></div>`;
 
-  return head + tools + funnel + `<div class="head"><h2>Компании</h2></div>` + list
+  return head + tools + funnel + nichesCard() + `<div class="head"><h2>Компании</h2></div>` + list
     + `<div class="notice">Собираем только контакты организаций с их публичных страниц. Пишем лично и по делу —
       массовые рассылки без согласия запрещены законом о рекламе, а шаблонное письмо всё равно не читают.</div>`;
 }
@@ -2433,7 +2474,7 @@ function editProspect(id, preset = {}) {
   const exists = db.prospects.some(p => p.id === id);
   const p = db.prospects.find(x => x.id === id) || {
     id: uid(), name: '', city: finder.city || '', category: '', address: '', website: '', phone: '', email: '', socials: '',
-    direction: 'Студия', source: 'Вручную', status: 'Найден', external_id: '', lead_id: null, note: '', magnet_id: null, next_on: '', ...preset
+    direction: 'Студия', source: 'Вручную', status: 'Найден', external_id: '', lead_id: null, note: '', magnet_id: null, next_on: '', lost_reason: '', ...preset
   };
   const lead = p.lead_id && db.leads.find(l => l.id === p.lead_id);
   modal(`<h2>Компания</h2><form id="prf">
@@ -2457,6 +2498,7 @@ function editProspect(id, preset = {}) {
     </div>
     <label>Соцсети — по одной в строке</label><textarea name="socials" maxlength="1000" style="min-height:70px">${E(p.socials)}</textarea>
     <label>Заметка: чем можем помочь, кому писали, что ответили</label><textarea name="note" maxlength="2000" style="min-height:90px">${E(p.note)}</textarea>
+    ${reasonField(p.lost_reason || '', p.status === 'Не интересно', 'Почему не интересно')}
     ${pitchBlock(p)}
     <input type="hidden" name="magnet_id" value="${E(p.magnet_id || '')}">
     ${lead ? `<div class="notice">Стала заявкой: <button type="button" class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button></div>` : ''}
@@ -2464,8 +2506,14 @@ function editProspect(id, preset = {}) {
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists && !lead ? `<button type="button" data-action="prlead" data-id="${E(p.id)}">${icon('leads', 15)} Стала заявкой</button>` : ''}
       ${exists ? `<button type="button" class="danger" data-action="delprospect" data-id="${E(p.id)}">Удалить</button>` : ''}</div></form>`);
+  const prf = $('#prf');
+  prf.elements.status.addEventListener('change', () => {
+    const no = prf.elements.status.value === 'Не интересно';
+    prf.querySelector('.lostfield').hidden = !no;
+    if (!no) prf.elements.lost_reason.value = '';
+  });
   wirePitch();
-  submitForm($('#prf'), 'prospects', p, exists, 'Компания сохранена');
+  submitForm(prf, 'prospects', p, exists, 'Компания сохранена');
 }
 
 // Найденное на сайте дописывается в пустые поля и к соцсетям — то, что
@@ -4086,14 +4134,14 @@ function renderLeads() {
       </tbody></table></div>`)
     + (rows.length ? '' : '<div class="card empty">Под отбор ничего не подошло. Снимите фильтр или измените запрос.</div>');
 
-  return head + metrics + leadFunnelCard() + sources + list;
+  return head + metrics + leadFunnelCard() + lostCard() + sources + list;
 }
 
 function editLead(id) {
   const exists = db.leads.some(l => l.id === id);
   const l = db.leads.find(l => l.id === id) || {
     id: uid(), came_on: today(), name: '', source: 'Не знаем', direction: 'Студия',
-    request: '', amount: 0, status: 'Новое', note: '', campaign_id: null, reached: 0, magnet_id: null, next_step: '', next_on: ''
+    request: '', amount: 0, status: 'Новое', note: '', campaign_id: null, reached: 0, magnet_id: null, next_step: '', next_on: '', lost_reason: ''
   };
   modal(`<h2>Обращение</h2><form id="lf">
     <label>Кто обратился</label>
@@ -4123,13 +4171,19 @@ function editLead(id) {
     <label>Сумма, ₽ — если дошло до денег</label>
     <input type="number" name="amount" min="0" step="1" value="${E(String(l.amount || 0))}">
     <label>Заметка</label><textarea name="note" maxlength="1000">${E(l.note)}</textarea>
+    ${reasonField(l.lost_reason || '', LOST.includes(l.status), 'Почему не вышло')}
     <input type="number" name="reached" value="${Number(l.reached) || 0}" hidden>
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(l._by))}, ${ago(l._at)}</p>` : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists ? `<button type="button" class="danger" data-action="dellead" data-id="${E(l.id)}">Удалить</button>` : ''}</div></form>`);
   // Дальний шаг воронки запоминается: отказ после КП — это потеря на КП.
   const lf = $('#lf');
-  lf.elements.status.onchange = () => { lf.elements.reached.value = reachedOf(lf.elements.status.value, l.reached); };
+  lf.elements.status.onchange = () => {
+    lf.elements.reached.value = reachedOf(lf.elements.status.value, l.reached);
+    const lost = LOST.includes(lf.elements.status.value);
+    lf.querySelector('.lostfield').hidden = !lost;
+    if (!lost) lf.elements.lost_reason.value = '';
+  };
   submitForm(lf, 'leads', l, exists, 'Обращение записано');
 }
 

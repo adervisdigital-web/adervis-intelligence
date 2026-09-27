@@ -1190,6 +1190,37 @@ const wcopy = await page.evaluate(() => navigator.clipboard.readText());
 // буфер обмена Windows хранит переносы как \r\n — текст тот же
 check('итоги копируются как есть', wcopy.replace(/\r\n/g, '\n') === week, JSON.stringify([wcopy.slice(0, 80), week.slice(0, 80)]));
 
+// --- 5м. почему теряем и кто отвечает
+await nav('leads');
+await page.click(`tr[data-l="${fl.id}"]`);
+check('у отказа есть поле причины', await page.isVisible('#lf select[name=lost_reason]'));
+await page.selectOption('#lf select[name=lost_reason]', 'Дорого');
+await page.click('#lf button.primary');
+await page.waitForFunction(id => window.__STATE__.leads.find(l => l.id === id).lost_reason === 'Дорого', fl.id);
+const lostText = await page.textContent('#view');
+check('график «Почему теряем» показывает причину', lostText.includes('Почему теряем') && (await page.$$eval('.chart .rowlabel', t => t.map(x => x.textContent))).includes('Дорого'));
+check('отказы без причины посчитаны отдельно', /Без причины: \d+/.test(lostText));
+await page.click('tr[data-l="tl3"]');
+check('у заявки в работе поля причины нет', !(await page.isVisible('#lf select[name=lost_reason]')));
+await page.selectOption('#lf select[name=status]', 'Пропало');
+check('поле появляется при смене на «Пропало»', await page.isVisible('#lf select[name=lost_reason]'));
+await page.selectOption('#lf select[name=lost_reason]', 'Не отвечает');
+await page.selectOption('#lf select[name=status]', 'В работе');
+check('вернули в работу — причина сброшена', (await page.inputValue('#lf select[name=lost_reason]')) === '');
+await page.keyboard.press('Escape');
+
+await nav('prospects');
+const nicheRows = await page.$$eval('.niches tbody tr', r => r.map(x => x.innerText.replace(/\s+/g, ' ')));
+check('ниша кофеен: написали 2, ответила 1', nicheRows.some(r => /^Кофейня 2 1 50% 1 0/.test(r)), nicheRows.join(' | '));
+const annaP = (await state()).prospects.find(x => x.name === 'Цветы у Анны');
+await page.click(`tr[data-pr="${annaP.id}"]`);
+await page.selectOption('#prf select[name=status]', 'Не интересно');
+await page.selectOption('#prf select[name=lost_reason]', 'Уже есть подрядчик');
+await page.click('#prf button.primary');
+await page.waitForFunction(id => window.__STATE__.prospects.find(x => x.id === id).lost_reason === 'Уже есть подрядчик', annaP.id);
+check('причины «не интересно» собраны под таблицей', (await page.textContent('.niches ~ .chartnote, .tablewrap .chartnote')).includes('уже есть подрядчик — 1'));
+await page.screenshot({ path: path.join(OUT, 'intel-niches.png'), fullPage: true });
+
 // --- 6. задачи
 await nav('tasks');
 await page.check('input[data-task=t1]');
