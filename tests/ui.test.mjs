@@ -221,6 +221,10 @@ const fake = (seedData) => {
     async generate(payload) {
       window.__lastAiPayload = payload;
       if (window.__aiFail) throw new Error(window.__aiFail);
+      if (payload.mode === 'pitch') {
+        return { drafts: [{ title: 'Первое сообщение', body: 'Лично для ' + payload.company.name + ': можем записать разбор. Прислать?', sources: [] }],
+          gaps: ['Нет описания с сайта'], model: 'gemini/тест', left: 26 };
+      }
       if (payload.mode === 'rewrite') {
         return { drafts: [{ title: payload.draft.title, body: 'Поправленный текст: ' + payload.preset + (payload.instruction || ''), sources: payload.records }], gaps: [], model: 'gemini/тест', left: 27 };
       }
@@ -1220,6 +1224,26 @@ await page.click('#prf button.primary');
 await page.waitForFunction(id => window.__STATE__.prospects.find(x => x.id === id).lost_reason === 'Уже есть подрядчик', annaP.id);
 check('причины «не интересно» собраны под таблицей', (await page.textContent('.niches ~ .chartnote, .tablewrap .chartnote')).includes('уже есть подрядчик — 1'));
 await page.screenshot({ path: path.join(OUT, 'intel-niches.png'), fullPage: true });
+
+// --- 5н. ИИ делает первое сообщение личным
+await nav('prospects');
+const broP = (await state()).prospects.find(x => x.name === 'Бариста Бро и Ко');
+await page.click(`tr[data-pr="${broP.id}"]`);
+await page.click('[data-action=pitchai]');
+await page.waitForFunction(() => document.querySelector('#pitchtext').value.startsWith('Лично для'));
+const aiAsk = await page.evaluate(() => window.__lastAiPayload);
+check('ИИ получил режим первого сообщения и карточку компании',
+  aiAsk.mode === 'pitch' && aiAsk.company.name === 'Бариста Бро и Ко' && aiAsk.company.city === 'Пермь' && aiAsk.draft.body.length > 20, JSON.stringify(aiAsk).slice(0, 200));
+check('служебные строки заметки в ИИ не уходят', !aiAsk.company.note.includes('предложили'), aiAsk.company.note);
+check('чего не хватило — показано', (await page.textContent('#pitchgaps')).includes('Нет описания с сайта'));
+await page.fill('#prf input[name=name]', 'Бариста Бро');
+check('текст от ИИ не затирается правкой карточки', (await page.inputValue('#pitchtext')).startsWith('Лично для Бариста Бро и Ко'));
+await page.evaluate(() => { window.__aiFail = 'Модель сейчас перегружена'; });
+await page.click('[data-action=pitchai]');
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('перегружена'));
+check('ошибка ИИ не стирает текст', (await page.inputValue('#pitchtext')).startsWith('Лично для'));
+await page.evaluate(() => { window.__aiFail = null; });
+await page.keyboard.press('Escape');
 
 // --- 6. задачи
 await nav('tasks');

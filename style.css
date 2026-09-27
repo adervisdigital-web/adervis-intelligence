@@ -1206,3 +1206,4 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .ratebar i{display:block;height:100%;background:var(--gold)}
 .niches td{white-space:nowrap}
 .niches td:first-child{white-space:normal}
+.pitchgaps{display:block;margin-top:6px}

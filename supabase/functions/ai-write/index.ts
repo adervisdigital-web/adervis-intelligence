@@ -9,7 +9,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import {
-  buildPrompt, buildRewritePrompt, parseReply, sanitizeOptions, sanitizeRewrite, usableFacts,
+  buildPrompt, buildRewritePrompt, buildPitchPrompt, parseReply, sanitizeOptions, sanitizeRewrite, sanitizePitch, usableFacts,
   providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
 } from './compose.ts';
 
@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
     }
 
     const input = await req.json();
-    const mode = input?.mode === 'rewrite' ? 'rewrite' : 'write';
+    const mode = ['rewrite', 'pitch'].includes(input?.mode) ? input.mode : 'write';
 
     // Публичные и проверенные записи. Политики доступа базы действуют и здесь:
     // запрос идёт от имени вошедшего человека.
@@ -97,9 +97,12 @@ Deno.serve(async (req) => {
     const facts = usableFacts(rows ?? []);
     // При правке лишние факты только мешают: берём те, на которые черновик
     // уже ссылается, а если ссылок нет — не подкладываем ничего.
-    const prompt = mode === 'rewrite'
-      ? buildRewritePrompt(picked.length ? facts : [], sanitizeRewrite(input))
-      : buildPrompt(facts, sanitizeOptions(input));
+    // Первое сообщение компании опирается на её карточку, а не на базу знаний.
+    const prompt = mode === 'pitch'
+      ? buildPitchPrompt(sanitizePitch(input))
+      : mode === 'rewrite'
+        ? buildRewritePrompt(picked.length ? facts : [], sanitizeRewrite(input))
+        : buildPrompt(facts, sanitizeOptions(input));
 
     let payload = null;
     let usedModel = '';
@@ -134,7 +137,7 @@ Deno.serve(async (req) => {
       return json({ error: 'AI-сервис вернул пустой ответ. Попробуйте ещё раз.' }, 502);
     }
 
-    const { drafts, gaps } = parseReply(text, facts.map(f => f.id));
+    const { drafts, gaps } = parseReply(text, mode === 'pitch' ? [] : facts.map(f => f.id));
 
     await admin.from('ai_usage').insert({
       actor: user.email,

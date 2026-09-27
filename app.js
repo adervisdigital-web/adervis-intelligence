@@ -2375,7 +2375,9 @@ function pitchBlock(p) {
     <select id="pitchmagnet">${list.map(m => `<option value="${E(m.id)}" ${m.id === pick.id ? 'selected' : ''}>${E(m.name)}${m.status === 'Работает' ? '' : ' · ' + E(m.status.toLowerCase())}</option>`).join('')}</select>
     <textarea id="pitchtext" aria-label="Текст сообщения" style="min-height:150px"></textarea>
     <div class="pitchlinks" id="pitchlinks"></div>
-    <div class="formactions"><button type="button" data-action="pitchcopy">${icon('copy', 15)} Скопировать</button>
+    <small class="muted pitchgaps" id="pitchgaps" aria-live="polite"></small>
+    <div class="formactions"><button type="button" data-action="pitchai">${icon('ai', 15)} Сделать личнее</button>
+      <button type="button" data-action="pitchcopy">${icon('copy', 15)} Скопировать</button>
       ${OUTREACH.indexOf(p.status) < 2 ? `<button type="button" class="pitchsent" data-action="pitchsent">Скопировать и отметить «Написали»</button>` : ''}</div>
   </fieldset>`;
 }
@@ -2398,9 +2400,38 @@ function wirePitch() {
     links();
   };
   $('#pitchtext').oninput = () => { touched = true; links(); };
+  pitchTouch = () => { touched = true; links(); };
   sel.onchange = () => { touched = false; refill(); };
   f.addEventListener('input', e => { if (e.target.id !== 'pitchtext') refill(); });
   refill();
+}
+
+// ИИ переписывает сообщение под компанию: берёт её карточку как данные и
+// сохраняет предложение магнита. Результат — в поле, дальше правит человек.
+let pitchTouch = () => {};
+async function pitchAi(btn) {
+  const f = $('#prf');
+  const note = f.elements.note.value.split('\n').filter(l => !/написали, предложили/.test(l)).join(' ');
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  btn.textContent = 'Пишу…';
+  $('#pitchgaps').textContent = '';
+  try {
+    const res = await api.generate({ mode: 'pitch', draft: { body: $('#pitchtext').value },
+      company: { name: f.elements.name.value, category: f.elements.category.value, city: f.elements.city.value,
+        site: f.elements.website.value, note } });
+    const d = res.drafts?.[0];
+    if (!d?.body) throw new Error('модель не вернула текст');
+    $('#pitchtext').value = d.body;
+    pitchTouch();
+    $('#pitchgaps').textContent = [res.gaps?.length ? 'Чтобы сделать личнее, не хватило: ' + res.gaps.join('; ') : '',
+      res.left !== undefined ? `Осталось запросов сегодня: ${res.left}` : ''].filter(Boolean).join(' · ');
+  } catch (e) {
+    toast('ИИ не ответил: ' + (e.message || 'ошибка'), 8000);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
 }
 
 // «Отметить» записывает в карточку, какой магнит предложили и когда, и
@@ -4762,6 +4793,7 @@ document.addEventListener('click', async e => {
     case 'prsite': prospectFromSite(b); break;
     case 'prlead': prospectToLead(b.dataset.id); break;
     case 'pitchcopy': pitchCopy(false); break;
+    case 'pitchai': pitchAi(b); break;
     case 'pitchsent': pitchCopy(true); break;
     case 'openlead': go('leads'); editLead(b.dataset.id); break;
     case 'contentnet': contentNet = b.dataset.id; render(); break;
