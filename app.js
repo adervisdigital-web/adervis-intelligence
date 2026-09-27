@@ -2148,12 +2148,101 @@ const outreachStep = p => p.status === 'Не интересно' ? 3 : OUTREACH.
 let prospectFilter = { status: 'Все', q: '' };
 let finder = { query: '', city: 'Пермь', busy: false, error: '', orgs: [], url: '', siteBusy: false, siteError: '', site: null };
 
+const siteKey = u => String(u || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[/?#].*$/, '');
 const sameOrg = o => db.prospects.find(p => (o.external_id && p.external_id === o.external_id)
+  || (o.website && siteKey(p.website) === siteKey(o.website))
   || (normText(p.name) === normText(o.name) && normText(p.address) === normText(o.address)));
+
+// Список из таблицы: Excel и Google Таблицы копируют через табуляцию,
+// выгрузки — через точку с запятой или запятую. Если первая строка —
+// заголовки, колонки берутся по ним; если нет — по виду значения:
+// «@» — почта, семь и больше цифр — телефон, домен — сайт, первое
+// оставшееся — название, второе — город.
+const IMPORT_COLS = [
+  ['name', /назв|компан|организ|name|company/i], ['website', /сайт|site|url|web/i],
+  ['phone', /тел|phone/i], ['email', /почт|mail/i], ['city', /город|city/i],
+  ['address', /адрес|address/i], ['category', /рубрик|катег|вид|category/i]
+];
+function parseCompanyList(text, city) {
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const sep = [/\t/, /;/, /,/].find(r => lines.every(l => r.test(l)) || lines.filter(l => r.test(l)).length > lines.length / 2) || /\t/;
+  const rows = lines.map(l => l.split(sep).map(c => c.trim().replace(/^"(.*)"$/, '$1')));
+  const head = rows[0].map(c => (IMPORT_COLS.find(([, re]) => re.test(c)) || [null])[0]);
+  const byHead = head.filter(Boolean).length >= 2 && head.includes('name');
+  const classify = cells => {
+    const o = {}, rest = [];
+    for (const c of cells) {
+      if (!c) continue;
+      if (!o.email && /^[^@\s]+@[^@\s]+\.[a-zа-я]{2,}$/i.test(c)) o.email = c.toLowerCase();
+      else if (!o.phone && (c.match(/\d/g) || []).length >= 7 && /^[\d\s()+\-.,]+$/.test(c)) o.phone = c;
+      else if (!o.website && /^(https?:\/\/)?[\w.-]+\.[a-zа-я]{2,}(\/\S*)?$/i.test(c) && !/\s/.test(c)) o.website = c;
+      else rest.push(c);
+    }
+    o.name = rest[0] || '';
+    o.city = rest[1] || '';
+    return o;
+  };
+  return (byHead ? rows.slice(1) : rows).map(cells => {
+    const o = byHead ? Object.fromEntries(head.map((k, i) => [k, cells[i] || '']).filter(([k]) => k)) : classify(cells);
+    return {
+      name: String(o.name || '').slice(0, 200), website: String(o.website || '').slice(0, 300),
+      phone: String(o.phone || '').slice(0, 200), email: String(o.email || '').slice(0, 200),
+      city: String(o.city || city || '').slice(0, 80), address: String(o.address || '').slice(0, 300),
+      category: String(o.category || '').slice(0, 120), external_id: ''
+    };
+  }).filter(o => o.name.length >= 2);
+}
+
+function importCompanies() {
+  modal(`<h2>Вставить список компаний</h2><form id="impf">
+    <p class="muted">Скопируйте строки из Excel, Google Таблиц или выгрузки 2ГИС и вставьте сюда. Первая строка может быть заголовками:
+      название, сайт, телефон, почта, город, адрес, рубрика. Без заголовков приложение разберёт колонки по виду значения.</p>
+    <label for="imptext">Список</label>
+    <textarea id="imptext" style="min-height:180px" placeholder="Зерно;zerno-perm.ru;+7 342 200-10-20&#10;Бариста Бро;;hi@bro.ru"></textarea>
+    <label for="impcity">Город, если в списке его нет</label>
+    <input id="impcity" maxlength="60" value="${E(finder.city || '')}">
+    <div id="imppreview" class="imppreview" aria-live="polite"></div>
+    <div class="formactions"><button class="primary" id="impgo" disabled>Добавить</button></div></form>`);
+  let list = [];
+  const preview = () => {
+    const all = parseCompanyList($('#imptext').value, $('#impcity').value.trim());
+    const seen = new Set();
+    list = all.filter(o => { const k = normText(o.name) + '|' + siteKey(o.website); if (seen.has(k) || sameOrg(o)) return false; seen.add(k); return true; });
+    const skipped = all.length - list.length;
+    $('#imppreview').innerHTML = all.length ? `<p><b>Новых: ${list.length}</b>${skipped ? ` · уже есть или повтор: ${skipped}` : ''}</p>
+      <ul class="implist">${list.slice(0, 6).map(o => `<li><b>${E(o.name)}</b> <small class="muted">${E([o.city, o.website, o.phone, o.email].filter(Boolean).join(' · '))}</small></li>`).join('')}
+      ${list.length > 6 ? `<li class="muted">и ещё ${list.length - 6}</li>` : ''}</ul>` : '';
+    $('#impgo').disabled = !list.length;
+    $('#impgo').textContent = list.length ? `Добавить ${list.length}` : 'Добавить';
+  };
+  $('#imptext').oninput = preview;
+  $('#impcity').oninput = preview;
+  $('#impf').onsubmit = async e => {
+    e.preventDefault();
+    $('#impgo').disabled = true;
+    let n = 0;
+    try {
+      for (const o of list) {
+        const saved = await api.insert('prospects', { id: uid(), ...o, socials: '', direction: 'Студия', source: 'Импорт',
+          status: 'Найден', lead_id: null, magnet_id: null, next_on: null, note: '' });
+        upsertLocal('prospects', saved);
+        n++;
+      }
+      $('#modal').close();
+      toast(`Добавлено компаний: ${n}`);
+    } catch (err) {
+      handleError(err);
+      if (n) toast(`Добавлено ${n} из ${list.length}, остальные не сохранились`, 8000);
+    }
+    render();
+  };
+}
 
 function renderProspects() {
   const head = heading('Поиск клиентов', 'Компании, которым пишем сами: нашли → изучили → написали → ответили → заявка. Парсер находит организации и собирает контакты с их сайтов.',
-    `<button class="primary" data-action="newprospect">+ Компания</button>`);
+    `<div class="headactions"><button data-action="importprospects">${icon('upload', 15)} Вставить список</button>
+      <button class="primary" data-action="newprospect">+ Компания</button></div>`);
 
   const orgRows = finder.orgs.map((o, i) => {
     const have = sameOrg(o);
@@ -2501,12 +2590,49 @@ function kpiTile(k, v) {
   </div>`;
 }
 
+// Итоги недели — текстом, который можно переслать партнёру как есть.
+// Сделки и холодные сообщения считаются по дате последней правки:
+// отдельной истории статусов нет, и это сказано в самом тексте.
+function weekSummary() {
+  const from = dayShift(-6), t = today();
+  const inWeek = d => d && localDate(d) >= from && localDate(d) <= t;
+  const fresh = db.leads.filter(l => l.came_on >= from && l.came_on <= t);
+  const deals = db.leads.filter(l => l.status === 'Сделка' && inWeek(l._at));
+  const wrote = db.prospects.filter(p => p.status === 'Написали' && inWeek(p._at)).length;
+  const replied = db.prospects.filter(p => ['Ответили', 'Заявка', 'Не интересно'].includes(p.status) && inWeek(p._at)).length;
+  const posts = db.content.filter(p => p.status === 'Опубликовано' && p.date >= from && p.date <= t);
+  const views = posts.reduce((n, p) => n + (lastViews(p.id) || 0), 0);
+  const late = todayList().filter(x => x.late).length;
+  const fmt = d => new Date(d + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' });
+  const lines = [
+    `ADERVIS · итоги недели, ${fmt(from)} — ${fmt(t)}`,
+    '',
+    `Заявки: ${fresh.length}${fresh.length ? ` (${[...new Set(fresh.map(l => l.source))].slice(0, 4).join(', ')})` : ''}`,
+    `Сделки: ${deals.length}${deals.length ? ` на ${num(sumOf(deals, 'amount'))} ₽` : ''}`,
+    `Поиск клиентов: написали ${wrote}, ответили ${replied}`,
+    `Контент: вышло ${posts.length}${posts.length ? `, просмотров ${num(views)}` : ''}`,
+    `Идут кампании: ${db.campaigns.filter(c => c.status === 'Идёт').length}`,
+    late ? `Просрочено дел: ${late} — см. «На сегодня»` : 'Просроченных дел нет',
+    '',
+    'Сделки и ответы — по дате последнего изменения карточки.'
+  ];
+  return lines.join('\n');
+}
+
+async function weekCopy() {
+  try { await navigator.clipboard.writeText(weekSummary()); toast('Итоги недели скопированы'); }
+  catch (e) { toast('Не удалось скопировать — выделите текст вручную'); }
+}
+
 function renderMetricsTop() {
   const v = kpiValues(metricPeriod);
   const f = leadFunnel(metricPeriod);
   return `<div class="head"><h2>Главные цифры</h2>${periodChips('metricperiod', metricPeriod)}</div>
     <div class="grid metrics kpigrid">${KPI.map(k => kpiTile(k, v[k.id])).join('')}</div>
     ${f.list.length ? `<div class="card funnelcard"><h2>Воронка продаж за период</h2>${funnelChart(f.steps, 'Воронка продаж за период')}</div>` : ''}
+    <div class="card weekcard"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Итоги недели</h2>
+      <button data-action="weekcopy">${icon('copy', 15)} Скопировать текстом</button></div>
+      <pre class="weektext">${E(weekSummary())}</pre></div>
     <div class="head"><h2>Публикации</h2><button class="primary" data-action="newmetric">+ Замер</button></div>`;
 }
 
@@ -4573,6 +4699,8 @@ document.addEventListener('click', async e => {
     case 'prstatus': prospectFilter.status = b.dataset.id; render(); break;
     case 'orgadd': orgAdd([finder.orgs[Number(b.dataset.id)]]); break;
     case 'orgaddall': orgAdd(finder.orgs); break;
+    case 'importprospects': importCompanies(); break;
+    case 'weekcopy': weekCopy(); break;
     case 'sitecreate': editProspect(undefined, {
       name: (finder.site.title || '').slice(0, 200), website: finder.url, source: 'Сайт',
       phone: finder.site.phones.join(', ').slice(0, 200), email: finder.site.emails.join(', ').slice(0, 200),

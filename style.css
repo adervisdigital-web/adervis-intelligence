@@ -1190,3 +1190,12 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .duetoday{color:var(--ink);font-weight:700}
 .lcard small svg{vertical-align:-2px}
 @media(max-width:720px){.todayrow{grid-template-columns:28px minmax(0,1fr)}.todaywhen{grid-column:2}}
+
+/* Импорт списка компаний и итоги недели. */
+.headactions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;flex:none}
+.headactions button{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.imppreview p{margin:12px 0 6px}
+.implist{margin:0;padding-left:18px;display:grid;gap:3px;font-size:13px}
+.weekcard{margin:16px 0}
+.weektext{margin:0;white-space:pre-wrap;font:inherit;font-size:14px;line-height:1.6;background:var(--bg);border-radius:10px;padding:14px 16px}
+.weekcard .head button{display:inline-flex;gap:6px;align-items:center}

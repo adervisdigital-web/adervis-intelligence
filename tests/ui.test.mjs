@@ -1161,6 +1161,35 @@ await page.waitForFunction(() => !document.querySelector('#modal').open);
 await nav('home');
 check('перенесённый шаг ушёл из «На сегодня»', !(await page.textContent('.todaycard')).includes('Пекарня'));
 
+// --- 5л. импорт списка компаний и итоги недели
+await nav('prospects');
+const prBefore = (await state()).prospects.length;
+await page.click('[data-action=importprospects]');
+// строки как из Excel: табуляция, заголовки в первой строке
+await page.fill('#imptext', 'Название\tСайт\tТелефон\tГород\nПекарня «Колос»\thttps://kolos59.ru\t+7 342 211-22-33\tПермь\nЗерно\tzerno-perm.ru\t\tПермь\nПекарня «Колос»\tkolos59.ru\t\tПермь');
+const prev1 = await page.textContent('#imppreview');
+check('по заголовкам: одна новая, остальные — повторы', /Новых: 1/.test(prev1) && /повтор: 2/.test(prev1), prev1);
+// без заголовков: колонки по виду значения
+await page.fill('#imptext', 'Цветы у Анны;+7 (902) 555-66-77;anna@flowers59.ru;Пермь\nАвтосервис Мотор;motor59.ru;Березники');
+const prev2 = await page.textContent('#imppreview');
+check('без заголовков — разобраны обе строки', /Новых: 2/.test(prev2), prev2);
+await page.click('#impgo');
+await page.waitForFunction(n => window.__STATE__.prospects.length === n + 2, prBefore);
+const anna = (await state()).prospects.find(x => x.name === 'Цветы у Анны');
+check('почта, телефон и город разошлись по своим полям',
+  anna.email === 'anna@flowers59.ru' && anna.phone === '+7 (902) 555-66-77' && anna.city === 'Пермь' && anna.source === 'Импорт', JSON.stringify(anna));
+const motor = (await state()).prospects.find(x => x.name === 'Автосервис Мотор');
+check('сайт узнан по виду', motor.website === 'motor59.ru' && motor.city === 'Березники', JSON.stringify(motor));
+
+await nav('analytics');
+const week = await page.textContent('.weektext');
+check('итоги недели собраны текстом', /^ADERVIS · итоги недели/.test(week) && /Заявки: \d+/.test(week) && /Поиск клиентов: написали \d+, ответили \d+/.test(week), week);
+check('в итогах честно сказано, как считаются сделки', week.includes('по дате последнего изменения'));
+await page.click('[data-action=weekcopy]');
+const wcopy = await page.evaluate(() => navigator.clipboard.readText());
+// буфер обмена Windows хранит переносы как \r\n — текст тот же
+check('итоги копируются как есть', wcopy.replace(/\r\n/g, '\n') === week, JSON.stringify([wcopy.slice(0, 80), week.slice(0, 80)]));
+
 // --- 6. задачи
 await nav('tasks');
 await page.check('input[data-task=t1]');
