@@ -1700,7 +1700,9 @@ function renderContentPlan() {
   const net = network(contentNet);
 
   const head = heading('Контент-план', 'Что, где и когда выходит. Площадка сверху — у каждой свои форматы и лимиты; парсер проверяет, что реально вышло.',
-    `<button class="primary" data-action="newp">+ Публикация</button>`);
+    `<div class="headactions"><button class="aichip" data-action="aiideas">${icon('ai', 15)} Идеи</button>
+      <button class="aichip" data-action="aiplan">${icon('ai', 15)} План на месяц</button>
+      <button class="primary" data-action="newp">+ Публикация</button></div>`);
 
   const tabs = `<div class="nettabs" role="group" aria-label="Площадка">${['Все', ...NETWORK_NAMES].map(n => {
     const count = n === 'Все' ? db.content.length : db.content.filter(p => p.channel === n).length;
@@ -1761,6 +1763,106 @@ function renderContentPlan() {
     ? `<div class="card empty"><h2>План пуст</h2><p>Добавьте публикацию или подтяните то, что уже вышло: выберите Telegram или YouTube сверху.</p></div>`
     : '';
   return head + tabs + panel + toolbar + (empty || body);
+}
+
+// --------------------------------------------------------- ИИ для контента
+//
+// Идеи, план на месяц и текст поста. Модель знает, что уже выходило (чтобы
+// не повторяться) и что набрало больше просмотров. Всё, что она предложила,
+// попадает в план идеями — выходит только то, что человек довёл сам.
+const DIR_PRODUCT = { 'Студия': 'Studio', 'CRM': 'CRM', 'Stock': 'Stock', 'Медиа': 'Медиаэксперименты' };
+function contentContext() {
+  const recent = [...db.content].sort((a, b) => String(b._at || '').localeCompare(String(a._at || ''))).slice(0, 30).map(p => p.title);
+  const top = db.content.map(p => ({ p, v: lastViews(p.id) })).filter(x => x.v).sort((a, b) => b.v - a.v).slice(0, 6)
+    .map(x => `${x.p.title} — ${num(x.v)} просм. (${x.p.channel})`);
+  return { recent, top };
+}
+const nextMonday = () => { const d = new Date(); d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7)); return localDate(d); };
+
+function aiContentForm(mode) {
+  const nets = contentNet !== 'Все' ? [contentNet] : ['ВКонтакте', 'Telegram'];
+  modal(`<h2>${mode === 'ideas' ? 'Идеи постов' : 'Контент-план на месяц'}</h2><form id="aicf">
+    <label>Площадки</label>
+    <div class="netchecks">${NETWORK_NAMES.map(n => `<label class="checkitem"><input type="checkbox" name="net" value="${E(n)}" ${nets.includes(n) ? 'checked' : ''}><span>${icon(network(n).icon, 14)} ${E(n)}</span></label>`).join('')}</div>
+    <div class="formgrid">
+      <div><label>Направление</label><select name="direction"><option value="">Все по очереди</option>${opts(DIRECTIONS, '')}</select></div>
+      ${mode === 'plan'
+        ? `<div><label>С какого дня</label><input type="date" name="start" value="${nextMonday()}"></div>
+           <div><label>Недель</label><select name="weeks">${opts(['2', '4'], '4')}</select></div>
+           <div><label>Публикаций в неделю</label><select name="perWeek">${opts(['2', '3', '5'], '3')}</select></div>`
+        : `<div><label>Сколько идей</label><select name="count">${opts(['5', '8', '12'], '8')}</select></div>`}
+    </div>
+    <label>Пожелание — необязательно</label>
+    <input name="topic" maxlength="500" placeholder="${mode === 'ideas' ? 'например: про ИИ в продакшне для малого бизнеса' : 'например: к запуску Stock, больше кейсов'}">
+    <p class="muted">Модель видит проверенные факты из базы знаний, последние публикации и те, что набрали больше просмотров. Выдумывать кейсы ей запрещено.</p>
+    <div class="formactions"><button class="primary">${mode === 'ideas' ? 'Придумать' : 'Составить план'}</button></div></form>`);
+  $('#aicf').onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target;
+    const networks = [...f.querySelectorAll('input[name=net]:checked')].map(i => i.value);
+    if (!networks.length) { toast('Отметьте хотя бы одну площадку'); return; }
+    const payload = { mode, networks, direction: f.elements.direction.value, topic: f.elements.topic.value.trim(), ...contentContext(),
+      ...(mode === 'plan' ? { start: f.elements.start.value, weeks: Number(f.elements.weeks.value), perWeek: Number(f.elements.perWeek.value) }
+        : { count: Number(f.elements.count.value) }) };
+    aiWait(mode === 'ideas' ? 'Идеи постов' : 'Контент-план на месяц');
+    let res;
+    try { res = await api.generate(payload); }
+    catch (err) { modal(`<h2>Не получилось</h2><div class="notice error">${E(err.message || 'ошибка модели')}</div>`); return; }
+    aiContentResult(mode, res, payload.direction);
+  };
+}
+
+function aiContentResult(mode, res, direction) {
+  const list = mode === 'ideas' ? res.ideas : res.items;
+  modal(`<h2>${mode === 'ideas' ? 'Идеи постов' : 'Контент-план'} · ${list.length}</h2>
+    <p class="muted">Отмеченное попадёт в план со статусом «Идея»${mode === 'plan' ? ' и своей датой' : ''}. Снимите галочки с лишнего.</p>
+    <div class="aiplanlist">${list.map((x, i) => `<label class="aiplanrow"><input type="checkbox" checked data-i="${i}">
+      <span>${mode === 'plan' ? `<small class="muted">${E(shortDate(x.date))} · </small>` : ''}<small class="netmark">${icon(network(x.network)?.icon || 'social', 13)}${E(x.network)}</small>
+        <small class="tag">${E(x.rubric)}</small>${x.format ? `<small class="muted"> · ${E(x.format)}</small>` : ''}
+        <b>${E(x.title)}</b><small class="muted">${E(x.angle || x.brief || '')}</small></span></label>`).join('')}</div>
+    ${aiFooter(res)}
+    <div class="formactions"><button class="primary" id="aicadd">Добавить в план</button></div>`);
+  $('#aicadd').onclick = async () => {
+    const picked = [...document.querySelectorAll('#modal .aiplanrow input:checked')].map(i => list[Number(i.dataset.i)]);
+    if (!picked.length) { toast('Ничего не отмечено'); return; }
+    const rows = picked.map(x => ({
+      id: uid(), title: x.title.slice(0, 300), body: `${x.rubric}${x.format ? ' · ' + x.format : ''}. ${x.angle || x.brief || ''}`.slice(0, 20000),
+      product: DIR_PRODUCT[direction] || 'Studio', author: 'ADERVIS', channel: x.network, status: 'Идея', date: x.date || '', url: ''
+    }));
+    try {
+      await api.upsertAll('content', rows);
+      for (const r of rows) upsertLocal('content', { ...r, _at: new Date().toISOString() });
+      $('#modal').close();
+      if (mode === 'plan') contentView = 'calendar';
+      render();
+      toast(`В план добавлено: ${rows.length}`);
+    } catch (e) { handleError(e); }
+  };
+}
+
+// Текст поста по названию и заметке: заметка — это пожелание, модель
+// пишет новый текст. Черновик в поле можно править до сохранения.
+async function aiPost(btn) {
+  const f = $('#pf');
+  const title = f.elements.title.value.trim();
+  if (title.length < 3) { toast('Сначала напишите рабочее название — это тема поста'); return; }
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  btn.textContent = 'Пишу…';
+  $('#aipostgaps').textContent = '';
+  try {
+    const res = await api.generate({ mode: 'post', network: f.elements.channel.value, title,
+      direction: PRODUCT_DIR[f.elements.product.value] || '', brief: f.elements.body.value.trim() });
+    f.elements.body.value = res.body;
+    f.elements.body.dispatchEvent(new Event('input'));
+    $('#aipostgaps').textContent = [res.over ? `Длиннее предела площадки на ${res.over} знаков — сократите` : '',
+      res.gaps?.length ? 'Не хватило: ' + res.gaps.join('; ') : '', res.left !== undefined ? `осталось запросов: ${res.left}` : ''].filter(Boolean).join(' · ');
+  } catch (e) {
+    toast('ИИ не ответил: ' + (e.message || 'ошибка'), 8000);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
 }
 
 // ------------------------------------------------------------------ парсер
@@ -2219,17 +2321,54 @@ const sameOrg = o => db.prospects.find(p => (o.external_id && p.external_id === 
 // заголовки, колонки берутся по ним; если нет — по виду значения:
 // «@» — почта, семь и больше цифр — телефон, домен — сайт, первое
 // оставшееся — название, второе — город.
+// Колонки по заголовкам. Порядок важен: «2GIS URL» — номер карточки, а не
+// сайт компании; «Комментарий к адресу» — не адрес. Формат parser-2gis
+// (github.com/interlark/parser-2gis): «Наименование», «Телефон 1…N»,
+// «E-mail 1…N», «Веб-сайт 1…N», «ВКонтакте 1», «Telegram 1», «2GIS URL».
 const IMPORT_COLS = [
-  ['name', /назв|компан|организ|name|company/i], ['website', /сайт|site|url|web/i],
+  ['external_id', /2gis url|2гис url|ссылка на 2гис/i],
+  [null, /комментарий к адресу|почтовый индекс|широта|долгота|часовой пояс/i],
+  ['socials', /вконтакте|vkontakte|telegram|телеграм|youtube|instagram|whatsapp|viber/i],
+  ['name', /наимен|назв|компан|организ|^name$|company/i], ['website', /сайт|site|^url$|web/i],
   ['phone', /тел|phone/i], ['email', /почт|mail/i], ['city', /город|city/i],
-  ['address', /адрес|address/i], ['category', /рубрик|катег|вид|category/i]
+  ['address', /адрес|address/i], ['category', /рубрик|катег|^вид|category/i]
 ];
+// Несколько колонок одного поля («Телефон 1», «Телефон 2») склеиваются;
+// соцсети — по строке, остальное — через запятую.
+const IMPORT_MULTI = { phone: ', ', email: ', ', socials: '\n' };
+
+// CSV с кавычками: адрес «г. Пермь, ул. Ленина, 50» — одна ячейка, а не три.
+function splitCsv(text) {
+  const src = String(text || '').replace(/^\uFEFF/, '');
+  const first = src.split(/\r?\n/, 1)[0] || '';
+  const count = ch => first.split('').filter((c, i, arr) => c === ch).length;
+  const sep = ['\t', ';', ','].sort((x, y) => count(y) - count(x))[0];
+  const rows = [];
+  let row = [], cell = '', quoted = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"' && src[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"' && !cell) quoted = true;
+    else if (c === sep) { row.push(cell.trim()); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(cell.trim()); cell = '';
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
 function parseCompanyList(text, city) {
-  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (!lines.length) return [];
-  const sep = [/\t/, /;/, /,/].find(r => lines.every(l => r.test(l)) || lines.filter(l => r.test(l)).length > lines.length / 2) || /\t/;
-  const rows = lines.map(l => l.split(sep).map(c => c.trim().replace(/^"(.*)"$/, '$1')));
-  const head = rows[0].map(c => (IMPORT_COLS.find(([, re]) => re.test(c)) || [null])[0]);
+  const rows = splitCsv(text);
+  if (!rows.length) return [];
+  const head = rows[0].map(c => { const hit = IMPORT_COLS.find(([, re]) => re.test(c)); return hit ? hit[0] : null; });
   const byHead = head.filter(Boolean).length >= 2 && head.includes('name');
   const classify = cells => {
     const o = {}, rest = [];
@@ -2244,13 +2383,24 @@ function parseCompanyList(text, city) {
     o.city = rest[1] || '';
     return o;
   };
+  const fromHead = cells => {
+    const o = {};
+    head.forEach((k, i) => {
+      const v = (cells[i] || '').trim();
+      if (!k || !v) return;
+      if (IMPORT_MULTI[k]) o[k] = o[k] ? o[k] + IMPORT_MULTI[k] + v : v;
+      else if (!o[k]) o[k] = v;
+    });
+    return o;
+  };
   return (byHead ? rows.slice(1) : rows).map(cells => {
-    const o = byHead ? Object.fromEntries(head.map((k, i) => [k, cells[i] || '']).filter(([k]) => k)) : classify(cells);
+    const o = byHead ? fromHead(cells) : classify(cells);
     return {
-      name: String(o.name || '').slice(0, 200), website: String(o.website || '').slice(0, 300),
+      name: String(o.name || '').slice(0, 200), website: String(o.website || '').split(/[,\s]+/)[0].slice(0, 300),
       phone: String(o.phone || '').slice(0, 200), email: String(o.email || '').slice(0, 200),
       city: String(o.city || city || '').slice(0, 80), address: String(o.address || '').slice(0, 300),
-      category: String(o.category || '').slice(0, 120), external_id: ''
+      category: String(o.category || '').slice(0, 120), socials: String(o.socials || '').slice(0, 1000),
+      external_id: String(o.external_id || '').replace(/^https?:\/\//, '').slice(0, 80)
     };
   }).filter(o => o.name.length >= 2);
 }
@@ -2259,7 +2409,11 @@ function importCompanies() {
   modal(`<h2>Вставить список компаний</h2><form id="impf">
     <p class="muted">Скопируйте строки из Excel, Google Таблиц или выгрузки 2ГИС и вставьте сюда. Первая строка может быть заголовками:
       название, сайт, телефон, почта, город, адрес, рубрика. Без заголовков приложение разберёт колонки по виду значения.</p>
-    <label for="imptext">Список</label>
+    <p class="muted">Готовый сбор из 2ГИС — программа <a href="https://github.com/interlark/parser-2gis" target="_blank" rel="noopener noreferrer">parser-2gis</a>:
+      сохраните результат в CSV и загрузите файл — колонки узнаются сами, адреса с запятыми не разрезаются.</p>
+    <p><button type="button" id="impfilebtn">${icon('upload', 15)} Загрузить CSV-файл</button>
+      <input type="file" id="impfile" accept=".csv,.txt,text/csv" hidden></p>
+    <label for="imptext">Или вставьте список</label>
     <textarea id="imptext" style="min-height:180px" placeholder="Зерно;zerno-perm.ru;+7 342 200-10-20&#10;Бариста Бро;;hi@bro.ru"></textarea>
     <label for="impcity">Город, если в списке его нет</label>
     <input id="impcity" maxlength="60" value="${E(finder.city || '')}">
@@ -2278,18 +2432,24 @@ function importCompanies() {
     $('#impgo').textContent = list.length ? `Добавить ${list.length}` : 'Добавить';
   };
   $('#imptext').oninput = preview;
+  $('#impfilebtn').onclick = () => $('#impfile').click();
+  $('#impfile').onchange = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    $('#imptext').value = await f.text();
+    preview();
+  };
   $('#impcity').oninput = preview;
   $('#impf').onsubmit = async e => {
     e.preventDefault();
     $('#impgo').disabled = true;
     let n = 0;
     try {
-      for (const o of list) {
-        const saved = await api.insert('prospects', { id: uid(), ...o, socials: '', direction: 'Студия', source: 'Импорт',
-          status: 'Найден', lead_id: null, magnet_id: null, next_on: null, note: '' });
-        upsertLocal('prospects', saved);
-        n++;
-      }
+      const rows = list.map(o => ({ id: uid(), ...o, direction: 'Студия', source: o.external_id ? '2ГИС' : 'Импорт',
+        status: 'Найден', lead_id: null, magnet_id: null, next_on: null, note: '', lost_reason: '' }));
+      await api.upsertAll('prospects', rows);
+      for (const r of rows) upsertLocal('prospects', { ...r, _at: new Date().toISOString() });
+      n = rows.length;
       $('#modal').close();
       toast(`Добавлено компаний: ${n}`);
     } catch (err) {
@@ -4480,7 +4640,10 @@ function editP(id, preset = {}) {
     </div>
     <label>Рабочее название</label><input name="title" required maxlength="300" value="${E(p.title)}">
     <small class="counter" id="ptitlecount" aria-live="polite"></small>
-    <label>Текст</label><textarea name="body" required maxlength="20000">${E(p.body)}</textarea>
+    <div class="labelrow"><label>Текст</label>
+      <button type="button" class="chip aichip" data-action="aipost">${icon('ai', 14)} Написать текст</button></div>
+    <textarea name="body" required maxlength="20000">${E(p.body)}</textarea>
+    <small class="muted aipostgaps" id="aipostgaps" aria-live="polite"></small>
     <small class="counter" id="pcount" aria-live="polite"></small>
     <p class="nethint" id="nethint"></p>
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(p._by))}, ${ago(p._at)}</p>` : ''}
@@ -5294,6 +5457,9 @@ document.addEventListener('click', async e => {
     case 'adcopy': adTextCopy(b.dataset.id, b.dataset.kind); break;
     case 'aikeywords': aiKeywords(b.dataset.id); break;
     case 'aiads': aiAds(b.dataset.id); break;
+    case 'aiideas': aiContentForm('ideas'); break;
+    case 'aiplan': aiContentForm('plan'); break;
+    case 'aipost': aiPost(b); break;
     case 'leadperiod': leadPeriod = b.dataset.id; render(); break;
     case 'leadview': leadView = b.dataset.id; render(); break;
     case 'movelead': moveLead(b.dataset.id, Number(b.dataset.step)); break;

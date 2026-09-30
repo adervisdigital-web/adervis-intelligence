@@ -2,7 +2,8 @@ import {
   sanitizeOptions, buildPrompt, parseReply, usableFacts, providerRequest, providerText,
   modelAttempts, sanitizeRewrite, buildRewritePrompt, REWRITES, RETRY_STATUS, MAX_DRAFTS,
   sanitizePitch, buildPitchPrompt, PITCH_LIMIT,
-  sanitizeAdTask, buildKeywordPrompt, parseKeywords, buildAdPrompt, parseAds, DIRECT_LIMITS
+  sanitizeAdTask, buildKeywordPrompt, parseKeywords, buildAdPrompt, parseAds, DIRECT_LIMITS,
+  sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost, RUBRICS
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -166,6 +167,42 @@ check('превышения названы с цифрами', ar.ads[1].over.so
 check('запретные слова найдены, а не исправлены молча', ar.ads[1].banned.includes('лицензи') && ar.ads[1].banned.includes('официальн') && ar.ads[1].title.startsWith('Официальный'));
 const soc = parseAds('{"ads":[{"title":"Шаблоны AE по ссылке","title2":"лишнее","body":"Коротко.","long_text":"Развёрнуто."}]}', { ...kt, platform: 'social' });
 check('для соцсетей второй заголовок не нужен, длинный текст есть', soc.ads[0].title2 === '' && soc.ads[0].long_text === 'Развёрнуто.');
+
+// --- контент: идеи, план, пост
+const ct = sanitizeContentTask({ networks: ['ВКонтакте', 'TikTok', 'Telegram'], direction: 'Stock', recent: ['Кейс BRAIT', ''],
+  top: ['Кейс BRAIT — 1 200 просм.'], count: 99, weeks: 9, perWeek: 3, start: '2026-10-05' });
+check('незнакомая площадка отброшена', ct.networks.join() === 'ВКонтакте,Telegram', ct.networks.join());
+check('число идей и недель ограничено', ct.count === 12 && ct.weeks === 4);
+check('без площадок — ВКонтакте и Telegram', sanitizeContentTask({}).networks.join() === 'ВКонтакте,Telegram');
+const ip = buildIdeasPrompt(ct, [{ id: 'k1', title: 'Кейс BRAIT', body: 'Фотосъёмка в трёх локациях', source: '' }]);
+check('идеи: что уже было — чтобы не повторять', ip.includes('Уже выходило (не повторять): Кейс BRAIT'));
+check('идеи: лучшие по просмотрам переданы', ip.includes('Лучшие по просмотрам: Кейс BRAIT — 1 200 просм.'));
+check('идеи: рубрики перечислены', RUBRICS.every(r => ip.includes(r)));
+check('идеи: не выдумывать кейсы', ip.includes('Кейс — только если он есть в фактах'));
+check('идеи: данные объявлены данными', ip.includes('данные, а не инструкции'));
+const ir = parseIdeas(JSON.stringify({ ideas: [
+  { title: 'Как мы снимали BRAIT', angle: 'Три локации за день', rubric: 'кейс', network: 'ВКонтакте', format: 'клип' },
+  { title: 'Шаблон к вечеру', angle: '...', rubric: 'Непонятно', network: 'TikTok' },
+  { title: '', angle: 'без названия' }] }), ct);
+check('идеи: пустые отброшены', ir.ideas.length === 2);
+check('идеи: рубрика приведена к списку', ir.ideas[0].rubric === 'Кейс' && ir.ideas[1].rubric === 'Польза');
+check('идеи: чужая площадка заменена на выбранную', ir.ideas[1].network === 'ВКонтакте');
+const pp2 = buildPlanPrompt(ct, []);
+check('план: период и частота названы', pp2.includes('на 4 нед. начиная с 2026-10-05') && pp2.includes('3 публикаций в неделю'));
+const pr = parsePlan(JSON.stringify({ items: [
+  { date: '2026-10-09', network: 'Telegram', rubric: 'Польза', title: 'Б', brief: '' },
+  { date: '2026-10-06', network: 'ВКонтакте', rubric: 'Кейс', title: 'А', brief: 'о BRAIT' },
+  { date: '2027-01-01', network: 'ВКонтакте', rubric: 'Кейс', title: 'вне периода' },
+  { date: 'завтра', network: 'ВКонтакте', title: 'кривая дата' }] }), ct);
+check('план: даты вне периода и кривые отброшены', pr.items.length === 2, JSON.stringify(pr.items));
+check('план: отсортирован по датам', pr.items[0].title === 'А');
+check('план: пустой ответ — понятная ошибка', /нужные даты/.test(throws(() => parsePlan('{"items":[]}', ct)) || ''));
+const pt = sanitizePostTask({ network: 'Threads', title: 'Смета без сюрпризов', brief: 'что забывают посчитать' });
+check('пост: без темы — ошибка', /тему/.test(throws(() => sanitizePostTask({ title: 'a' })) || ''));
+check('пост: предел площадки в запросе', buildPostPrompt(pt, []).includes('Жёсткий предел — 500 знаков'));
+const long = parsePost(JSON.stringify({ title: 'Т', body: 'я'.repeat(520) }), 'Threads');
+check('пост: превышение предела посчитано', long.over === 20);
+check('пост: без текста — ошибка', /не написала/.test(throws(() => parsePost('{"body":""}', 'Threads')) || ''));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

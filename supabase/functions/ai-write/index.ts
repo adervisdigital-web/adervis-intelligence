@@ -11,6 +11,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import {
   buildPrompt, buildRewritePrompt, buildPitchPrompt, parseReply, sanitizeOptions, sanitizeRewrite, sanitizePitch, usableFacts,
   sanitizeAdTask, buildKeywordPrompt, buildAdPrompt, parseKeywords, parseAds,
+  sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost,
   providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
 } from './compose.ts';
 
@@ -79,7 +80,7 @@ Deno.serve(async (req) => {
     }
 
     const input = await req.json();
-    const mode = ['rewrite', 'pitch', 'keywords', 'ads'].includes(input?.mode) ? input.mode : 'write';
+    const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post'].includes(input?.mode) ? input.mode : 'write';
 
     // Публичные и проверенные записи. Политики доступа базы действуют и здесь:
     // запрос идёт от имени вошедшего человека.
@@ -102,7 +103,12 @@ Deno.serve(async (req) => {
     // уже ссылается, а если ссылок нет — не подкладываем ничего.
     // Первое сообщение компании опирается на её карточку, а не на базу знаний.
     const adTask = ['keywords', 'ads'].includes(mode) ? sanitizeAdTask(input) : null;
-    const prompt = mode === 'pitch'
+    const contentTask = ['ideas', 'plan'].includes(mode) ? sanitizeContentTask(input) : null;
+    const postTask = mode === 'post' ? sanitizePostTask(input) : null;
+    const prompt = mode === 'ideas' ? buildIdeasPrompt(contentTask!, facts)
+      : mode === 'plan' ? buildPlanPrompt(contentTask!, facts)
+      : mode === 'post' ? buildPostPrompt(postTask!, facts)
+      : mode === 'pitch'
       ? buildPitchPrompt(sanitizePitch(input))
       : mode === 'keywords' ? buildKeywordPrompt(adTask!, facts)
       : mode === 'ads' ? buildAdPrompt(adTask!, facts)
@@ -144,8 +150,12 @@ Deno.serve(async (req) => {
     }
 
     // Фразы и объявления — свой ответ: у них нет «черновиков со ссылками».
-    if (adTask) {
-      const parsed = mode === 'keywords' ? parseKeywords(text, adTask) : parseAds(text, adTask);
+    if (adTask || contentTask || postTask) {
+      const parsed = mode === 'keywords' ? parseKeywords(text, adTask!)
+        : mode === 'ads' ? parseAds(text, adTask!)
+        : mode === 'ideas' ? parseIdeas(text, contentTask!)
+        : mode === 'plan' ? parsePlan(text, contentTask!)
+        : parsePost(text, postTask!.network);
       await admin.from('ai_usage').insert({ actor: user.email, model: `${PROVIDER}/${usedModel}`, drafts: 0, chars: text.length });
       return json({ ...parsed, model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
     }

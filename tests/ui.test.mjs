@@ -234,6 +234,21 @@ const fake = (seedData) => {
     async generate(payload) {
       window.__lastAiPayload = payload;
       if (window.__aiFail) throw new Error(window.__aiFail);
+      if (payload.mode === 'ideas') {
+        return { ideas: [
+          { title: 'Как мы снимали BRAIT в трёх локациях', angle: 'Закулисье съёмки', rubric: 'Кейс', network: payload.networks[0], format: 'клип' },
+          { title: 'Смета без сюрпризов', angle: 'Что забывают посчитать', rubric: 'Польза', network: payload.networks[0], format: 'пост' }
+        ], gaps: [], model: 'yandexgpt/latest', left: 23 };
+      }
+      if (payload.mode === 'plan') {
+        return { items: [
+          { date: payload.start, network: payload.networks[0], rubric: 'Кейс', title: 'Кейс BRAIT', brief: 'три локации' },
+          { date: payload.start, network: payload.networks[0], rubric: 'Польза', title: 'Как выбрать формат ролика', brief: '' }
+        ], gaps: ['нет свежих кейсов CRM'], model: 'yandexgpt/latest', left: 22 };
+      }
+      if (payload.mode === 'post') {
+        return { title: payload.title, body: 'Готовый текст про ' + payload.title + '. Напишите нам в сообщения.', over: 0, gaps: [], model: 'yandexgpt/latest', left: 21 };
+      }
       if (payload.mode === 'keywords') {
         return { phrases: ['envato elements подписка цена', 'скачать шаблон envato'], minus: ['кряк'],
           gaps: ['нет цен конкурентов'], model: 'yandexgpt/latest', left: 25 };
@@ -1236,6 +1251,29 @@ check('почта, телефон и город разошлись по свои
 const motor = (await state()).prospects.find(x => x.name === 'Автосервис Мотор');
 check('сайт узнан по виду', motor.website === 'motor59.ru' && motor.city === 'Березники', JSON.stringify(motor));
 
+// выгрузка parser-2gis: кавычки с запятыми, несколько телефонов, ссылка 2ГИС
+await nav('prospects');
+await page.click('[data-action=importprospects]');
+const gisCsv = '\ufeffНаименование,Рубрики,Адрес,Комментарий к адресу,Город,Телефон 1,Телефон 2,E-mail 1,Веб-сайт 1,ВКонтакте 1,Telegram 1,2GIS URL\r\n'
+  + '"Кофейня ""Лес""","Кофейни, Кондитерские","Пермь, ул. Ленина, 50",2 этаж,Пермь,+7 (342) 111-22-33,,les@mail.ru,https://les59.ru,https://vk.com/les59,https://t.me/les59,https://2gis.ru/perm/firm/70000001\r\n'
+  + 'Автомойка Блеск,Автомойки,"Пермь, Сибирская, 9",,Пермь,+7 (342) 222-33-44,+7 (902) 000-11-22,,,,,https://2gis.ru/perm/firm/70000002\r\n';
+await page.setInputFiles('#impfile', { name: '2gis.csv', mimeType: 'text/csv', buffer: Buffer.from(gisCsv, 'utf8') });
+await page.waitForFunction(() => /Новых: 2/.test(document.querySelector('#imppreview').textContent));
+await page.click('#impgo');
+await page.waitForFunction(() => window.__STATE__.prospects.some(x => x.name === 'Кофейня "Лес"'));
+const les = (await state()).prospects.find(x => x.name === 'Кофейня "Лес"');
+check('parser-2gis: адрес с запятыми — одна ячейка', les.address === 'Пермь, ул. Ленина, 50', les.address);
+check('parser-2gis: рубрики — вид бизнеса', les.category === 'Кофейни, Кондитерские');
+check('parser-2gis: «Комментарий к адресу» не затёр адрес, «2GIS URL» — не сайт', les.website === 'https://les59.ru' && les.external_id === '2gis.ru/perm/firm/70000001', JSON.stringify([les.website, les.external_id]));
+check('parser-2gis: соцсети собраны по строкам', les.socials === 'https://vk.com/les59\nhttps://t.me/les59', JSON.stringify(les.socials));
+check('parser-2gis: источник — 2ГИС', les.source === '2ГИС');
+check('parser-2gis: два телефона склеены, пустой не затёр', (await state()).prospects.find(x => x.name === 'Автомойка Блеск').phone === '+7 (342) 222-33-44, +7 (902) 000-11-22');
+await page.click('[data-action=importprospects]');
+await page.setInputFiles('#impfile', { name: '2gis.csv', mimeType: 'text/csv', buffer: Buffer.from(gisCsv, 'utf8') });
+await page.waitForFunction(() => /повтор: 2/.test(document.querySelector('#imppreview').textContent));
+check('повторная выгрузка узнаётся по ссылке 2ГИС', true);
+await page.keyboard.press('Escape');
+
 await nav('analytics');
 const week = await page.textContent('.weektext');
 check('итоги недели собраны текстом', /^ADERVIS · итоги недели/.test(week) && /Заявки: \d+/.test(week) && /Поиск клиентов: написали \d+, ответили \d+/.test(week), week);
@@ -1488,6 +1526,44 @@ if (fs.existsSync(realVk)) {
   check('настоящая выгрузка ВК: 36 месяцев, апрель 2025 — 16 350 охвата', (await state()).channel_stats.length === 36 && apr.reach === 16350, JSON.stringify(apr));
   await (await page.$('.vkstats')).screenshot({ path: path.join(OUT, 'intel-vkstats.png') });
 }
+
+// --- 5у. ИИ для контента: идеи, план, текст поста
+await nav('content');
+await page.click('[data-action=contentnet][data-id="Telegram"]');
+await page.click('[data-action=aiideas]');
+check('площадка вкладки отмечена сама', await page.$eval('#aicf input[name=net][value="Telegram"]', i => i.checked));
+await page.click('#aicf button.primary');
+await page.waitForSelector('#aicadd');
+const ideasAsk = await page.evaluate(() => window.__lastAiPayload);
+check('ИИ знает, что уже выходило, чтобы не повторяться', ideasAsk.mode === 'ideas' && ideasAsk.recent.length > 0 && ideasAsk.networks.join() === 'Telegram', JSON.stringify(ideasAsk).slice(0, 200));
+check('ИИ знает, что набрало больше просмотров', ideasAsk.top.length > 0 && /просм\./.test(ideasAsk.top[0]), String(ideasAsk.top[0]));
+check('галочки выглядят как галочки, а не поля во всю ширину', await page.$eval('#modal .aiplanrow input', i => i.getBoundingClientRect().width <= 24));
+await page.uncheck('#modal .aiplanrow input[data-i="1"]');
+await page.click('#aicadd');
+await page.waitForFunction(() => window.__STATE__.content.some(p => p.title === 'Как мы снимали BRAIT в трёх локациях'));
+const idea = (await state()).content.find(p => p.title === 'Как мы снимали BRAIT в трёх локациях');
+check('идея добавлена в план со статусом «Идея»', idea.status === 'Идея' && idea.channel === 'Telegram' && idea.body.startsWith('Кейс · клип'), JSON.stringify(idea));
+check('неотмеченная идея не добавлена', !(await state()).content.some(p => p.title === 'Смета без сюрпризов'));
+await page.click('[data-action=aiplan]');
+await page.click('#aicf button.primary');
+await page.waitForSelector('#aicadd');
+await page.click('#aicadd');
+await page.waitForFunction(() => window.__STATE__.content.some(p => p.title === 'Кейс BRAIT'));
+const planItem = (await state()).content.find(p => p.title === 'Кейс BRAIT');
+check('план ставит публикации на даты', /^\d{4}-\d{2}-\d{2}$/.test(planItem.date) && planItem.status === 'Идея', JSON.stringify(planItem));
+check('после плана открыт календарь', !!(await page.$('.calendar')));
+await page.click('[data-action=contentview][data-id="board"]');
+await page.click('[data-action=newp]');
+await page.fill('#pf input[name=title]', 'Смета без сюрпризов');
+await page.fill('#pf textarea[name=body]', 'что обычно забывают посчитать');
+await page.click('[data-action=aipost]');
+await page.waitForFunction(() => document.querySelector('#pf textarea[name=body]').value.startsWith('Готовый текст'));
+const postAsk = await page.evaluate(() => window.__lastAiPayload);
+check('текст поста пишется под площадку и тему, заметка — как пожелание',
+  postAsk.mode === 'post' && postAsk.network === 'Telegram' && postAsk.title === 'Смета без сюрпризов' && postAsk.brief === 'что обычно забывают посчитать');
+check('счётчик знаков обновился под новый текст', /из 4\s?096/.test(await page.textContent('#pcount')));
+await page.keyboard.press('Escape');
+await page.click('[data-action=contentnet][data-id="Все"]');
 
 // --- 6. задачи
 await nav('tasks');

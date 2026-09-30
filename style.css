@@ -1318,3 +1318,28 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .monthbars .bar{fill:var(--gold)}
 .monthbars .lowbar{fill:#d64545;opacity:.75}
 .vknotes{margin:10px 0 0;padding-left:18px;display:grid;gap:4px;font-size:13px}
+
+/* ИИ для контента: идеи и план — списком с галочками. */
+.netchecks{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0 12px}
+.labelrow{display:flex;justify-content:space-between;align-items:flex-end;gap:8px}
+.labelrow .chip{display:inline-flex;gap:5px;align-items:center;min-height:36px;margin-bottom:4px}
+.aipostgaps{display:block;margin-top:4px}
+.headactions .aichip{display:inline-flex;gap:6px;align-items:center}
+.aiplanlist{display:grid;gap:6px;max-height:52vh;overflow:auto;margin:8px 0}
+.aiplanrow{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;margin:0}
+dialog label.aiplanrow{margin:0;color:var(--ink);font-size:13px}
+.aiplanrow input{width:18px;height:18px;margin-top:2px;accent-color:var(--gold)}
+.aiplanrow span{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
+.aiplanrow b{flex-basis:100%;font-size:14px}
+.aiplanrow span > small:last-child{flex-basis:100%}
+
+/* Строка с галочкой в окнах (подбор фраз, площадки): галочка слева,
+   текст справа — а не поле ввода во всю ширину. */
+dialog label.checkitem,.checkitem{display:flex;gap:10px;align-items:flex-start;margin:0;padding:7px 2px;min-height:36px;
+  font-size:13px;color:var(--ink);cursor:pointer}
+dialog .checkitem input,.checkitem input,dialog .aiplanrow input{width:18px;height:18px;flex:none;margin-top:1px;accent-color:var(--gold)}
+.checkitem span{display:inline-flex;gap:5px;align-items:center}
+
+/* На телефоне кнопки шапки раздела переносятся под заголовок, а не
+   растягивают страницу вбок. */
+@media(max-width:720px){.head{flex-wrap:wrap}.head > .headactions{flex:1 1 100%;justify-content:flex-start}}
