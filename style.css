@@ -1219,3 +1219,17 @@ html[data-theme=dark]{--g-magnet:#f472b6}
   .fstep:first-child .fconv small{display:inline}
   .fconv{align-self:center}
 }
+
+/* --- Ключевые фразы: набор = сегмент. Фразы видны сразу, без открытия
+   карточки; минус-фразы — отдельной строкой и со знаком минус, не только
+   другим цветом. */
+.adtabs{margin:-8px 0 18px}
+.kwset{display:flex;flex-direction:column;gap:10px}
+.kwset h2{margin:0}
+.kwnote{margin:0;font-size:13px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.kwlist{display:flex;flex-wrap:wrap;gap:5px}
+.kw{font-size:12px;line-height:1.3;padding:3px 8px;border-radius:7px;background:var(--bg);border:1px solid var(--line);overflow-wrap:anywhere}
+.kwlist.minus .kw{color:var(--muted);border-style:dashed}
+.kw.more{color:var(--muted);background:transparent}
+.kwactions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+.kwactions .chip{display:inline-flex;gap:5px;align-items:center;min-height:36px}

@@ -62,12 +62,13 @@ const FIELDS = {
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
   brand: ['id', 'title', 'kind', 'sort', 'data', 'section'],
   campaigns: ['id', 'name', 'channel', 'direction', 'goal', 'status', 'starts_on', 'ends_on', 'budget', 'spent',
-    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id'],
+    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id', 'keyword_set_id'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
   leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id', 'next_step', 'next_on', 'lost_reason'],
   prospects: ['id', 'name', 'city', 'category', 'address', 'website', 'phone', 'email', 'socials', 'direction',
     'source', 'status', 'external_id', 'lead_id', 'note', 'magnet_id', 'next_on', 'lost_reason'],
   kpi_targets: ['id', 'target'],
+  keyword_sets: ['id', 'name', 'direction', 'channel', 'phrases', 'minus', 'note', 'sort'],
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
@@ -129,7 +130,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -146,7 +147,8 @@ function createApi(cfg) {
         sb.from('social_accounts').select('network,handle,note').then(must),
         selectAll('prospects', 'created_at'),
         selectAll('kpi_targets', 'id'),
-        selectAll('lead_magnets', 'created_at')
+        selectAll('lead_magnets', 'created_at'),
+        selectAll('keyword_sets', 'sort')
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -161,6 +163,7 @@ function createApi(cfg) {
         prospects: prospects.map(r => fromRow('prospects', r)),
         kpi_targets: kpiTargets.map(r => fromRow('kpi_targets', r)),
         lead_magnets: magnets.map(r => fromRow('lead_magnets', r)),
+        keyword_sets: keywordSets.map(r => fromRow('keyword_sets', r)),
         publications, ai, members, activity, accounts
       };
     },
@@ -226,7 +229,7 @@ let me = null;
 const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
-  prospects: [], kpi_targets: [], lead_magnets: []
+  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -394,7 +397,7 @@ function filters(categories) {
 }
 
 const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук',
-  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', decisions: 'решение' };
+  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', decisions: 'решение' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -1365,6 +1368,7 @@ const UTM_SOURCE = {
 };
 const LANDINGS = { 'Студия': 'https://adervis.ru/', 'CRM': 'https://adervis.ru/pro', 'Stock': 'https://stock.adervis.ru/', 'Медиа': 'https://adervis.ru/' };
 let campaignFilter = 'Все';
+const STOCK_FROM = { 'ВКонтакте': 'vk', 'Telegram Ads': 'tg', 'Авито': 'avito' };
 
 const monthKey = d => String(d).slice(0, 7);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -1386,6 +1390,9 @@ function utmLink(c) {
   url.searchParams.set('utm_medium', c.utm_medium || 'cpc');
   url.searchParams.set('utm_campaign', c.utm_campaign || slugify(c.name));
   if (c.utm_content) url.searchParams.set('utm_content', c.utm_content);
+  // Stock считает продажи по своей метке from — без неё покупка с рекламы
+  // в его админке станет «неизвестно откуда».
+  if (c.direction === 'Stock' && !url.searchParams.has('from') && STOCK_FROM[c.channel]) url.searchParams.set('from', STOCK_FROM[c.channel]);
   return url.toString();
 }
 
@@ -1508,11 +1515,16 @@ function editDecision(id) {
   submitForm($('#df'), 'decisions', d, exists, 'Решение записано');
 }
 
+let adView = 'campaigns', keywordDir = 'Все';
+const adTabs = () => `<div class="seg adtabs" role="group" aria-label="Что показать">${[['campaigns', 'Кампании'], ['keywords', 'Ключевые фразы']].map(([id, t]) =>
+  `<button class="chip${adView === id ? ' on' : ''}" data-action="adview" data-id="${id}" aria-pressed="${adView === id}">${t}</button>`).join('')}</div>`;
+
 function renderAds() {
+  if (adView === 'keywords') return renderKeywords();
   const st = adStats();
   const rub = n => n === null || n === undefined ? '—' : num(n) + ' ₽';
   const head = heading('Реклама', 'Кампании, их бюджет и что они принесли. Заявка привязывается к кампании — видно, какое объявление сработало.',
-    `<button class="primary" data-action="newcampaign">+ Кампания</button>`);
+    `<button class="primary" data-action="newcampaign">+ Кампания</button>`) + adTabs();
 
   if (!db.campaigns.length) {
     return head + `<div class="card empty"><h2>Кампаний пока нет</h2>
@@ -1555,6 +1567,8 @@ function renderAds() {
         <span><b>${cs.deals}</b><small>сделок</small></span>
       </div>
       ${cs.overdue ? '<p class="minus campaignwarn">Срок вышел, а статус «Идёт»</p>' : ''}
+      ${(() => { const ks = c.keyword_set_id && db.keyword_sets.find(k => k.id === c.keyword_set_id); return ks
+        ? `<small class="promoted">${icon('search', 13)} Фразы: «${E(ks.name)}»</small>` : ''; })()}
       ${(() => { const post = c.content_id && db.content.find(p => p.id === c.content_id); if (!post) return '';
         const v = lastViews(post.id);
         return `<small class="promoted">${icon('content', 13)} Продвигает «${E(post.title.slice(0, 50))}»${v !== null ? ` · ${num(v)} просм.` : ''}</small>`; })()}
@@ -2749,12 +2763,123 @@ function editTarget(id) {
   };
 }
 
+// ---------------------------------------------------------- ключевые фразы
+//
+// Набор — сегмент аудитории для таргета. Фразы хранятся столбиком, как их
+// вставляют в рекламный кабинет, и копируются одной кнопкой. Кампания
+// ссылается на набор, поэтому у набора видны расход, заявки и цена заявки.
+const keywordLines = t => [...new Set(String(t || '').split('\n')
+  .map(l => l.replace(/\s+/g, ' ').trim().toLowerCase()).filter(Boolean))];
+
+function keywordStats(k) {
+  const camps = db.campaigns.filter(c => c.keyword_set_id === k.id);
+  const leads = db.leads.filter(l => camps.some(c => c.id === l.campaign_id));
+  const spent = sumOf(camps, 'spent');
+  return { camps: camps.length, spent, leads: leads.length, cpl: leads.length && spent ? Math.round(spent / leads.length) : null };
+}
+
+function renderKeywords() {
+  const head = heading('Реклама', 'Ключевые фразы для таргета: набор — сегмент аудитории. Фразы копируются столбиком прямо в рекламный кабинет, а кампания показывает, какой набор приводит заявки.',
+    `<button class="primary" data-action="newks">+ Набор фраз</button>`) + adTabs();
+  if (!db.keyword_sets.length) {
+    return head + `<div class="card empty"><h2>Наборов пока нет</h2><p>Заведите набор: фразы, которые ищет ваша аудитория, и минус-фразы, которые отсекают случайных людей.</p></div>`;
+  }
+  const dirs = DIRECTIONS.filter(d => db.keyword_sets.some(k => k.direction === d));
+  const chips = dirs.length > 1 ? `<div class="filters" role="group" aria-label="Направление">${['Все', ...dirs].map(d =>
+    `<button class="chip${keywordDir === d ? ' on' : ''}" data-action="kwdir" data-id="${E(d)}" aria-pressed="${keywordDir === d}">${E(d)} <b>${d === 'Все' ? db.keyword_sets.length : db.keyword_sets.filter(k => k.direction === d).length}</b></button>`).join('')}</div>` : '';
+  const list = db.keyword_sets.filter(k => keywordDir === 'Все' || k.direction === keywordDir).sort((a, b) => a.sort - b.sort);
+  const cards = list.map(k => {
+    const ph = keywordLines(k.phrases), mi = keywordLines(k.minus), st = keywordStats(k);
+    return `<article class="card click kwset" tabindex="0" role="button" data-ks="${E(k.id)}" data-dir="${E(k.direction)}">
+      <div class="campaignhead"><span class="eyebrow">${E(k.direction)} · ${E(k.channel)}</span><small class="muted">${ph.length} ${plural(ph.length, 'фраза', 'фразы', 'фраз')} · ${mi.length} минус</small></div>
+      <h2>${E(k.name)}</h2>
+      ${k.note ? `<p class="muted kwnote">${E(k.note)}</p>` : ''}
+      <div class="kwlist">${ph.slice(0, 10).map(x => `<span class="kw">${E(x)}</span>`).join('')}${ph.length > 10 ? `<span class="kw more">ещё ${ph.length - 10}</span>` : ''}</div>
+      ${mi.length ? `<div class="kwlist minus">${mi.slice(0, 8).map(x => `<span class="kw">−${E(x)}</span>`).join('')}${mi.length > 8 ? `<span class="kw more">ещё ${mi.length - 8}</span>` : ''}</div>` : ''}
+      ${st.camps ? `<div class="campaignnums">
+        <span><b>${st.camps}</b><small>кампаний</small></span>
+        <span><b>${st.leads}</b><small>заявок</small></span>
+        <span class="${st.spent && !st.leads ? 'minus' : ''}"><b>${st.cpl === null ? '—' : num(st.cpl)}</b><small>цена заявки</small></span>
+      </div>` : '<small class="muted">Ещё ни в одной кампании — выберите набор в карточке кампании.</small>'}
+      <div class="kwactions">
+        <button class="chip" data-action="kwcopy" data-id="${E(k.id)}" data-kind="phrases">${icon('copy', 14)} Фразы</button>
+        ${mi.length ? `<button class="chip" data-action="kwcopy" data-id="${E(k.id)}" data-kind="minus">${icon('copy', 14)} Минус-фразы</button>` : ''}
+      </div>
+    </article>`;
+  }).join('');
+  return head + chips + `<div class="grid three kwgrid">${cards}</div>`
+    + `<div class="notice">Во ВКонтакте фразы вставляются в настройках аудитории, в поле ключевых фраз, по одной в строке; минус-фразы — в своё поле рядом.
+      Для Stock в объявлении не пишем «лицензия», «официальный» и «партнёр Envato».</div>`;
+}
+
+async function keywordCopy(id, kind) {
+  const k = db.keyword_sets.find(x => x.id === id);
+  const lines = keywordLines(kind === 'minus' ? k.minus : k.phrases);
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    toast(`${kind === 'minus' ? 'Минус-фразы' : 'Фразы'} скопированы: ${lines.length}`);
+  } catch (e) {
+    toast('Не удалось скопировать — откройте набор и выделите текст вручную');
+  }
+}
+
+function editKeywordSet(id) {
+  const exists = db.keyword_sets.some(k => k.id === id);
+  const k = db.keyword_sets.find(x => x.id === id) || {
+    id: uid(), name: '', direction: keywordDir !== 'Все' ? keywordDir : 'Stock', channel: 'ВКонтакте',
+    phrases: '', minus: '', note: '', sort: 100
+  };
+  const st = exists ? keywordStats(k) : null;
+  modal(`<h2>Набор ключевых фраз</h2><form id="ksf">
+    <label>Название — какой это сегмент</label><input name="name" required maxlength="120" value="${E(k.name)}" placeholder="Шаблоны для монтажа">
+    <div class="formgrid">
+      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, k.direction)}</select></div>
+      <div><label>Площадка</label><select name="channel">${opts(AD_CHANNELS.includes(k.channel) ? AD_CHANNELS : [...AD_CHANNELS, k.channel], k.channel)}</select></div>
+    </div>
+    <label>Ключевые фразы — по одной в строке</label>
+    <textarea name="phrases" maxlength="20000" style="min-height:200px">${E(k.phrases)}</textarea>
+    <small class="counter" id="kscount"></small>
+    <label>Минус-фразы — по одной в строке</label>
+    <textarea name="minus" maxlength="5000" style="min-height:110px">${E(k.minus)}</textarea>
+    <label>Заметка: кому этот набор, что обещаем в объявлении, куда ведём</label>
+    <textarea name="note" maxlength="2000" style="min-height:90px">${E(k.note)}</textarea>
+    ${st ? `<p class="muted">В кампаниях: ${st.camps}, заявок: ${st.leads}${st.spent ? `, потрачено ${num(st.spent)} ₽` : ''} · последняя правка: ${E(memberName(k._by))}, ${ago(k._at)}</p>` : ''}
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${exists ? `<button type="button" class="danger" data-action="delks" data-id="${E(k.id)}">Удалить</button>` : ''}</div></form>`);
+  const f = $('#ksf');
+  // Повторы и лишние пробелы убираются, когда человек уходит из поля:
+  // в кабинет уйдёт ровно то, что видно здесь.
+  const count = () => {
+    const raw = f.elements.phrases.value.split('\n').filter(l => l.trim()).length;
+    const clean = keywordLines(f.elements.phrases.value).length;
+    $('#kscount').textContent = `${clean} ${plural(clean, 'фраза', 'фразы', 'фраз')}${raw > clean ? ` · повторов уберётся: ${raw - clean}` : ''}`;
+  };
+  for (const n of ['phrases', 'minus']) {
+    f.elements[n].addEventListener('blur', () => { f.elements[n].value = keywordLines(f.elements[n].value).join('\n'); count(); });
+  }
+  f.elements.phrases.addEventListener('input', count);
+  count();
+  submitForm(f, 'keyword_sets', k, exists, 'Набор сохранён');
+}
+
+function delKeywordSet(id) {
+  const k = db.keyword_sets.find(x => x.id === id);
+  if (!k) return;
+  const n = db.campaigns.filter(c => c.keyword_set_id === id).length;
+  askDelete('Удалить набор фраз?', `«${E(k.name)}» исчезнет.${n ? ` Кампании (${n}) останутся, но без набора.` : ''}`, async () => {
+    await api.remove('keyword_sets', id);
+    db.keyword_sets = db.keyword_sets.filter(x => x.id !== id);
+    db.campaigns.forEach(c => { if (c.keyword_set_id === id) c.keyword_set_id = null; });
+    noteLocal('delete', 'keyword_sets', { ...k, title: k.name });
+  });
+}
+
 function editCampaign(id) {
   const exists = db.campaigns.some(c => c.id === id);
   const c = db.campaigns.find(x => x.id === id) || {
     id: uid(), name: '', channel: AD_CHANNELS[0], direction: 'Студия', goal: CAMPAIGN_GOALS[0], status: 'Готовим',
     starts_on: today(), ends_on: '', budget: 0, spent: 0, audience: '', creative: '', landing: '',
-    utm_medium: 'cpc', utm_campaign: '', utm_content: '', note: '', content_id: null
+    utm_medium: 'cpc', utm_campaign: '', utm_content: '', note: '', content_id: null, keyword_set_id: null
   };
   modal(`<h2>Кампания</h2><form id="cpf">
     <label>Название</label>
@@ -2769,6 +2894,11 @@ function editCampaign(id) {
       <div><label>Бюджет, ₽</label><input type="number" name="budget" min="0" step="1" value="${E(String(c.budget || 0))}"></div>
       <div><label>Потрачено, ₽</label><input type="number" name="spent" min="0" step="1" value="${E(String(c.spent || 0))}"></div>
     </div>
+    <label>Ключевые фразы — набор для таргета</label>
+    <select name="keyword_set_id"><option value="">Без набора</option>
+      ${[...db.keyword_sets].sort((a, b) => (b.direction === c.direction) - (a.direction === c.direction) || a.sort - b.sort).map(k =>
+        `<option value="${E(k.id)}" ${c.keyword_set_id === k.id ? 'selected' : ''}>${E(k.name)} · ${E(k.direction)}</option>`).join('')}
+    </select>
     <label>Что продвигаем — публикация из контент-плана</label>
     <select name="content_id"><option value="">Без публикации</option>
       ${[...db.content].sort((a, b) => (b.status === 'Опубликовано') - (a.status === 'Опубликовано')).map(p =>
@@ -3853,7 +3983,7 @@ function submitForm(form, table, original, exists, okText) {
         ? (el.type === 'number' ? 0 : null)
         : (el.type === 'number' ? Number(el.value) : el.value);
     }
-    for (const k of ['campaign_id', 'lead_id', 'magnet_id', 'content_id']) if (o[k] === '') o[k] = null;
+    for (const k of ['campaign_id', 'lead_id', 'magnet_id', 'content_id', 'keyword_set_id']) if (o[k] === '') o[k] = null;
     try {
       const saved = exists ? await api.update(table, o) : await api.insert(table, o);
       upsertLocal(table, saved);
@@ -4464,6 +4594,7 @@ function search() {
       ...db.decisions.map(d => ({ ...d, body: d.why || '', kind: 'd', note: 'Решение · ' + d.status })),
       ...db.leads.map(l => ({ ...l, title: l.name, body: l.request || '', kind: 'l', note: 'Заявка · ' + l.source })),
       ...db.campaigns.map(c => ({ ...c, title: c.name, body: `${c.creative} ${c.audience}`, kind: 'cp', note: 'Кампания · ' + c.channel })),
+      ...db.keyword_sets.map(k => ({ ...k, title: k.name, body: `${k.phrases} ${k.note}`, kind: 'ks', note: 'Ключевые фразы · ' + k.direction })),
       ...db.lead_magnets.map(m => ({ ...m, title: m.name, body: `${m.promise} ${m.audience}`, kind: 'mg', note: 'Лид-магнит · ' + m.status })),
       ...db.prospects.map(p => ({ ...p, title: p.name, body: `${p.category} ${p.city} ${p.note}`, kind: 'pr', note: 'Поиск клиентов · ' + p.status })),
       ...db.brand.map(b => ({ ...b, body: b.data?.body || '', kind: 'brand', note: 'Брендбук · ' + (b.section || 'Прочее') }))
@@ -4639,7 +4770,7 @@ function exportJson() {
     brand: strip(db.brand), decisions: strip(db.decisions),
     campaigns: strip(db.campaigns), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications),
-    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), kpi_targets: strip(db.kpi_targets)
+    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), kpi_targets: strip(db.kpi_targets)
   }, null, 2), 'adervis-backup-' + today() + '.json');
 }
 
@@ -4736,7 +4867,7 @@ document.addEventListener('click', async e => {
     document.body.classList.remove('menu');
     return;
   }
-  const b = e.target.closest('button,article[data-mg],article[data-k],article[data-p],article[data-d],article[data-cp],article[data-l],tr[data-l],tr[data-pr],g[data-node]');
+  const b = e.target.closest('button,article[data-ks],article[data-mg],article[data-k],article[data-p],article[data-d],article[data-cp],article[data-l],tr[data-l],tr[data-pr],g[data-node]');
   if (!b) return;
   if (b.dataset.node) { graphOpen(b.dataset.node); return; }
   if (b.dataset.page) { go(b.dataset.page); return; }
@@ -4747,6 +4878,7 @@ document.addEventListener('click', async e => {
   if (b.dataset.cp) { editCampaign(b.dataset.cp); return; }
   if (b.dataset.pr) { editProspect(b.dataset.pr); return; }
   if (b.dataset.mg) { editMagnet(b.dataset.mg); return; }
+  if (b.dataset.ks) { editKeywordSet(b.dataset.ks); return; }
   if (b.dataset.result) {
     $('#modal').close();
     const id = b.dataset.id;
@@ -4759,6 +4891,7 @@ document.addEventListener('click', async e => {
       cp: () => { go('ads'); editCampaign(id); },
       pr: () => { go('prospects'); editProspect(id); },
       mg: () => { go('magnets'); editMagnet(id); },
+      ks: () => { adView = 'keywords'; go('ads'); editKeywordSet(id); },
       brand: () => { go('brand'); editBrand(id); }
     };
     (open[b.dataset.result] || open.p)();
@@ -4771,6 +4904,11 @@ document.addEventListener('click', async e => {
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
     case 'newcampaign': editCampaign(); break;
+    case 'adview': adView = b.dataset.id; render(); break;
+    case 'kwdir': keywordDir = b.dataset.id; render(); break;
+    case 'newks': editKeywordSet(); break;
+    case 'delks': delKeywordSet(b.dataset.id); break;
+    case 'kwcopy': keywordCopy(b.dataset.id, b.dataset.kind); break;
     case 'leadperiod': leadPeriod = b.dataset.id; render(); break;
     case 'leadview': leadView = b.dataset.id; render(); break;
     case 'movelead': moveLead(b.dataset.id, Number(b.dataset.step)); break;

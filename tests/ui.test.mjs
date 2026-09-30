@@ -101,6 +101,11 @@ const fake = (seedData) => {
     accounts: [{ network: 'Telegram', handle: 'Adervis_digital', note: '' }],
     prospects: [],
     kpi_targets: [],
+    keyword_sets: [
+      { id: 'ks-envato', name: 'Envato напрямую', direction: 'Stock', channel: 'ВКонтакте', sort: 10,
+        phrases: 'envato elements\nenvato elements скачать\nэнвато', minus: 'бесплатно\nторрент', note: 'Самые тёплые',
+        _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
+    ],
     lead_magnets: [
       { id: 'lm-audit', name: 'Разбор визуала за 15 минут', direction: 'Студия', format: 'Видеоразбор', status: 'Работает',
         audience: 'Кафе и салоны', promise: 'Три правки визуала за неделю', exchange: 'Ссылка и контакт',
@@ -1244,6 +1249,43 @@ await page.waitForFunction(() => document.querySelector('#alerts').textContent.i
 check('ошибка ИИ не стирает текст', (await page.inputValue('#pitchtext')).startsWith('Лично для'));
 await page.evaluate(() => { window.__aiFail = null; });
 await page.keyboard.press('Escape');
+
+// --- 5о. ключевые фразы для таргета
+await nav('ads');
+await page.click('[data-action=adview][data-id=keywords]');
+check('в рекламе есть вкладка ключевых фраз', (await page.$$('article.kwset')).length === 1);
+check('на карточке видно фразы и минус-фразы', (await page.textContent('article[data-ks="ks-envato"]')).includes('−бесплатно'));
+await page.click('[data-action=kwcopy][data-id=ks-envato][data-kind=phrases]');
+const kwCopied = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n');
+check('фразы копируются столбиком для кабинета', kwCopied === 'envato elements\nenvato elements скачать\nэнвато', JSON.stringify(kwCopied));
+await page.click('[data-action=newks]');
+await page.fill('#ksf input[name=name]', 'Шаблоны для монтажа');
+await page.fill('#ksf textarea[name=phrases]', 'Шаблоны After Effects\n  шаблоны   after effects \n\nпресеты premiere pro');
+check('счётчик предупреждает о повторах', /2 фразы · повторов уберётся: 1/.test(await page.textContent('#kscount')), await page.textContent('#kscount'));
+await page.click('#ksf textarea[name=minus]');
+check('повторы и пробелы убраны при выходе из поля', (await page.inputValue('#ksf textarea[name=phrases]')) === 'шаблоны after effects\nпресеты premiere pro');
+await page.click('#ksf button.primary');
+await page.waitForFunction(() => window.__STATE__.keyword_sets.some(k => k.name === 'Шаблоны для монтажа'));
+check('новый набор по умолчанию — для Stock во ВКонтакте',
+  (await state()).keyword_sets.find(k => k.name === 'Шаблоны для монтажа').direction === 'Stock');
+// кампания Stock с набором фраз
+await page.click('[data-action=adview][data-id=campaigns]');
+await page.click('[data-action=newcampaign]');
+await page.fill('#cpf input[name=name]', 'Stock: Envato во ВК');
+await page.selectOption('#cpf select[name=channel]', 'ВКонтакте');
+await page.selectOption('#cpf select[name=direction]', 'Stock');
+await page.selectOption('#cpf select[name=keyword_set_id]', 'ks-envato');
+const stockLink = await page.textContent('#utmout');
+check('ссылка Stock получает его метку from=vk', stockLink.startsWith('https://stock.adervis.ru/?') && stockLink.includes('from=vk'), stockLink);
+await page.click('#cpf button.primary');
+await page.waitForFunction(() => window.__STATE__.campaigns.some(c => c.name === 'Stock: Envato во ВК'));
+const stockCamp = (await state()).campaigns.find(c => c.name === 'Stock: Envato во ВК');
+check('кампания помнит свой набор фраз', stockCamp.keyword_set_id === 'ks-envato');
+check('на карточке кампании виден набор', (await page.textContent(`article[data-cp="${stockCamp.id}"]`)).includes('Фразы: «Envato напрямую»'));
+await page.click('[data-action=adview][data-id=keywords]');
+check('набор считает свои кампании', /1\s?кампаний/.test(await page.textContent('article[data-ks="ks-envato"]')));
+await page.screenshot({ path: path.join(OUT, 'intel-keywords.png'), fullPage: true });
+await page.click('[data-action=adview][data-id=campaigns]');
 
 // --- 6. задачи
 await nav('tasks');
