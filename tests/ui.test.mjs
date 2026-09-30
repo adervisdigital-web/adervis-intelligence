@@ -2223,6 +2223,75 @@ check('слайд листается смахиванием', (await m.textConte
 await m.screenshot({ path: path.join(OUT, 'mobile-deck.png') });
 await m.close();
 
+// --- 14. осмотр вёрстки: ничего не вылезает из своих карточек
+// Знак Stock вырос из плашки и закрыл подписи — такое не видно ни одной
+// функциональной проверкой. Здесь каждый раздел обходится в обеих темах
+// и на двух ширинах, и всё, что выходит за край своей карточки, названо.
+async function layoutAudit(p) {
+  return p.evaluate(() => {
+    const bad = [];
+    // внутри карточки может быть своя прокрутка (таблица) — там выход за край законен
+    const scroller = (el, card) => {
+      for (let q = el.parentElement; q && q !== card; q = q.parentElement) {
+        const o = getComputedStyle(q);
+        if (/(auto|scroll|hidden|clip)/.test(o.overflowX + ' ' + o.overflowY)) return true;
+      }
+      return false;
+    };
+    const name = el => el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/)[0] : '')
+      + (el.textContent ? ' «' + el.textContent.trim().replace(/\s+/g, ' ').slice(0, 30) + '»' : '');
+    for (const card of document.querySelectorAll('#view .card')) {
+      const cr = card.getBoundingClientRect();
+      if (!cr.width || !cr.height) continue;
+      const cs = getComputedStyle(card);
+      if (/(auto|scroll|hidden)/.test(cs.overflowX + cs.overflowY)) continue;
+      for (const el of card.querySelectorAll('img, svg, button, a, input, select, textarea, h1, h2, h3, p, small, b, table, .tag, .chip')) {
+        if (el.parentElement.closest('svg')) continue;
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) continue;
+        if (scroller(el, card)) continue;
+        const out = Math.max(r.right - cr.right, cr.left - r.left, r.bottom - cr.bottom, cr.top - r.top);
+        if (out > 2) bad.push(`${name(card)} → ${name(el)} на ${Math.round(out)}px`);
+      }
+    }
+    // картинка или значок больше своего контейнера: так знак Stock
+    // вылез из плашки, оставаясь внутри карточки
+    for (const el of document.querySelectorAll('#view img, #view svg')) {
+      if (el.parentElement.closest('svg')) continue;
+      const box = el.parentElement;
+      const r = el.getBoundingClientRect(), br = box.getBoundingClientRect();
+      if (!r.width || !r.height || !br.width || !br.height) continue;
+      const o = getComputedStyle(box);
+      if (/(auto|scroll)/.test(o.overflowX + o.overflowY)) continue;
+      const out = Math.max(r.right - br.right, br.left - r.left, r.bottom - br.bottom, br.top - r.top);
+      if (out > 2) bad.push(`${name(box)} → ${name(el)} больше контейнера на ${Math.round(out)}px`);
+    }
+    return [...new Set(bad)].slice(0, 8);
+  });
+}
+// к этому моменту из приложения вышли — входим снова, иначе осматривать нечего
+if (await page.isVisible('#gate')) { await login(); await page.waitForSelector('#shell:not([hidden])'); }
+const auditPages = await page.$$eval('#nav button[data-page]', bs => bs.map(b => b.dataset.page));
+let auditMeasured = 0;
+for (const [w, h] of [[1440, 900], [1100, 800], [390, 844]]) {
+  await page.setViewportSize({ width: w, height: h });
+  for (const themeName of ['dark', 'light']) {
+    await page.evaluate(t => { document.documentElement.dataset.theme = t; }, themeName);
+    const found = [];
+    for (const id of auditPages) {
+      await page.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);
+      await page.waitForTimeout(150);
+      // брендбук мог остаться в режиме слайдов — осматриваем обычную страницу
+      if (id === 'brand') { if (await page.$('.slide')) await page.keyboard.press('Escape'); await page.waitForTimeout(400); }
+      auditMeasured += await page.$$eval('#view .card', cs => cs.filter(c => c.getBoundingClientRect().height > 0).length);
+      for (const b of await layoutAudit(page)) found.push(`${id}: ${b}`);
+    }
+    check(`вёрстка ${w}px, ${themeName === 'dark' ? 'тёмная' : 'светлая'} тема: ничего не вылезает из карточек`, found.length === 0, found.slice(0, 12).join(' | '));
+  }
+}
+await page.setViewportSize({ width: 1440, height: 900 });
+check("осмотр вёрстки действительно видел карточки", auditMeasured > 100, String(auditMeasured));
+
 check('ни одной ошибки в консоли (включая CSP)', errors.length === 0, errors.join(' | '));
 await browser.close();
 server.close();
