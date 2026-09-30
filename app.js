@@ -2839,6 +2839,7 @@ function renderKeywords() {
       </div>` : '<small class="muted">Ещё ни в одной кампании — выберите набор в карточке кампании.</small>'}
       ${adTextsBlock(k)}
       <div class="kwactions">
+        <button class="chip aichip" data-action="aikeywords" data-id="${E(k.id)}">${icon('ai', 14)} Подобрать фразы</button>
         <button class="chip" data-action="kwcopy" data-id="${E(k.id)}" data-kind="phrases">${icon('copy', 14)} Фразы</button>
         ${mi.length ? `<button class="chip" data-action="kwcopy" data-id="${E(k.id)}" data-kind="minus">${icon('copy', 14)} Минус-фразы</button>` : ''}
       </div>
@@ -2873,7 +2874,8 @@ const adTextsOf = setId => db.ad_texts.filter(a => a.keyword_set_id === setId).s
 function adTextsBlock(k) {
   const list = adTextsOf(k.id);
   return `<div class="adtexts"><div class="adtextshead"><b>Объявления ${list.length ? `<span class="muted">${list.length}</span>` : ''}</b>
-      <button class="chip" data-action="newad" data-id="${E(k.id)}">+ Объявление</button></div>
+      <span class="adheadbtns"><button class="chip aichip" data-action="aiads" data-id="${E(k.id)}">${icon('ai', 14)} Написать</button>
+      <button class="chip" data-action="newad" data-id="${E(k.id)}">+ Объявление</button></span></div>
     ${list.map(a => `<div class="adtext${a.status === 'Выключено' ? ' off' : ''}">
       <div class="adtexttop"><b>${E(a.title)}${a.title2 ? `<span class="title2"> · ${E(a.title2)}</span>` : ''}</b>${a.status !== 'Черновик' ? tag(a.status, a.status === 'В работе' ? 'good' : '') : ''}</div>
       ${a.body ? `<p>${E(a.body)}</p>` : ''}
@@ -2938,6 +2940,75 @@ function delAdText(id) {
     db.ad_texts = db.ad_texts.filter(x => x.id !== id);
     noteLocal('delete', 'ad_texts', a);
   });
+}
+
+// ИИ для рекламы: модель предлагает, человек выбирает. Лимиты Директа и
+// запретные слова Stock проверяет сервер и показывает, а не чинит молча.
+const adTask = k => ({ platform: isDirect(k) ? 'direct' : 'social', name: k.name, direction: k.direction,
+  note: k.note, phrases: keywordLines(k.phrases), minus: keywordLines(k.minus) });
+const aiWait = what => modal(`<h2>${what}</h2><p class="muted aiwait">${icon('ai', 18)} Модель думает — обычно 10–30 секунд…</p>`);
+const aiFooter = res => `${res.gaps?.length ? `<p class="muted">Чего не хватило: ${res.gaps.map(E).join('; ')}</p>` : ''}
+  <p class="muted">${res.model ? `Модель: ${E(res.model)} · ` : ''}${res.left !== undefined ? `осталось запросов сегодня: ${res.left}` : ''}</p>`;
+
+async function aiKeywords(id) {
+  const k = db.keyword_sets.find(x => x.id === id);
+  aiWait(`Подбор фраз: «${E(k.name)}»`);
+  let res;
+  try { res = await api.generate({ mode: 'keywords', ...adTask(k) }); }
+  catch (e) { modal(`<h2>Фразы не подобраны</h2><div class="notice error">${E(e.message || 'ошибка модели')}</div>`); return; }
+  const list = (items, kind) => items.map((x, i) => `<label class="checkitem"><input type="checkbox" checked data-kind="${kind}" data-i="${i}"><span>${kind === 'minus' ? '−' : ''}${E(x)}</span></label>`).join('');
+  modal(`<h2>Подбор фраз: «${E(k.name)}»</h2>
+    <p class="muted">${isDirect(k) ? 'Поисковые запросы для Директа' : 'Фразы для таргета во ВКонтакте'}. Снимите галочки с лишнего — в набор добавится только отмеченное.</p>
+    ${res.phrases.length ? `<h3>Фразы · ${res.phrases.length}</h3><div class="aipick">${list(res.phrases, 'phrases')}</div>` : ''}
+    ${res.minus.length ? `<h3>Минус-слова · ${res.minus.length}</h3><div class="aipick">${list(res.minus, 'minus')}</div>` : ''}
+    ${aiFooter(res)}
+    <div class="formactions"><button class="primary" id="aikwadd">Добавить отмеченное</button></div>`);
+  $('#aikwadd').onclick = async () => {
+    const picked = kind => [...document.querySelectorAll(`#modal input[data-kind=${kind}]:checked`)].map(i => res[kind][Number(i.dataset.i)]);
+    const add = { phrases: picked('phrases'), minus: picked('minus') };
+    const merged = { ...k,
+      phrases: keywordLines(k.phrases + '\n' + add.phrases.join('\n')).join('\n'),
+      minus: keywordLines(k.minus + '\n' + add.minus.join('\n')).join('\n') };
+    try {
+      const saved = await api.update('keyword_sets', merged);
+      upsertLocal('keyword_sets', saved);
+      noteLocal('update', 'keyword_sets', { ...saved, title: saved.name });
+      $('#modal').close();
+      render();
+      toast(`Добавлено: фраз ${add.phrases.length}, минус-слов ${add.minus.length}`);
+    } catch (e) { handleError(e); }
+  };
+}
+
+async function aiAds(id) {
+  const k = db.keyword_sets.find(x => x.id === id);
+  aiWait(`Объявления: «${E(k.name)}»`);
+  let res;
+  try { res = await api.generate({ mode: 'ads', ...adTask(k) }); }
+  catch (e) { modal(`<h2>Объявления не написаны</h2><div class="notice error">${E(e.message || 'ошибка модели')}</div>`); return; }
+  const direct = isDirect(k);
+  modal(`<h2>Объявления: «${E(k.name)}»</h2>
+    <p class="muted">Три варианта от модели. Сохраните подходящие черновиками — дальше их можно поправить в наборе.</p>
+    ${res.ads.map((a, i) => `<div class="aiad${a.over.length || a.banned.length ? ' warn' : ''}">
+      <b>${E(a.title)}</b>${a.title2 ? ` <span class="muted">· ${E(a.title2)}</span>` : ''}
+      ${a.body ? `<p>${E(a.body)}</p>` : ''}${a.long_text ? `<p class="muted">${E(a.long_text)}</p>` : ''}
+      ${direct ? `<small class="muted">${a.title.length} / ${a.title2.length} / ${a.body.length} знаков</small>` : ''}
+      ${a.over.length ? `<p class="minus">Длиннее лимита: ${a.over.map(o => E(o.replace(/^title2:/, 'Заголовок 2:').replace(/^title:/, 'Заголовок 1:').replace(/^body:/, 'Текст:'))).join(', ')}</p>` : ''}
+      ${a.banned.length ? `<p class="minus">Запретные слова для Stock — исправьте перед запуском</p>` : ''}
+      <button class="chip" data-aisave="${i}">Сохранить черновиком</button></div>`).join('')}
+    ${aiFooter(res)}`);
+  document.querySelectorAll('#modal [data-aisave]').forEach(btn => { btn.onclick = async () => {
+    const a = res.ads[Number(btn.dataset.aisave)];
+    btn.disabled = true;
+    try {
+      const saved = await api.insert('ad_texts', { id: uid(), keyword_set_id: k.id, title: a.title, title2: a.title2, body: a.body,
+        long_text: a.long_text, status: 'Черновик', note: 'Написано ИИ — проверить перед запуском', sort: 100 + adTextsOf(k.id).length });
+      upsertLocal('ad_texts', saved);
+      noteLocal('insert', 'ad_texts', saved);
+      btn.textContent = 'Сохранено';
+      render();
+    } catch (e) { btn.disabled = false; handleError(e); }
+  }; });
 }
 
 function editKeywordSet(id) {
@@ -5086,6 +5157,8 @@ document.addEventListener('click', async e => {
     case 'editad': editAdText(b.dataset.id); break;
     case 'delad': delAdText(b.dataset.id); break;
     case 'adcopy': adTextCopy(b.dataset.id, b.dataset.kind); break;
+    case 'aikeywords': aiKeywords(b.dataset.id); break;
+    case 'aiads': aiAds(b.dataset.id); break;
     case 'leadperiod': leadPeriod = b.dataset.id; render(); break;
     case 'leadview': leadView = b.dataset.id; render(); break;
     case 'movelead': moveLead(b.dataset.id, Number(b.dataset.step)); break;

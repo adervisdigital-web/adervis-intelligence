@@ -10,6 +10,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import {
   buildPrompt, buildRewritePrompt, buildPitchPrompt, parseReply, sanitizeOptions, sanitizeRewrite, sanitizePitch, usableFacts,
+  sanitizeAdTask, buildKeywordPrompt, buildAdPrompt, parseKeywords, parseAds,
   providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
 } from './compose.ts';
 
@@ -22,10 +23,12 @@ const SECRET_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? Deno.env.get('SU
 // Провайдер, модель и ключ задаются секретами проекта.
 // По умолчанию — Gemini: у него есть бесплатный уровень без привязки карты.
 const PROVIDER = (Deno.env.get('AI_PROVIDER') || 'gemini') as Provider;
-const MODEL = Deno.env.get('AI_MODEL') || Deno.env.get('GEMINI_MODEL')
-  || (PROVIDER === 'gemini' ? 'gemini-3.5-flash' : 'deepseek-chat');
-const FALLBACK_MODEL = Deno.env.get('AI_FALLBACK_MODEL')
-  || (PROVIDER === 'gemini' ? 'gemini-3.5-flash-lite' : '');
+const DEFAULT_MODEL: Record<string, string> = { gemini: 'gemini-3.5-flash', yandex: 'yandexgpt/latest', openai: 'deepseek-chat' };
+const DEFAULT_FALLBACK: Record<string, string> = { gemini: 'gemini-3.5-flash-lite', yandex: 'yandexgpt-lite/latest', openai: '' };
+const MODEL = Deno.env.get('AI_MODEL') || Deno.env.get('GEMINI_MODEL') || DEFAULT_MODEL[PROVIDER] || 'deepseek-chat';
+const FALLBACK_MODEL = Deno.env.get('AI_FALLBACK_MODEL') ?? DEFAULT_FALLBACK[PROVIDER] ?? '';
+// YandexGPT работает внутри каталога Yandex Cloud
+const YANDEX_FOLDER = Deno.env.get('YANDEX_FOLDER_ID') || '';
 const AI_KEY = Deno.env.get('AI_API_KEY') || Deno.env.get('GEMINI_API_KEY');
 const AI_BASE_URL = Deno.env.get('AI_BASE_URL') || '';
 
@@ -76,7 +79,7 @@ Deno.serve(async (req) => {
     }
 
     const input = await req.json();
-    const mode = ['rewrite', 'pitch'].includes(input?.mode) ? input.mode : 'write';
+    const mode = ['rewrite', 'pitch', 'keywords', 'ads'].includes(input?.mode) ? input.mode : 'write';
 
     // Публичные и проверенные записи. Политики доступа базы действуют и здесь:
     // запрос идёт от имени вошедшего человека.
@@ -98,8 +101,11 @@ Deno.serve(async (req) => {
     // При правке лишние факты только мешают: берём те, на которые черновик
     // уже ссылается, а если ссылок нет — не подкладываем ничего.
     // Первое сообщение компании опирается на её карточку, а не на базу знаний.
+    const adTask = ['keywords', 'ads'].includes(mode) ? sanitizeAdTask(input) : null;
     const prompt = mode === 'pitch'
       ? buildPitchPrompt(sanitizePitch(input))
+      : mode === 'keywords' ? buildKeywordPrompt(adTask!, facts)
+      : mode === 'ads' ? buildAdPrompt(adTask!, facts)
       : mode === 'rewrite'
         ? buildRewritePrompt(picked.length ? facts : [], sanitizeRewrite(input))
         : buildPrompt(facts, sanitizeOptions(input));
@@ -109,7 +115,7 @@ Deno.serve(async (req) => {
     let lastStatus = 0;
 
     for (const [i, model] of modelAttempts(MODEL, FALLBACK_MODEL).entries()) {
-      const request = providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt);
+      const request = providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt, YANDEX_FOLDER);
       const resp = await fetch(request.url, {
         method: 'POST',
         headers: request.headers,
@@ -137,6 +143,12 @@ Deno.serve(async (req) => {
       return json({ error: 'AI-сервис вернул пустой ответ. Попробуйте ещё раз.' }, 502);
     }
 
+    // Фразы и объявления — свой ответ: у них нет «черновиков со ссылками».
+    if (adTask) {
+      const parsed = mode === 'keywords' ? parseKeywords(text, adTask) : parseAds(text, adTask);
+      await admin.from('ai_usage').insert({ actor: user.email, model: `${PROVIDER}/${usedModel}`, drafts: 0, chars: text.length });
+      return json({ ...parsed, model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
+    }
     const { drafts, gaps } = parseReply(text, mode === 'pitch' ? [] : facts.map(f => f.id));
 
     await admin.from('ai_usage').insert({

@@ -127,10 +127,11 @@ window.INTEL_CONFIG = {
 | Секрет | Зачем | По умолчанию |
 |---|---|---|
 | `AI_API_KEY` | ключ выбранного сервиса | — |
-| `AI_PROVIDER` | `gemini` или `openai` (любой сервис с OpenAI-совместимым API) | `gemini` |
-| `AI_MODEL` | название модели | `gemini-3.5-flash`, для `openai` — `deepseek-chat` |
-| `AI_FALLBACK_MODEL` | запасная модель, если основная перегружена | `gemini-3.5-flash-lite` |
+| `AI_PROVIDER` | `gemini`, `yandex` (YandexGPT) или `openai` (любой сервис с OpenAI-совместимым API) | `gemini` |
+| `AI_MODEL` | название модели | `gemini-3.5-flash`; для `yandex` — `yandexgpt/latest`; для `openai` — `deepseek-chat` |
+| `AI_FALLBACK_MODEL` | запасная модель, если основная перегружена | `gemini-3.5-flash-lite`; для `yandex` — `yandexgpt-lite/latest` |
 | `AI_BASE_URL` | адрес сервиса, если он не DeepSeek | адрес DeepSeek |
+| `YANDEX_FOLDER_ID` | идентификатор каталога Yandex Cloud — только для `yandex` | — |
 
 На бесплатном уровне Gemini модель иногда отвечает «перегружено» (503). Функция
 сама повторяет запрос, а затем пробует запасную модель, и только потом
@@ -140,6 +141,14 @@ window.INTEL_CONFIG = {
 Примеры:
 
 - **Gemini** — задать только `AI_API_KEY`.
+- **YandexGPT** — работает из России, оплата в рублях, данные в российском облаке:
+  1. console.yandex.cloud → создать каталог (или взять существующий) и
+     скопировать его идентификатор (вида `b1g…`).
+  2. В каталоге → «Сервисные аккаунты» → создать аккаунт с ролью
+     `ai.languageModels.user`.
+  3. У аккаунта → «Создать API-ключ» (область действия — языковые модели).
+  4. Секреты проекта: `AI_PROVIDER=yandex`, `AI_API_KEY=<API-ключ>`,
+     `YANDEX_FOLDER_ID=<идентификатор каталога>`.
 - **DeepSeek** — `AI_PROVIDER=openai`, `AI_API_KEY=<ключ DeepSeek>`.
 - **Российский шлюз с оплатой в рублях** — `AI_PROVIDER=openai`,
   `AI_BASE_URL=<адрес из личного кабинета>`, `AI_MODEL=<модель>`, `AI_API_KEY=<ключ>`.

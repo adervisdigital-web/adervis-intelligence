@@ -233,6 +233,17 @@ const fake = (seedData) => {
     async generate(payload) {
       window.__lastAiPayload = payload;
       if (window.__aiFail) throw new Error(window.__aiFail);
+      if (payload.mode === 'keywords') {
+        return { phrases: ['envato elements подписка цена', 'скачать шаблон envato'], minus: ['кряк'],
+          gaps: ['нет цен конкурентов'], model: 'yandexgpt/latest', left: 25 };
+      }
+      if (payload.mode === 'ads') {
+        return { ads: [
+          { title: 'Envato Elements без подписки', title2: 'От 149 ₽', body: 'Вставьте ссылку — получите оригинал.', long_text: '', over: [], banned: [] },
+          { title: 'Официальный доступ к Envato по лицензии для всех', title2: 'Очень длинный второй заголовок', body: 'Коротко.', long_text: '',
+            over: ['title2: 31 из 30'], banned: ['лицензи', 'официальн'] }
+        ], gaps: [], model: 'yandexgpt/latest', left: 24 };
+      }
       if (payload.mode === 'pitch') {
         return { drafts: [{ title: 'Первое сообщение', body: 'Лично для ' + payload.company.name + ': можем записать разбор. Прислать?', sources: [] }],
           gaps: ['Нет описания с сайта'], model: 'gemini/тест', left: 26 };
@@ -1396,6 +1407,41 @@ await page.selectOption('#cpf select[name=direction]', 'Stock');
 await page.selectOption('#cpf select[name=channel]', 'Яндекс Директ');
 await page.fill('#cpf input[name=name]', 'Stock в Директе');
 check('Директ получает метку Stock yadirect', (await page.textContent('#utmout')).includes('from=yadirect'));
+await page.keyboard.press('Escape');
+
+// --- 5с. ИИ подбирает фразы и пишет объявления
+await nav('keywords');
+await page.click('[data-action=kwplatform][data-id=social]');
+await page.click('[data-action=aikeywords][data-id=ks-envato]');
+await page.waitForSelector('#aikwadd');
+const kwAsk = await page.evaluate(() => window.__lastAiPayload);
+check('ИИ получил набор: площадку, направление и уже собранные фразы',
+  kwAsk.mode === 'keywords' && kwAsk.platform === 'social' && kwAsk.direction === 'Stock' && kwAsk.phrases.includes('envato elements'), JSON.stringify(kwAsk).slice(0, 200));
+check('предложения показаны галочками', (await page.$$('#modal input[data-kind=phrases]')).length === 2 && (await page.$$('#modal input[data-kind=minus]')).length === 1);
+check('видно модель и остаток запросов', /yandexgpt\/latest.*осталось запросов сегодня: 25/.test((await page.textContent('#modal')).replace(/\s+/g, ' ')));
+await page.uncheck('#modal input[data-kind=phrases][data-i="1"]');
+await page.click('#aikwadd');
+await page.waitForFunction(() => window.__STATE__.keyword_sets.find(k => k.id === 'ks-envato').minus.includes('кряк'));
+const kwSet = (await state()).keyword_sets.find(k => k.id === 'ks-envato');
+check('добавлено только отмеченное', kwSet.phrases.includes('envato elements подписка цена') && !kwSet.phrases.includes('скачать шаблон envato'), kwSet.phrases);
+check('старые фразы на месте', kwSet.phrases.startsWith('envato elements\n'));
+await page.click('[data-action=kwplatform][data-id=direct]');
+await page.click('[data-action=aiads][data-id=ks-direct]');
+await page.waitForSelector('#modal [data-aisave]');
+check('объявления для Директа запрошены с его площадкой', (await page.evaluate(() => window.__lastAiPayload)).platform === 'direct');
+const aiAdsText = (await page.textContent('#modal')).replace(/\s+/g, ' ');
+check('превышение лимита показано понятными словами', aiAdsText.includes('Длиннее лимита: Заголовок 2: 31 из 30'), aiAdsText);
+check('запретные слова Stock подсвечены', aiAdsText.includes('Запретные слова для Stock') && (await page.$$('#modal .aiad.warn')).length === 1);
+await page.click('#modal [data-aisave="0"]');
+await page.waitForFunction(() => window.__STATE__.ad_texts.some(a => a.title === 'Envato Elements без подписки' && a.keyword_set_id === 'ks-direct'));
+const aiSaved = (await state()).ad_texts.find(a => a.title === 'Envato Elements без подписки' && a.keyword_set_id === 'ks-direct');
+check('объявление от ИИ сохранено черновиком с пометкой', aiSaved.status === 'Черновик' && aiSaved.title2 === 'От 149 ₽' && /ИИ/.test(aiSaved.note));
+await page.evaluate(() => { window.__aiFail = 'Для YandexGPT нужен идентификатор каталога: секрет YANDEX_FOLDER_ID'; });
+await page.keyboard.press('Escape');
+await page.click('[data-action=aiads][data-id=ks-direct]');
+await page.waitForSelector('#modal .notice.error');
+check('ошибка настройки ИИ объяснена словами', (await page.textContent('#modal .notice.error')).includes('YANDEX_FOLDER_ID'));
+await page.evaluate(() => { window.__aiFail = null; });
 await page.keyboard.press('Escape');
 
 // --- 6. задачи
