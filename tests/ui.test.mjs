@@ -268,7 +268,12 @@ const login = async (email = 'artem@adervis.ru', pass = 'secret') => {
   await page.fill('#gate-pass', pass);
   await page.click('#gatebtn');
 };
-const nav = id => page.click(`#nav button[data-page=${id}]`);
+// Раздел в свёрнутой группе открывается как у человека: сначала группа.
+const nav = async id => {
+  const item = page.locator(`#nav button[data-page=${id}]`);
+  if (!(await item.isVisible())) await page.click(`#nav .navsection:has(button[data-page=${id}]) .navgroup`);
+  await item.click();
+};
 const state = () => page.evaluate(() => JSON.parse(JSON.stringify(window.__STATE__)));
 
 // --- 1. вход
@@ -295,15 +300,17 @@ check('обзор показывает заявки и охват',
 check('с плитки можно уйти в её раздел',
   await page.$eval('.metric.click', b => b.dataset.page === 'ads'));
 // меню сгруппировано, иначе семнадцать пунктов не читаются
-const groups = await page.$$eval('#nav .navgroup', g => g.map(x => x.textContent));
-check('меню разбито на группы', groups.join(',') === 'Маркетинг,Знание компании,Работа,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button')).length === 18,
+const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textContent));
+check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
+check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 19,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
 check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
   const nav = document.querySelector('#nav');
+  // самое длинное меню — со всеми раскрытыми группами
+  nav.querySelectorAll('.navsection.closed .navgroup').forEach(t => t.click());
   nav.scrollTop = nav.scrollHeight;
-  const b = nav.querySelector('button:last-of-type').getBoundingClientRect();
+  const b = [...nav.querySelectorAll('button[data-page]')].filter(x => x.offsetParent).pop().getBoundingClientRect();
   const n = nav.getBoundingClientRect();
   return b.bottom <= n.bottom + 1 && b.top >= n.top - 1;
 }));
@@ -311,6 +318,25 @@ check('имя пользователя остаётся на виду', await pa
   const u = document.querySelector('.bottom').getBoundingClientRect();
   return u.bottom <= window.innerHeight + 1 && u.height > 0;
 }));
+// счётчики дел у разделов и сворачивание групп
+const leadBadge = await page.$eval('#nav button[data-page=leads] .navbadge', b => ({ hidden: b.hidden, text: b.textContent, late: b.classList.contains('late') }));
+check('у «Заявок» счётчик просроченного дела', !leadBadge.hidden && leadBadge.text === '1' && leadBadge.late, JSON.stringify(leadBadge));
+check('у «Обзора» — все дела на сегодня', await page.$eval('#nav button[data-page=home] .navbadge', b => !b.hidden && Number(b.textContent) >= 1));
+check('у разделов без дел счётчика нет', await page.$eval('#nav button[data-page=knowledge] .navbadge', b => b.hidden));
+await page.click('#nav .navsection[data-group="Продажи"] .navgroup');
+check('группа сворачивается', !(await page.isVisible('#nav button[data-page=leads]')));
+check('счётчик свёрнутой группы переезжает на заголовок',
+  await page.$eval('#nav .navsection[data-group="Продажи"] .navgroup .navbadge', b => !b.hidden && b.classList.contains('late')));
+check('свёрнутая группа запоминается', await page.evaluate(() => JSON.parse(localStorage.getItem('intel.nav.closed')).includes('Продажи')));
+await nav('leads');
+check('группа открытого раздела раскрыта', await page.$eval('#nav .navsection[data-group="Продажи"] .navgroup', t => t.getAttribute('aria-expanded') === 'true'));
+check('открытый раздел отмечен для чтения с экрана', await page.$eval('#nav button[data-page=leads]', b => b.getAttribute('aria-current') === 'page'));
+await page.click('#nav .navsection[data-group="Продажи"] .navgroup');
+await nav('keywords');
+check('«Ключевые фразы» — свой пункт в группе «Реклама»', (await page.textContent('#crumb')) === 'Ключевые фразы'
+  && await page.$eval('#nav button[data-page=keywords]', b => !!b.closest('[data-group="Реклама"]')));
+await nav('home');
+
 await page.evaluate(() => { document.querySelector('#nav').scrollTop = 0; });
 await page.screenshot({ path: path.join(OUT, 'intel-home.png') });
 
@@ -1259,7 +1285,7 @@ await page.keyboard.press('Escape');
 
 // --- 5о. ключевые фразы для таргета
 await nav('ads');
-await page.click('[data-action=adview][data-id=keywords]');
+await nav('keywords');
 check('в рекламе есть вкладка ключевых фраз', (await page.$$('article.kwset')).length === 1);
 check('на карточке видно фразы и минус-фразы', (await page.textContent('article[data-ks="ks-envato"]')).includes('−бесплатно'));
 await page.click('[data-action=kwcopy][data-id=ks-envato][data-kind=phrases]');
@@ -1276,7 +1302,7 @@ await page.waitForFunction(() => window.__STATE__.keyword_sets.some(k => k.name 
 check('новый набор по умолчанию — для Stock во ВКонтакте',
   (await state()).keyword_sets.find(k => k.name === 'Шаблоны для монтажа').direction === 'Stock');
 // кампания Stock с набором фраз
-await page.click('[data-action=adview][data-id=campaigns]');
+await nav('ads');
 await page.click('[data-action=newcampaign]');
 await page.fill('#cpf input[name=name]', 'Stock: Envato во ВК');
 await page.selectOption('#cpf select[name=channel]', 'ВКонтакте');
@@ -1289,14 +1315,14 @@ await page.waitForFunction(() => window.__STATE__.campaigns.some(c => c.name ===
 const stockCamp = (await state()).campaigns.find(c => c.name === 'Stock: Envato во ВК');
 check('кампания помнит свой набор фраз', stockCamp.keyword_set_id === 'ks-envato');
 check('на карточке кампании виден набор', (await page.textContent(`article[data-cp="${stockCamp.id}"]`)).includes('Фразы: «Envato напрямую»'));
-await page.click('[data-action=adview][data-id=keywords]');
+await nav('keywords');
 check('набор считает свои кампании', /1\s?кампаний/.test(await page.textContent('article[data-ks="ks-envato"]')));
 await page.screenshot({ path: path.join(OUT, 'intel-keywords.png'), fullPage: true });
-await page.click('[data-action=adview][data-id=campaigns]');
+await nav('ads');
 
 // --- 5п. объявления и продажи Stock
 await nav('ads');
-await page.click('[data-action=adview][data-id=keywords]');
+await nav('keywords');
 check('объявление видно в наборе', (await page.textContent('article[data-ks="ks-envato"] .adtexts')).includes('Envato Elements без подписки'));
 await page.click('[data-action=adcopy][data-id=at-1][data-kind=title]');
 check('заголовок копируется одной кнопкой', (await page.evaluate(() => navigator.clipboard.readText())) === 'Envato Elements без подписки');
@@ -1309,7 +1335,7 @@ await page.click('#atf button.primary');
 await page.waitForFunction(() => window.__STATE__.ad_texts.length === 2);
 check('новое объявление привязано к набору', (await state()).ad_texts.find(a => a.title === 'Шаблон нужен к вечеру?').keyword_set_id === 'ks-envato');
 // продажи Stock переносятся из его админки
-await page.click('[data-action=adview][data-id=campaigns]');
+await nav('ads');
 const sc = (await state()).campaigns.find(c => c.name === 'Stock: Envato во ВК');
 await page.click(`article[data-cp="${sc.id}"]`);
 check('у кампании Stock есть поле продаж', await page.isVisible('#cpf input[name=sales]'));
@@ -1319,9 +1345,9 @@ await page.click('#cpf button.primary');
 await page.waitForFunction(id => window.__STATE__.campaigns.find(c => c.id === id).sales === 3, sc.id);
 const scCard = (await page.textContent(`article[data-cp="${sc.id}"] .campaignnums`)).replace(/\s+/g, ' ');
 check('у Stock считается цена продажи, а не заявки', /3\s?продаж 300\s?цена продажи/.test(scCard), scCard);
-await page.click('[data-action=adview][data-id=keywords]');
+await nav('keywords');
 check('набор показывает продажи своих кампаний', /3\s?продаж/.test(await page.textContent('article[data-ks="ks-envato"] .campaignnums')));
-await page.click('[data-action=adview][data-id=campaigns]');
+await nav('ads');
 await page.click('[data-action=newcampaign]');
 check('у кампании студии поля продаж нет', !(await page.isVisible('#cpf input[name=sales]')));
 await page.selectOption('#cpf select[name=direction]', 'Stock');
@@ -1340,7 +1366,7 @@ await page.screenshot({ path: path.join(OUT, 'intel-adtexts.png'), fullPage: tru
 
 // --- 5р. ключевые фразы: соцсети и Директ отдельно
 await nav('ads');
-await page.click('[data-action=adview][data-id=keywords]');
+await nav('keywords');
 check('на вкладке соцсетей нет наборов Директа', !(await page.$('article[data-ks="ks-direct"]')));
 await page.click('[data-action=kwplatform][data-id=direct]');
 check('на вкладке Директа — его набор', !!(await page.$('article[data-ks="ks-direct"]')) && !(await page.$('article[data-ks="ks-envato"]')));
@@ -1364,7 +1390,7 @@ check('новый набор на вкладке Директа — для Ди�
 await page.keyboard.press('Escape');
 await page.screenshot({ path: path.join(OUT, 'intel-direct.png'), fullPage: true });
 // реклама Stock в Директе получает свою метку
-await page.click('[data-action=adview][data-id=campaigns]');
+await nav('ads');
 await page.click('[data-action=newcampaign]');
 await page.selectOption('#cpf select[name=direction]', 'Stock');
 await page.selectOption('#cpf select[name=channel]', 'Яндекс Директ');
@@ -2083,6 +2109,17 @@ await m.fill('#gate-pass', 'secret');
 await m.click('#gatebtn');
 await m.waitForSelector('#shell:not([hidden])');
 await m.screenshot({ path: path.join(OUT, 'intel-mobile-gate.png') });
+check('на телефоне — нижняя панель из пяти кнопок', await m.isVisible('#tabbar') && (await m.$$('#tabbar button')).length === 5);
+check('кнопки панели крупные', await m.$$eval('#tabbar button', bs => bs.every(b => b.getBoundingClientRect().height >= 44)));
+await m.click('#tabbar button[data-page=leads]');
+check('панель переводит в раздел', (await m.textContent('#crumb')) === 'Заявки'
+  && await m.$eval('#tabbar button[data-page=leads]', b => b.classList.contains('active')));
+check('панель не закрывает низ страницы', await m.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.main')).paddingBottom) >= document.querySelector('#tabbar').offsetHeight));
+await m.click('#tabmore');
+check('«Ещё» открывает все разделы', await m.evaluate(() => document.body.classList.contains('menu')));
+await m.evaluate(() => document.body.classList.remove('menu'));
+await m.click('#tabbar button[data-page=home]');
+await m.screenshot({ path: path.join(OUT, 'intel-mobile-tabbar.png') });
 await m.click('#menu');
 await m.waitForTimeout(250);
 const hit = await m.evaluate(() => {
@@ -2095,7 +2132,7 @@ check('на телефоне меню поверх верхней панели',
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
 const sections = ['home', 'ads', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
-  'cases', 'content', 'prospects', 'magnets', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
+  'cases', 'content', 'prospects', 'magnets', 'keywords', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {
   await m.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);

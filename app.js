@@ -26,7 +26,7 @@ function toast(text, ms = 3500) {
 // каждый на своей сетке и со своей толщиной линии.
 const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
 // Старые имена из кода приложения, чтобы не переписывать все вызовы.
-const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift' };
+const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key' };
 const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
 const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
@@ -249,11 +249,11 @@ let ai = {
   records: [] // пусто — берём все проверенные публичные
 };
 
-// Семнадцать пунктов подряд не читают — их сканируют каждый раз заново.
-// Группы отвечают на вопрос «зачем я сюда иду»: вести дело, вспомнить,
-// сделать работу, настроить. Внутри группы — по частоте обращения.
+// Меню собрано по работе, а не по типу записей: продать, прорекламировать,
+// выпустить контент, посчитать, вспомнить про компанию. Внутри группы — по
+// частоте обращения. Редкое («Система») свёрнуто, пока его не открыли.
 const SECTION_TITLE = {
-  home: 'Обзор', ads: 'Реклама', leads: 'Заявки', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
+  home: 'Обзор', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
   cases: 'Кейсы', competitors: 'Конкуренты',
   content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
@@ -261,11 +261,19 @@ const SECTION_TITLE = {
 };
 
 const NAV = [
-  ['Маркетинг', ['home', 'ads', 'leads', 'magnets', 'prospects', 'decisions']],
-  ['Знание компании', ['knowledge', 'brand', 'products', 'cases', 'competitors']],
-  ['Работа', ['content', 'analytics', 'assistant']],
+  ['', ['home']],
+  ['Продажи', ['leads', 'prospects', 'magnets']],
+  ['Реклама', ['ads', 'keywords']],
+  ['Контент', ['content', 'assistant']],
+  ['Аналитика', ['analytics', 'decisions']],
+  ['Компания', ['knowledge', 'cases', 'products', 'competitors', 'brand']],
   ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
 ];
+// В меню пункт короче заголовка раздела: группа уже говорит, о чём речь.
+const NAV_LABEL = { ads: 'Кампании', assistant: 'ИИ-помощник', products: 'Услуги и продукты', tasks: 'Задачи' };
+// На телефоне — нижняя панель: четыре главных раздела и «Ещё».
+const TABBAR = ['home', 'leads', 'ads', 'content'];
+const TAB_LABEL = { ads: 'Реклама', content: 'Контент' };
 
 const sections = NAV.flatMap(([, ids]) => ids).map(id => [id, '', SECTION_TITLE[id]]);
 
@@ -1527,22 +1535,19 @@ function editDecision(id) {
   submitForm($('#df'), 'decisions', d, exists, 'Решение записано');
 }
 
-let adView = 'campaigns', keywordDir = 'Все', kwPlatform = 'social';
+let keywordDir = 'Все', kwPlatform = 'social';
 // Директ — поиск: фраза там — запрос человека, у объявления свои поля и
 // ограничения. Остальные площадки с ключевыми фразами — соцсети.
 const DIRECT = 'Яндекс Директ';
 const isDirect = k => k.channel === DIRECT;
 const DIRECT_LIMITS = { title: 56, title2: 30, body: 81 };
 const directWords = phrase => phrase.replace(/[+!"\[\]]/g, ' ').split(/\s+/).filter(w => w && !w.startsWith('-')).length;
-const adTabs = () => `<div class="seg adtabs" role="group" aria-label="Что показать">${[['campaigns', 'Кампании'], ['keywords', 'Ключевые фразы']].map(([id, t]) =>
-  `<button class="chip${adView === id ? ' on' : ''}" data-action="adview" data-id="${id}" aria-pressed="${adView === id}">${t}</button>`).join('')}</div>`;
 
 function renderAds() {
-  if (adView === 'keywords') return renderKeywords();
   const st = adStats();
   const rub = n => n === null || n === undefined ? '—' : num(n) + ' ₽';
   const head = heading('Реклама', 'Кампании, их бюджет и что они принесли. Заявка привязывается к кампании — видно, какое объявление сработало.',
-    `<button class="primary" data-action="newcampaign">+ Кампания</button>`) + adTabs();
+    `<button class="primary" data-action="newcampaign">+ Кампания</button>`);
 
   if (!db.campaigns.length) {
     return head + `<div class="card empty"><h2>Кампаний пока нет</h2>
@@ -2801,10 +2806,10 @@ function keywordStats(k) {
 }
 
 function renderKeywords() {
-  const head = heading('Реклама', kwPlatform === 'direct'
+  const head = heading('Ключевые фразы', kwPlatform === 'direct'
     ? 'Ключевые фразы для Яндекс Директа: набор — группа поисковых запросов. Фразы копируются столбиком прямо в кабинет, а кампания показывает, какой набор приводит продажи и заявки.'
     : 'Ключевые фразы для таргета в соцсетях: набор — сегмент аудитории. Фразы копируются столбиком прямо в рекламный кабинет, а кампания показывает, какой набор приводит продажи и заявки.',
-    `<button class="primary" data-action="newks">+ Набор фраз</button>`) + adTabs();
+    `<button class="primary" data-action="newks">+ Набор фраз</button>`);
   if (!db.keyword_sets.length) {
     return head + `<div class="card empty"><h2>Наборов пока нет</h2><p>Заведите набор: фразы, которые ищет ваша аудитория, и минус-фразы, которые отсекают случайных людей.</p></div>`;
   }
@@ -3726,6 +3731,7 @@ const rivals = [
 ];
 
 function render() {
+  updateNav();
   let s = '';
 
   if (page === 'home') {
@@ -3794,6 +3800,7 @@ function render() {
   }
 
   if (page === 'ads') s = renderAds();
+  if (page === 'keywords') s = renderKeywords();
   if (page === 'leads') s = renderLeads();
   if (page === 'prospects') s = renderProspects();
   if (page === 'magnets') s = renderMagnets();
@@ -4072,6 +4079,47 @@ function render() {
   if (c) c.onchange = e => { category = e.target.value; render(); };
 }
 
+// Свёрнутые группы помнятся на устройстве. Группа открытого раздела
+// раскрыта всегда — иначе непонятно, где ты находишься.
+let navClosed = ['Система'];
+try { const saved = JSON.parse(localStorage.getItem('intel.nav.closed')); if (Array.isArray(saved)) navClosed = saved; } catch (e) { /* по умолчанию */ }
+
+// Счётчики — те же дела, что в «На сегодня»: у раздела видно, что ждёт.
+// Красный — если среди них есть просроченное.
+function navCounts() {
+  const list = typeof todayList === 'function' && db ? todayList() : [];
+  const by = { home: list, leads: [], prospects: [], ads: [], content: [] };
+  const kind = { l: 'leads', pr: 'prospects', cp: 'ads', p: 'content' };
+  for (const x of list) by[kind[x.ref.slice(0, x.ref.indexOf(':'))]]?.push(x);
+  return Object.fromEntries(Object.entries(by).map(([k, v]) => [k, { n: v.length, late: v.some(x => x.late) }]));
+}
+
+function updateNav() {
+  const counts = navCounts();
+  const badge = (el, c) => {
+    if (!el) return;
+    el.hidden = !c || !c.n;
+    if (c && c.n) { el.textContent = c.n; el.classList.toggle('late', c.late); }
+  };
+  document.querySelectorAll('#nav [data-page], #tabbar [data-page]').forEach(b => {
+    const on = b.dataset.page === page;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    badge(b.querySelector('.navbadge'), counts[b.dataset.page]);
+  });
+  document.querySelectorAll('#nav .navsection[data-group]').forEach(sec => {
+    const g = sec.dataset.group;
+    const hasActive = !!sec.querySelector(`[data-page="${page}"]`);
+    const open = hasActive || !navClosed.includes(g);
+    sec.classList.toggle('closed', !open);
+    const t = sec.querySelector('.navgroup');
+    t.setAttribute('aria-expanded', String(open));
+    // у свёрнутой группы счётчик переезжает на её заголовок
+    const inside = [...sec.querySelectorAll('[data-page]')].map(b => counts[b.dataset.page]).filter(c => c && c.n);
+    badge(t.querySelector('.navbadge'), open ? null : { n: inside.reduce((n, c) => n + c.n, 0), late: inside.some(c => c.late) });
+  });
+}
+
 function go(p) {
   // Календарь стал видом контент-плана; старые ссылки на него ведут туда же.
   if (p === 'calendar') { contentView = 'calendar'; p = 'content'; }
@@ -4079,7 +4127,6 @@ function go(p) {
   query = ''; category = 'Все';
   document.body.classList.remove('menu');
   $('#crumb').textContent = sections.find(s => s[0] === page)[2];
-  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   render();
   window.scrollTo(0, 0);
 }
@@ -4989,7 +5036,7 @@ function theme(t) {
 }
 
 document.addEventListener('click', async e => {
-  if (document.body.classList.contains('menu') && !e.target.closest('.sidebar,#menu,dialog')) {
+  if (document.body.classList.contains('menu') && !e.target.closest('.sidebar,#menu,#tabmore,dialog')) {
     document.body.classList.remove('menu');
     return;
   }
@@ -5017,7 +5064,7 @@ document.addEventListener('click', async e => {
       cp: () => { go('ads'); editCampaign(id); },
       pr: () => { go('prospects'); editProspect(id); },
       mg: () => { go('magnets'); editMagnet(id); },
-      ks: () => { adView = 'keywords'; go('ads'); editKeywordSet(id); },
+      ks: () => { go('keywords'); editKeywordSet(id); },
       brand: () => { go('brand'); editBrand(id); }
     };
     (open[b.dataset.result] || open.p)();
@@ -5030,7 +5077,6 @@ document.addEventListener('click', async e => {
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
     case 'newcampaign': editCampaign(); break;
-    case 'adview': adView = b.dataset.id; render(); break;
     case 'kwdir': keywordDir = b.dataset.id; render(); break;
     case 'kwplatform': kwPlatform = b.dataset.id; keywordDir = 'Все'; render(); break;
     case 'newks': editKeywordSet(); break;
@@ -5273,10 +5319,23 @@ $('#gateform').onsubmit = async e => {
   }
 };
 
-$('#nav').innerHTML = NAV.map(([group, ids]) =>
-  `<div class="navgroup">${group}</div>` +
-  ids.map(id => `<button data-page="${id}"><i>${icon(id)}</i><span>${SECTION_TITLE[id]}</span></button>`).join('')
-).join('');
+const navItem = id => `<button data-page="${id}"><i>${icon(id)}</i><span>${NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`;
+$('#nav').innerHTML = NAV.map(([group, ids]) => group
+  ? `<div class="navsection" data-group="${group}">
+      <button class="navgroup" data-toggle="${group}" aria-expanded="true"><span>${group}</span><b class="navbadge" hidden></b>${icon('expand', 14)}</button>
+      <div class="navitems">${ids.map(navItem).join('')}</div></div>`
+  : `<div class="navsection solo">${ids.map(navItem).join('')}</div>`).join('');
+$('#tabbar').innerHTML = TABBAR.map(id => `<button data-page="${id}"><i>${icon(id, 20)}</i><span>${TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('')
+  + `<button id="tabmore" aria-label="Все разделы"><i>${icon('menu', 20)}</i><span>Ещё</span></button>`;
+$('#tabmore').onclick = () => document.body.classList.toggle('menu');
+$('#nav').addEventListener('click', e => {
+  const t = e.target.closest('[data-toggle]');
+  if (!t) return;
+  const g = t.dataset.toggle;
+  navClosed = navClosed.includes(g) ? navClosed.filter(x => x !== g) : [...navClosed, g];
+  try { localStorage.setItem('intel.nav.closed', JSON.stringify(navClosed)); } catch (err) { /* без памяти — просто не запомним */ }
+  updateNav();
+});
 $('#menu').innerHTML = icon('menu');
 $('#refresh').innerHTML = icon('refresh');
 $('#theme').innerHTML = icon('theme');

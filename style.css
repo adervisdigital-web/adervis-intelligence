@@ -1251,3 +1251,46 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .kwplatforms{margin:0 0 12px}
 .kwwarn{margin:0;font-size:12px;font-weight:700}
 .adtexttop .title2{font-weight:400;color:var(--muted)}
+
+/* --- Навигация ------------------------------------------------------------
+   Группы по работе сворачиваются; счётчик у пункта — сколько дел ждёт в
+   разделе, красный — если есть просроченное. У свёрнутой группы счётчик
+   переезжает на её заголовок, чтобы дела не прятались вместе с пунктами. */
+.nav{gap:0}
+.navsection{display:grid;gap:2px}
+.navsection.solo{margin-bottom:6px}
+.nav .navgroup{display:flex;align-items:center;gap:6px;width:100%;background:transparent;border:0;border-radius:8px;
+  color:#8a8f98;text-transform:uppercase;letter-spacing:.11em;font-size:10px;font-weight:700;padding:12px 12px 5px;cursor:pointer;text-align:left}
+.nav .navgroup:hover{color:#fdfdfd}
+.nav .navgroup span{flex:1}
+.nav .navgroup svg{transition:transform .18s;opacity:.7}
+.navsection.closed .navgroup svg{transform:rotate(-90deg)}
+.navsection.closed .navitems{display:none}
+.navitems{display:grid;gap:2px}
+.nav button[data-page]{position:relative}
+.nav button[data-page] span{flex:1}
+.navbadge{min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:#2a2a2a;color:#e6e6e6;font-size:11px;font-weight:700;
+  display:inline-grid;place-items:center;font-variant-numeric:tabular-nums;line-height:1}
+.navbadge.late{background:#d64545;color:#fff}
+.navbadge[hidden]{display:none}
+.nav .navgroup .navbadge{letter-spacing:0}
+
+/* Нижняя панель — только на телефоне: главные разделы под большим пальцем. */
+.tabbar{display:none}
+@media(max-width:720px){
+  .tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:15;
+    background:var(--panel);border-top:1px solid var(--line);padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
+  .tabbar button{display:grid;justify-items:center;gap:2px;background:transparent;border:0;border-radius:10px;padding:6px 2px;
+    color:var(--muted);font-size:11px;min-height:52px;position:relative}
+  .tabbar button.active{color:var(--ink)}
+  .tabbar button.active i{color:var(--gold)}
+  .tabbar i{display:grid;place-items:center;height:22px}
+  .tabbar .navbadge{position:absolute;top:2px;left:calc(50% + 6px);min-width:18px;height:18px;font-size:10px}
+  .main{padding-bottom:84px}
+  #alerts{bottom:calc(76px + env(safe-area-inset-bottom))}
+}
+/* Воздух между группами меню: заголовок группы — начало нового блока,
+   а не продолжение предыдущего. */
+.navsection + .navsection{margin-top:6px;padding-top:4px;border-top:1px solid #232323}
+.nav .navgroup{padding:10px 12px 6px}
+.tabbar span{white-space:nowrap}
