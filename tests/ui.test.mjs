@@ -109,6 +109,7 @@ const fake = (seedData) => {
         phrases: 'envato elements купить\nкак скачать файл с envato elements без своей подписки в россии', minus: 'бесплатно', note: '',
         _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
     ],
+    channel_stats: [],
     ad_texts: [
       { id: 'at-1', keyword_set_id: 'ks-envato', title: 'Envato Elements без подписки', body: 'Вставьте ссылку — получите оригинал.',
         long_text: '', status: 'В работе', note: '', sort: 10, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
@@ -258,8 +259,9 @@ const fake = (seedData) => {
       for (const o of list) {
         const i = state[table].findIndex(x => x.id === o.id);
         const saved = { ...clone(o), _at: now(), _by: session };
-        if (i < 0) { state[table].push(saved); log('insert', table, saved); }
-        else { state[table][i] = saved; log('update', table, saved); }
+        // как на сервере: статистика площадок в журнал не пишется
+        if (i < 0) { state[table].push(saved); if (table !== 'channel_stats') log('insert', table, saved); }
+        else { state[table][i] = saved; if (table !== 'channel_stats') log('update', table, saved); }
       }
     }
   };
@@ -1443,6 +1445,49 @@ await page.waitForSelector('#modal .notice.error');
 check('ошибка настройки ИИ объяснена словами', (await page.textContent('#modal .notice.error')).includes('YANDEX_FOLDER_ID'));
 await page.evaluate(() => { window.__aiFail = null; });
 await page.keyboard.press('Escape');
+
+// --- 5т. статистика ВКонтакте из выгрузки
+await nav('analytics');
+check('без выгрузки — объяснение, где её взять', (await page.textContent('.vkstats')).includes('выгрузите данные за весь период в CSV'));
+const vkHead = 'Раздел;Подраздел;Дата;Время;Вид данных;Сортировка: гранулярность;Сортировка: вид разреза;Параметр легенды;Значение';
+const vkRow = (d, kind, gran, cut, leg, v) => `Сообщество;Общее;${d};#;${kind};${gran};${cut};${leg};${v}`;
+const vkMonths = [['01.08.2026', 296, 268, 0], ['01.09.2026', 1406, 1163, 3], ['01.07.2026', 100, 90, 0], ['01.06.2026', 725, 614, 2], ['01.05.2026', 4038, 3637, 1]];
+const vkCsv = '\ufeff' + [vkHead,
+  ...vkMonths.flatMap(([d, r, nr, dia]) => [
+    vkRow(d, 'Охват', 'По месяцам', 'Вся аудитория', 'Весь контент', r),
+    vkRow(d, 'Охват', 'По месяцам', 'Не подписчики', 'Весь контент', nr),
+    vkRow(d, 'Охват', 'По дням', 'Вся аудитория', 'Весь контент', 999999),
+    vkRow(d, 'Пользователи', 'По месяцам', '#', 'Написали в первый раз', dia),
+    vkRow(d, 'Поделились', 'По месяцам', 'Вся аудитория', 'Весь контент', -1)]),
+  vkRow('31.08.2026', 'Количество подписчиков', 'По дням', '#', 'Всего подписчиков', 2224),
+  vkRow('15.09.2026', 'Количество подписчиков', 'По дням', '#', 'Всего подписчиков', 2230),
+  vkRow('30.09.2026', 'Количество подписчиков', 'По дням', '#', 'Всего подписчиков', 2244)].join('\r\n');
+await page.setInputFiles('#vkstatfile', { name: 'vk.csv', mimeType: 'text/csv', buffer: Buffer.from(vkCsv, 'utf8') });
+await page.waitForFunction(() => window.__STATE__.channel_stats.length === 5);
+const vkSep = (await state()).channel_stats.find(r => r.id === 'vk-2026-09');
+check('месяц собран из месячных итогов, а не дневных', vkSep.reach === 1406 && vkSep.reach_nonsubs === 1163 && vkSep.new_dialogs === 3, JSON.stringify(vkSep));
+check('подписчики — на последний день месяца', vkSep.subs === 2244);
+check('отрицательные значения ВК не проходят в базу', (await state()).channel_stats.every(r => r.shares === 0));
+const vkText = (await page.textContent('.vkstats')).replace(/\s+/g, ' ');
+check('лучший месяц назван', vkText.includes('Лучший месяц — май 2026 г.: 4 038'), vkText.slice(0, 400));
+check('на графике столбик на каждый месяц', (await page.$$('.monthbars rect')).length === 5);
+check('провал — меньше трети обычного — выделен', (await page.$$('.monthbars .lowbar')).length === 1);
+check('прирост подписчиков считается от первого известного месяца', /\+20 за 12 месяцев/.test(vkText), vkText.slice(0, 200));
+await page.setInputFiles('#vkstatfile', { name: 'vk.csv', mimeType: 'text/csv', buffer: Buffer.from(vkCsv, 'utf8') });
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('Загружено месяцев'));
+check('повторная загрузка не задваивает месяцы', (await state()).channel_stats.length === 5);
+await page.setInputFiles('#vkstatfile', { name: 'bad.csv', mimeType: 'text/csv', buffer: Buffer.from('a;b;c\n1;2;3', 'utf8') });
+await page.waitForFunction(() => document.querySelector('#alerts').textContent.includes('не выгрузка статистики'));
+check('чужой файл отклонён понятно', true);
+// настоящая выгрузка, если лежит рядом: проверяет формат, а не выдумку теста
+const realVk = path.join(ROOT, '..', 'Статистика', '121259819_community_common_2023-10-01_2026-09-30.csv');
+if (fs.existsSync(realVk)) {
+  await page.setInputFiles('#vkstatfile', realVk);
+  await page.waitForFunction(() => window.__STATE__.channel_stats.length >= 36, null, { timeout: 60000 });
+  const apr = (await state()).channel_stats.find(r => r.id === 'vk-2025-04');
+  check('настоящая выгрузка ВК: 36 месяцев, апрель 2025 — 16 350 охвата', (await state()).channel_stats.length === 36 && apr.reach === 16350, JSON.stringify(apr));
+  await (await page.$('.vkstats')).screenshot({ path: path.join(OUT, 'intel-vkstats.png') });
+}
 
 // --- 6. задачи
 await nav('tasks');

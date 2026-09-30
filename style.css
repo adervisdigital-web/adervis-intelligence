@@ -1310,3 +1310,11 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .aiad.warn{border-color:#d64545}
 .aiad p{margin:0}
 .aiad .chip{justify-self:start;min-height:36px;margin-top:4px}
+
+/* Статистика ВКонтакте по месяцам. Провал — красным и словом в подсказке. */
+.vkstats{margin:16px 0}
+.vkstats .head button{display:inline-flex;gap:6px;align-items:center;margin-left:auto}
+.vktiles{margin:12px 0 18px}
+.monthbars .bar{fill:var(--gold)}
+.monthbars .lowbar{fill:#d64545;opacity:.75}
+.vknotes{margin:10px 0 0;padding-left:18px;display:grid;gap:4px;font-size:13px}

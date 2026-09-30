@@ -70,6 +70,8 @@ const FIELDS = {
   kpi_targets: ['id', 'target'],
   keyword_sets: ['id', 'name', 'direction', 'channel', 'phrases', 'minus', 'note', 'sort'],
   ad_texts: ['id', 'keyword_set_id', 'title', 'title2', 'body', 'long_text', 'status', 'note', 'sort'],
+  channel_stats: ['id', 'network', 'month', 'reach', 'reach_nonsubs', 'reach_posts', 'reach_clips', 'views', 'likes', 'shares',
+    'comments', 'subs', 'subs_in', 'subs_out', 'visitors', 'site_clicks', 'new_dialogs'],
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
@@ -131,7 +133,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -150,7 +152,8 @@ function createApi(cfg) {
         selectAll('kpi_targets', 'id'),
         selectAll('lead_magnets', 'created_at'),
         selectAll('keyword_sets', 'sort'),
-        selectAll('ad_texts', 'sort')
+        selectAll('ad_texts', 'sort'),
+        selectAll('channel_stats', 'month')
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -167,6 +170,7 @@ function createApi(cfg) {
         lead_magnets: magnets.map(r => fromRow('lead_magnets', r)),
         keyword_sets: keywordSets.map(r => fromRow('keyword_sets', r)),
         ad_texts: adTexts.map(r => fromRow('ad_texts', r)),
+        channel_stats: channelStats.map(r => fromRow('channel_stats', r)),
         publications, ai, members, activity, accounts
       };
     },
@@ -232,7 +236,7 @@ let me = null;
 const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
-  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: []
+  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: [], channel_stats: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -408,7 +412,7 @@ function filters(categories) {
 }
 
 const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук',
-  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', ad_texts: 'объявление', decisions: 'решение' };
+  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', ad_texts: 'объявление', channel_stats: 'статистику', decisions: 'решение' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -2708,6 +2712,133 @@ function kpiTile(k, v) {
   </div>`;
 }
 
+// ------------------------------------------------------- статистика ВКонтакте
+//
+// Выгрузка статистики сообщества (CSV из раздела статистики ВК) сводится
+// в строку на месяц. Берём месячные итоги ВК как есть; подписчиков — на
+// последний день месяца. Повторная загрузка месяца заменяет его.
+const VK_STAT_KEYS = {
+  reach: ['Охват', 'Вся аудитория', 'Весь контент'],
+  reach_nonsubs: ['Охват', 'Не подписчики', 'Весь контент'],
+  reach_posts: ['Охват', 'Вся аудитория', 'Посты'],
+  reach_clips: ['Охват', 'Вся аудитория', 'Клипы'],
+  views: ['Просмотры', 'Вся аудитория', 'Весь контент'],
+  likes: ['Лайки', 'Вся аудитория', 'Весь контент'],
+  shares: ['Поделились', 'Вся аудитория', 'Весь контент'],
+  comments: ['Комментарии', 'Вся аудитория', 'Весь контент'],
+  subs_in: ['Подписки и отписки', '#', 'Подписались'],
+  subs_out: ['Подписки и отписки', '#', 'Отписались'],
+  visitors: ['Уникальные посетители и просмотры сообщества', '#', 'Посетители'],
+  site_clicks: ['Нажатия на кнопку действия', '#', 'Перейти на сайт'],
+  new_dialogs: ['Пользователи', '#', 'Написали в первый раз']
+};
+
+function parseVkStats(text) {
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+  const head = (lines[0] || '').split(';');
+  const col = n => head.indexOf(n);
+  const need = ['Дата', 'Вид данных', 'Сортировка: гранулярность', 'Сортировка: вид разреза', 'Параметр легенды', 'Значение'];
+  if (need.some(n => col(n) < 0)) throw new Error('Это не выгрузка статистики сообщества ВКонтакте: нет нужных колонок');
+  const [cDate, cKind, cGran, cCut, cLeg, cVal] = need.map(col);
+  const byKey = Object.fromEntries(Object.entries(VK_STAT_KEYS).map(([f, k]) => [k.join('|'), f]));
+  const months = {}, subsDay = {};
+  for (let i = 1; i < lines.length; i++) {
+    const c = lines[i].split(';');
+    if (c.length < need.length) continue;
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(c[cDate]);
+    if (!m) continue;
+    const month = `${m[3]}-${m[2]}`;
+    const val = Math.max(0, Math.round(Number(String(c[cVal]).replace(',', '.').replace(/\s/g, '')) || 0));
+    if (c[cKind] === 'Количество подписчиков' && c[cGran] === 'По дням') {
+      if (!subsDay[month] || m[1] >= subsDay[month][0]) subsDay[month] = [m[1], val];
+      continue;
+    }
+    if (c[cGran] !== 'По месяцам') continue;
+    const f = byKey[[c[cKind], c[cCut], c[cLeg]].join('|')];
+    if (!f) continue;
+    (months[month] ||= {})[f] = (months[month][f] || 0) + val;
+  }
+  const rows = Object.keys(months).sort().map(month => ({
+    id: `vk-${month}`, network: 'ВКонтакте', month: month + '-01',
+    ...Object.fromEntries(Object.keys(VK_STAT_KEYS).map(f => [f, months[month][f] || 0])),
+    subs: subsDay[month]?.[1] || 0
+  }));
+  if (!rows.length) throw new Error('В файле нет месячных итогов — выгрузите статистику за период целиком');
+  return rows;
+}
+
+async function importVkStats(file) {
+  toast('Читаю выгрузку…');
+  try {
+    const rows = parseVkStats(await file.text());
+    await api.upsertAll('channel_stats', rows);
+    for (const r of rows) upsertLocal('channel_stats', r);
+    db.channel_stats.sort((a, b) => String(a.month).localeCompare(String(b.month)));
+    render();
+    toast(`Загружено месяцев: ${rows.length} — ${rows[0].month.slice(0, 7)} … ${rows[rows.length - 1].month.slice(0, 7)}`);
+  } catch (e) {
+    toast('Выгрузка не загружена: ' + (e.message || 'ошибка'), 9000);
+  }
+}
+
+// Столбики по месяцам: провал (охват меньше трети медианы) подписан словом
+// в подсказке и выделен цветом.
+function monthBars(rows, field, label) {
+  const W = 760, H = 170, T = 10, B = 24;
+  const vals = rows.map(r => Number(r[field]) || 0);
+  const max = niceMax(Math.max(...vals, 1));
+  const sorted = [...vals].sort((a, b) => a - b), med = sorted[Math.floor(sorted.length / 2)] || 0;
+  const bw = W / rows.length;
+  return `<svg class="chart monthbars" viewBox="0 0 ${W} ${H}" role="img" aria-label="${E(label)}">
+    ${rows.map((r, i) => {
+      const v = vals[i], h = Math.max(1, (v / max) * (H - T - B)), x = i * bw, low = med && v < med / 3;
+      const mm = String(r.month).slice(5, 7), yy = String(r.month).slice(2, 4);
+      return `<g><rect x="${(x + 1).toFixed(1)}" y="${(H - B - h).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="2"
+        class="${low ? 'lowbar' : 'bar'}"><title>${E(monthName(String(r.month).slice(0, 7)))}: ${num(v)}${low ? ' — провал' : ''}</title></rect>
+        ${mm === '01' || i === 0 ? `<text class="axis" x="${(x + 1).toFixed(1)}" y="${H - 6}">${mm === '01' ? '20' + yy : mm + '.' + yy}</text>` : ''}</g>`;
+    }).join('')}</svg>`;
+}
+
+function vkStatsCard() {
+  const rows = db.channel_stats.filter(r => r.network === 'ВКонтакте').sort((a, b) => String(a.month).localeCompare(String(b.month)));
+  const upload = `<button data-action="vkstatpick">${icon('upload', 15)} ${rows.length ? 'Обновить выгрузку' : 'Загрузить выгрузку'}</button>
+    <input type="file" id="vkstatfile" accept=".csv,text/csv" hidden>`;
+  if (!rows.length) {
+    return `<div class="card vkstats"><div class="head" style="margin:0 0 8px"><h2 style="margin:0">ВКонтакте по месяцам</h2>${upload}</div>
+      <p class="muted">В статистике сообщества ВКонтакте выгрузите данные за весь период в CSV и загрузите файл сюда —
+      появятся охват, подписчики, переходы и обращения по месяцам. Повторная загрузка обновит месяцы, а не задвоит их.</p></div>`;
+  }
+  const last = rows.slice(-12), prev = rows.slice(-24, -12);
+  const sum = (list, f) => list.reduce((n, r) => n + (Number(r[f]) || 0), 0);
+  const reach12 = sum(last, 'reach'), reachPrev = sum(prev, 'reach');
+  const change = reachPrev ? Math.round(100 * (reach12 - reachPrev) / reachPrev) : null;
+  // подписчиков в выгрузке может не быть за ранние месяцы — считаем от первого известного
+  const subsNow = rows[rows.length - 1].subs, subs12 = last.find(r => r.subs)?.subs || 0;
+  const nonShare = reach12 ? Math.round(100 * sum(last, 'reach_nonsubs') / reach12) : 0;
+  const best = [...rows].sort((a, b) => b.reach - a.reach)[0];
+  const sorted = rows.map(r => r.reach).sort((a, b) => a - b), med = sorted[Math.floor(sorted.length / 2)] || 0;
+  const dead = rows.filter(r => med && r.reach < med / 3);
+  const leadsLike = sum(last, 'site_clicks') + sum(last, 'new_dialogs');
+  const tile = (a, b, c, cls = '') => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value">${b}</div><small class="${cls}">${c}</small></div>`;
+  return `<div class="card vkstats">
+    <div class="head" style="margin:0 0 8px"><h2 style="margin:0">ВКонтакте по месяцам</h2>
+      <small class="muted">${E(monthName(String(rows[0].month).slice(0, 7)))} — ${E(monthName(String(rows[rows.length - 1].month).slice(0, 7)))}</small>${upload}</div>
+    <div class="grid metrics vktiles">
+      ${tile('Подписчики', subsNow ? num(subsNow) : '—', subsNow && subs12 ? `${subsNow - subs12 >= 0 ? '+' : ''}${num(subsNow - subs12)} за 12 месяцев` : 'нет в выгрузке')}
+      ${tile('Охват за 12 месяцев', num(reach12), change === null ? 'сумма месячных охватов' : `${change >= 0 ? '+' : ''}${change}% к прошлым 12`, change !== null && change < 0 ? 'minus' : '')}
+      ${tile('Видят не подписчики', nonShare + '%', 'охвата — из рекомендаций, а не от подписчиков')}
+      ${tile('Переходы и обращения', num(leadsLike), `на сайт: ${num(sum(last, 'site_clicks'))} · новых диалогов: ${num(sum(last, 'new_dialogs'))}`, leadsLike ? '' : 'minus')}
+    </div>
+    <h3>Охват по месяцам</h3>
+    ${monthBars(rows, 'reach', 'Охват сообщества по месяцам')}
+    <ul class="vknotes">
+      <li>Лучший месяц — ${E(monthName(String(best.month).slice(0, 7)))}: ${num(best.reach)}${best.reach_clips > best.reach / 3 ? `, из них клипы — ${num(best.reach_clips)}` : ''}.</li>
+      ${dead.length ? `<li class="minus">Провалов (охват меньше трети обычного): ${dead.length}${dead.length > 6 ? ', последние' : ''} — ${dead.slice(-6).map(r => E(monthName(String(r.month).slice(0, 7)))).join(', ')}. Без постов охват падает почти до нуля.</li>` : ''}
+      ${!leadsLike ? '<li class="minus">За 12 месяцев ни одного перехода на сайт и нового диалога: охват не превращается в обращения.</li>' : ''}
+    </ul>
+  </div>`;
+}
+
 // Итоги недели — текстом, который можно переслать партнёру как есть.
 // Сделки и холодные сообщения считаются по дате последней правки:
 // отдельной истории статусов нет, и это сказано в самом тексте.
@@ -2751,6 +2882,7 @@ function renderMetricsTop() {
     <div class="card weekcard"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Итоги недели</h2>
       <button data-action="weekcopy">${icon('copy', 15)} Скопировать текстом</button></div>
       <pre class="weektext">${E(weekSummary())}</pre></div>
+    ${vkStatsCard()}
     <div class="head"><h2>Публикации</h2><button class="primary" data-action="newmetric">+ Замер</button></div>`;
 }
 
@@ -4129,6 +4261,9 @@ function render() {
   const sitef = $('#sitef');
   if (sitef) sitef.onsubmit = e => { e.preventDefault(); siteSearch(); };
 
+  const vkf = $('#vkstatfile');
+  if (vkf) vkf.onchange = e => { const file = e.target.files[0]; e.target.value = ''; if (file) importVkStats(file); };
+
   const lq = $('#leadq');
   if (lq) lq.oninput = e => {
     const pos = e.target.selectionStart;
@@ -5014,7 +5149,7 @@ function exportJson() {
     brand: strip(db.brand), decisions: strip(db.decisions),
     campaigns: strip(db.campaigns), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications),
-    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), kpi_targets: strip(db.kpi_targets)
+    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), channel_stats: strip(db.channel_stats), kpi_targets: strip(db.kpi_targets)
   }, null, 2), 'adervis-backup-' + today() + '.json');
 }
 
@@ -5174,6 +5309,7 @@ document.addEventListener('click', async e => {
     case 'orgaddall': orgAdd(finder.orgs); break;
     case 'importprospects': importCompanies(); break;
     case 'weekcopy': weekCopy(); break;
+    case 'vkstatpick': $('#vkstatfile').click(); break;
     case 'sitecreate': editProspect(undefined, {
       name: (finder.site.title || '').slice(0, 200), website: finder.url, source: 'Сайт',
       phone: finder.site.phones.join(', ').slice(0, 200), email: finder.site.emails.join(', ').slice(0, 200),
