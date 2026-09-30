@@ -104,6 +104,9 @@ const fake = (seedData) => {
     keyword_sets: [
       { id: 'ks-envato', name: 'Envato напрямую', direction: 'Stock', channel: 'ВКонтакте', sort: 10,
         phrases: 'envato elements\nenvato elements скачать\nэнвато', minus: 'бесплатно\nторрент', note: 'Самые тёплые',
+        _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' },
+      { id: 'ks-direct', name: 'Envato — горячие запросы', direction: 'Stock', channel: 'Яндекс Директ', sort: 110,
+        phrases: 'envato elements купить\nкак скачать файл с envato elements без своей подписки в россии', minus: 'бесплатно', note: '',
         _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
     ],
     ad_texts: [
@@ -1280,7 +1283,7 @@ await page.selectOption('#cpf select[name=channel]', 'ВКонтакте');
 await page.selectOption('#cpf select[name=direction]', 'Stock');
 await page.selectOption('#cpf select[name=keyword_set_id]', 'ks-envato');
 const stockLink = await page.textContent('#utmout');
-check('ссылка Stock получает его метку from=vk', stockLink.startsWith('https://stock.adervis.ru/?') && stockLink.includes('from=vk'), stockLink);
+check('реклама ВК получает свою метку Stock — отдельно от постов группы', stockLink.startsWith('https://stock.adervis.ru/?') && stockLink.includes('from=vkads'), stockLink);
 await page.click('#cpf button.primary');
 await page.waitForFunction(() => window.__STATE__.campaigns.some(c => c.name === 'Stock: Envato во ВК'));
 const stockCamp = (await state()).campaigns.find(c => c.name === 'Stock: Envato во ВК');
@@ -1334,6 +1337,40 @@ await page.screenshot({ path: path.join(OUT, 'intel-adtexts.png'), fullPage: tru
   const tile = (await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')))).find(t => /средняя цена заявки/i.test(t)) || '';
   check('расход Stock не подмешан в цену заявки', tile.replace(/\s/g, '').includes(want.replace(/\s/g, '')), tile + ' / ждали ' + want);
 }
+
+// --- 5р. ключевые фразы: соцсети и Директ отдельно
+await nav('ads');
+await page.click('[data-action=adview][data-id=keywords]');
+check('на вкладке соцсетей нет наборов Директа', !(await page.$('article[data-ks="ks-direct"]')));
+await page.click('[data-action=kwplatform][data-id=direct]');
+check('на вкладке Директа — его набор', !!(await page.$('article[data-ks="ks-direct"]')) && !(await page.$('article[data-ks="ks-envato"]')));
+check('фраза длиннее 7 слов подсвечена', (await page.textContent('article[data-ks="ks-direct"]')).includes('Длиннее 7 слов: 1'));
+check('подсказка про операторы Директа', (await page.textContent('#view')).includes('Заголовок 1 — до 56 знаков'));
+await page.click('article[data-ks="ks-direct"] [data-action=newad]');
+check('у объявления Директа есть второй заголовок, нет длинного текста',
+  await page.isVisible('#atf input[name=title2]') && !(await page.$('#atf textarea[name=long_text]')));
+await page.fill('#atf input[name=title]', 'Envato Elements без подписки — от 149 ₽');
+await page.fill('#atf input[name=title2]', 'Оригиналы по вашей ссылке и ещё немного');
+check('счётчик Директа знает лимит', (await page.textContent('#atf .counter[data-for=title]')) === '39 из 56');
+check('превышение второго заголовка названо', await page.$eval('#atf .counter[data-for=title2]', c => c.classList.contains('over') && /длиннее на 9/.test(c.textContent)));
+await page.fill('#atf input[name=title2]', 'Оригиналы по вашей ссылке');
+await page.fill('#atf textarea[name=body]', 'Вставьте ссылку на файл — получите оригинал без водяных знаков.');
+await page.click('#atf button.primary');
+await page.waitForFunction(() => window.__STATE__.ad_texts.some(a => a.title2 === 'Оригиналы по вашей ссылке'));
+await page.click('[data-action=adcopy][data-kind=title2]');
+check('второй заголовок копируется отдельно', (await page.evaluate(() => navigator.clipboard.readText())) === 'Оригиналы по вашей ссылке');
+await page.click('[data-action=newks]');
+check('новый набор на вкладке Директа — для Директа', (await page.inputValue('#ksf select[name=channel]')) === 'Яндекс Директ');
+await page.keyboard.press('Escape');
+await page.screenshot({ path: path.join(OUT, 'intel-direct.png'), fullPage: true });
+// реклама Stock в Директе получает свою метку
+await page.click('[data-action=adview][data-id=campaigns]');
+await page.click('[data-action=newcampaign]');
+await page.selectOption('#cpf select[name=direction]', 'Stock');
+await page.selectOption('#cpf select[name=channel]', 'Яндекс Директ');
+await page.fill('#cpf input[name=name]', 'Stock в Директе');
+check('Директ получает метку Stock yadirect', (await page.textContent('#utmout')).includes('from=yadirect'));
+await page.keyboard.press('Escape');
 
 // --- 6. задачи
 await nav('tasks');

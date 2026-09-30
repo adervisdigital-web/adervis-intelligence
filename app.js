@@ -69,7 +69,7 @@ const FIELDS = {
     'source', 'status', 'external_id', 'lead_id', 'note', 'magnet_id', 'next_on', 'lost_reason'],
   kpi_targets: ['id', 'target'],
   keyword_sets: ['id', 'name', 'direction', 'channel', 'phrases', 'minus', 'note', 'sort'],
-  ad_texts: ['id', 'keyword_set_id', 'title', 'body', 'long_text', 'status', 'note', 'sort'],
+  ad_texts: ['id', 'keyword_set_id', 'title', 'title2', 'body', 'long_text', 'status', 'note', 'sort'],
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
@@ -1371,7 +1371,10 @@ const UTM_SOURCE = {
 };
 const LANDINGS = { 'Студия': 'https://adervis.ru/', 'CRM': 'https://adervis.ru/pro', 'Stock': 'https://stock.adervis.ru/', 'Медиа': 'https://adervis.ru/' };
 let campaignFilter = 'Все';
-const STOCK_FROM = { 'ВКонтакте': 'vk', 'Telegram Ads': 'tg', 'Авито': 'avito' };
+// Метки рекламы отличаются от меток постов (vk, tg): в админке Stock
+// продажа с объявления не смешивается с продажей из группы. Незнакомую
+// метку Stock показывает как есть.
+const STOCK_FROM = { 'ВКонтакте': 'vkads', 'Яндекс Директ': 'yadirect', 'Telegram Ads': 'tgads', 'Авито': 'avito' };
 
 const monthKey = d => String(d).slice(0, 7);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -1524,7 +1527,13 @@ function editDecision(id) {
   submitForm($('#df'), 'decisions', d, exists, 'Решение записано');
 }
 
-let adView = 'campaigns', keywordDir = 'Все';
+let adView = 'campaigns', keywordDir = 'Все', kwPlatform = 'social';
+// Директ — поиск: фраза там — запрос человека, у объявления свои поля и
+// ограничения. Остальные площадки с ключевыми фразами — соцсети.
+const DIRECT = 'Яндекс Директ';
+const isDirect = k => k.channel === DIRECT;
+const DIRECT_LIMITS = { title: 56, title2: 30, body: 81 };
+const directWords = phrase => phrase.replace(/[+!"\[\]]/g, ' ').split(/\s+/).filter(w => w && !w.startsWith('-')).length;
 const adTabs = () => `<div class="seg adtabs" role="group" aria-label="Что показать">${[['campaigns', 'Кампании'], ['keywords', 'Ключевые фразы']].map(([id, t]) =>
   `<button class="chip${adView === id ? ' on' : ''}" data-action="adview" data-id="${id}" aria-pressed="${adView === id}">${t}</button>`).join('')}</div>`;
 
@@ -2792,21 +2801,28 @@ function keywordStats(k) {
 }
 
 function renderKeywords() {
-  const head = heading('Реклама', 'Ключевые фразы для таргета: набор — сегмент аудитории. Фразы копируются столбиком прямо в рекламный кабинет, а кампания показывает, какой набор приводит заявки.',
+  const head = heading('Реклама', kwPlatform === 'direct'
+    ? 'Ключевые фразы для Яндекс Директа: набор — группа поисковых запросов. Фразы копируются столбиком прямо в кабинет, а кампания показывает, какой набор приводит продажи и заявки.'
+    : 'Ключевые фразы для таргета в соцсетях: набор — сегмент аудитории. Фразы копируются столбиком прямо в рекламный кабинет, а кампания показывает, какой набор приводит продажи и заявки.',
     `<button class="primary" data-action="newks">+ Набор фраз</button>`) + adTabs();
   if (!db.keyword_sets.length) {
     return head + `<div class="card empty"><h2>Наборов пока нет</h2><p>Заведите набор: фразы, которые ищет ваша аудитория, и минус-фразы, которые отсекают случайных людей.</p></div>`;
   }
-  const dirs = DIRECTIONS.filter(d => db.keyword_sets.some(k => k.direction === d));
+  const onPlatform = db.keyword_sets.filter(k => (kwPlatform === 'direct') === isDirect(k));
+  const platforms = `<div class="seg kwplatforms" role="group" aria-label="Площадка">${[['social', 'Соцсети'], ['direct', 'Яндекс Директ']].map(([id, t]) =>
+    `<button class="chip${kwPlatform === id ? ' on' : ''}" data-action="kwplatform" data-id="${id}" aria-pressed="${kwPlatform === id}">${t} <b>${db.keyword_sets.filter(k => (id === 'direct') === isDirect(k)).length}</b></button>`).join('')}</div>`;
+  const dirs = DIRECTIONS.filter(d => onPlatform.some(k => k.direction === d));
   const chips = dirs.length > 1 ? `<div class="filters" role="group" aria-label="Направление">${['Все', ...dirs].map(d =>
-    `<button class="chip${keywordDir === d ? ' on' : ''}" data-action="kwdir" data-id="${E(d)}" aria-pressed="${keywordDir === d}">${E(d)} <b>${d === 'Все' ? db.keyword_sets.length : db.keyword_sets.filter(k => k.direction === d).length}</b></button>`).join('')}</div>` : '';
-  const list = db.keyword_sets.filter(k => keywordDir === 'Все' || k.direction === keywordDir).sort((a, b) => a.sort - b.sort);
+    `<button class="chip${keywordDir === d ? ' on' : ''}" data-action="kwdir" data-id="${E(d)}" aria-pressed="${keywordDir === d}">${E(d)} <b>${d === 'Все' ? onPlatform.length : onPlatform.filter(k => k.direction === d).length}</b></button>`).join('')}</div>` : '';
+  const list = onPlatform.filter(k => keywordDir === 'Все' || k.direction === keywordDir).sort((a, b) => a.sort - b.sort);
   const cards = list.map(k => {
     const ph = keywordLines(k.phrases), mi = keywordLines(k.minus), st = keywordStats(k);
+    const long = isDirect(k) ? ph.filter(x => directWords(x) > 7).length : 0;
     return `<article class="card click kwset" tabindex="0" role="button" data-ks="${E(k.id)}" data-dir="${E(k.direction)}">
       <div class="campaignhead"><span class="eyebrow">${E(k.direction)} · ${E(k.channel)}</span><small class="muted">${ph.length} ${plural(ph.length, 'фраза', 'фразы', 'фраз')} · ${mi.length} минус</small></div>
       <h2>${E(k.name)}</h2>
       ${k.note ? `<p class="muted kwnote">${E(k.note)}</p>` : ''}
+      ${long ? `<p class="minus kwwarn">Длиннее 7 слов: ${long} — Директ такие фразы не примет</p>` : ''}
       <div class="kwlist">${ph.slice(0, 10).map(x => `<span class="kw">${E(x)}</span>`).join('')}${ph.length > 10 ? `<span class="kw more">ещё ${ph.length - 10}</span>` : ''}</div>
       ${mi.length ? `<div class="kwlist minus">${mi.slice(0, 8).map(x => `<span class="kw">−${E(x)}</span>`).join('')}${mi.length > 8 ? `<span class="kw more">ещё ${mi.length - 8}</span>` : ''}</div>` : ''}
       ${st.camps ? `<div class="campaignnums">
@@ -2823,9 +2839,14 @@ function renderKeywords() {
       </div>
     </article>`;
   }).join('');
-  return head + chips + `<div class="grid three kwgrid">${cards}</div>`
-    + `<div class="notice">Во ВКонтакте фразы вставляются в настройках аудитории, в поле ключевых фраз, по одной в строке; минус-фразы — в своё поле рядом.
-      Для Stock в объявлении не пишем «лицензия», «официальный» и «партнёр Envato».</div>`;
+  return head + platforms + chips
+    + (list.length ? `<div class="grid three kwgrid">${cards}</div>`
+      : `<div class="card empty">${kwPlatform === 'direct' ? 'Наборов для Директа пока нет.' : 'Наборов для соцсетей пока нет.'} Создайте первый кнопкой «+ Набор фраз».</div>`)
+    + (kwPlatform === 'direct'
+      ? `<div class="notice">В Директе фразы — поисковые запросы: по одной в строке в группу объявлений, не длиннее 7 слов; минус-слова — в поле минус-фраз группы или кампании.
+        Операторы: «кавычки» фиксируют набор слов, ! — форму слова, [ ] — порядок. В объявлении: Заголовок 1 — до 56 знаков, Заголовок 2 — до 30, текст — до 81.</div>`
+      : `<div class="notice">Во ВКонтакте фразы вставляются в настройках аудитории, в поле ключевых фраз, по одной в строке; минус-фразы — в своё поле рядом.</div>`)
+    + '<p class="muted">Для Stock в объявлениях не пишем «лицензия», «официальный» и «партнёр Envato».</p>';
 }
 
 async function keywordCopy(id, kind) {
@@ -2849,10 +2870,11 @@ function adTextsBlock(k) {
   return `<div class="adtexts"><div class="adtextshead"><b>Объявления ${list.length ? `<span class="muted">${list.length}</span>` : ''}</b>
       <button class="chip" data-action="newad" data-id="${E(k.id)}">+ Объявление</button></div>
     ${list.map(a => `<div class="adtext${a.status === 'Выключено' ? ' off' : ''}">
-      <div class="adtexttop"><b>${E(a.title)}</b>${a.status !== 'Черновик' ? tag(a.status, a.status === 'В работе' ? 'good' : '') : ''}</div>
+      <div class="adtexttop"><b>${E(a.title)}${a.title2 ? `<span class="title2"> · ${E(a.title2)}</span>` : ''}</b>${a.status !== 'Черновик' ? tag(a.status, a.status === 'В работе' ? 'good' : '') : ''}</div>
       ${a.body ? `<p>${E(a.body)}</p>` : ''}
       <div class="adtextbtns">
-        <button class="chip" data-action="adcopy" data-id="${E(a.id)}" data-kind="title">${icon('copy', 13)} Заголовок</button>
+        <button class="chip" data-action="adcopy" data-id="${E(a.id)}" data-kind="title">${icon('copy', 13)} ${isDirect(k) ? 'Заголовок 1' : 'Заголовок'}</button>
+        ${a.title2 ? `<button class="chip" data-action="adcopy" data-id="${E(a.id)}" data-kind="title2">${icon('copy', 13)} Заголовок 2</button>` : ''}
         ${a.body ? `<button class="chip" data-action="adcopy" data-id="${E(a.id)}" data-kind="body">${icon('copy', 13)} Текст</button>` : ''}
         ${a.long_text ? `<button class="chip" data-action="adcopy" data-id="${E(a.id)}" data-kind="long_text">${icon('copy', 13)} Длинный</button>` : ''}
         <button class="chip" data-action="editad" data-id="${E(a.id)}" aria-label="Изменить объявление «${E(a.title)}»">${icon('edit', 13)}</button>
@@ -2864,7 +2886,7 @@ async function adTextCopy(id, kind) {
   const a = db.ad_texts.find(x => x.id === id);
   try {
     await navigator.clipboard.writeText(a[kind]);
-    toast({ title: 'Заголовок', body: 'Текст', long_text: 'Длинный текст' }[kind] + ' скопирован');
+    toast({ title: 'Заголовок', title2: 'Второй заголовок', body: 'Текст', long_text: 'Длинный текст' }[kind] + ' скопирован');
   } catch (e) {
     toast('Не удалось скопировать — откройте объявление и выделите текст вручную');
   }
@@ -2873,14 +2895,16 @@ async function adTextCopy(id, kind) {
 function editAdText(id, setId) {
   const exists = db.ad_texts.some(a => a.id === id);
   const a = db.ad_texts.find(x => x.id === id) || {
-    id: uid(), keyword_set_id: setId, title: '', body: '', long_text: '', status: 'Черновик', note: '', sort: 100
+    id: uid(), keyword_set_id: setId, title: '', title2: '', body: '', long_text: '', status: 'Черновик', note: '', sort: 100
   };
   const set = db.keyword_sets.find(k => k.id === a.keyword_set_id);
+  const direct = set && isDirect(set);
   modal(`<h2>Объявление</h2><form id="atf">
-    <p class="muted">Набор: «${E(set?.name || '')}». Лимиты знаков зависят от формата объявления — сверьте в рекламном кабинете.</p>
-    <label>Заголовок</label><input name="title" required maxlength="100" value="${E(a.title)}"><small class="counter" data-for="title"></small>
-    <label>Короткий текст</label><textarea name="body" maxlength="500" style="min-height:70px">${E(a.body)}</textarea><small class="counter" data-for="body"></small>
-    <label>Длинный текст</label><textarea name="long_text" maxlength="1000" style="min-height:120px">${E(a.long_text)}</textarea><small class="counter" data-for="long_text"></small>
+    <p class="muted">Набор: «${E(set?.name || '')}». ${direct ? 'Объявление Директа: Заголовок 1, Заголовок 2 и текст.' : 'Лимиты знаков зависят от формата объявления — сверьте в рекламном кабинете.'}</p>
+    <label>${direct ? 'Заголовок 1' : 'Заголовок'}</label><input name="title" required maxlength="100" value="${E(a.title)}"><small class="counter" data-for="title"></small>
+    ${direct ? `<label>Заголовок 2</label><input name="title2" maxlength="100" value="${E(a.title2 || '')}"><small class="counter" data-for="title2"></small>` : ''}
+    <label>${direct ? 'Текст' : 'Короткий текст'}</label><textarea name="body" maxlength="500" style="min-height:70px">${E(a.body)}</textarea><small class="counter" data-for="body"></small>
+    ${direct ? '' : `<label>Длинный текст</label><textarea name="long_text" maxlength="1000" style="min-height:120px">${E(a.long_text)}</textarea><small class="counter" data-for="long_text"></small>`}
     <div class="formgrid">
       <div><label>Статус</label><select name="status">${opts(AD_STATUS, a.status)}</select></div>
       <div><label>Заметка</label><input name="note" maxlength="500" value="${E(a.note)}" placeholder="Что проверяем этим вариантом"></div>
@@ -2889,9 +2913,12 @@ function editAdText(id, setId) {
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists ? `<button type="button" class="danger" data-action="delad" data-id="${E(a.id)}">Удалить</button>` : ''}</div></form>`);
   const f = $('#atf');
+  // У Директа лимиты известны — показываем «из 56» и предупреждаем;
+  // у соцсетей зависят от формата — показываем только число знаков.
   const count = () => f.querySelectorAll('.counter[data-for]').forEach(c => {
-    const n = f.elements[c.dataset.for].value.length;
-    c.textContent = `${n} ${plural(n, 'знак', 'знака', 'знаков')}`;
+    const n = f.elements[c.dataset.for].value.length, lim = direct && DIRECT_LIMITS[c.dataset.for];
+    c.textContent = lim ? `${n} из ${lim}${n > lim ? ` — длиннее на ${n - lim}` : ''}` : `${n} ${plural(n, 'знак', 'знака', 'знаков')}`;
+    c.classList.toggle('over', !!lim && n > lim);
   });
   f.addEventListener('input', count);
   count();
@@ -2911,7 +2938,7 @@ function delAdText(id) {
 function editKeywordSet(id) {
   const exists = db.keyword_sets.some(k => k.id === id);
   const k = db.keyword_sets.find(x => x.id === id) || {
-    id: uid(), name: '', direction: keywordDir !== 'Все' ? keywordDir : 'Stock', channel: 'ВКонтакте',
+    id: uid(), name: '', direction: keywordDir !== 'Все' ? keywordDir : 'Stock', channel: kwPlatform === 'direct' ? DIRECT : 'ВКонтакте',
     phrases: '', minus: '', note: '', sort: 100
   };
   const st = exists ? keywordStats(k) : null;
@@ -2937,12 +2964,15 @@ function editKeywordSet(id) {
   const count = () => {
     const raw = f.elements.phrases.value.split('\n').filter(l => l.trim()).length;
     const clean = keywordLines(f.elements.phrases.value).length;
-    $('#kscount').textContent = `${clean} ${plural(clean, 'фраза', 'фразы', 'фраз')}${raw > clean ? ` · повторов уберётся: ${raw - clean}` : ''}`;
+    const long = f.elements.channel.value === DIRECT ? keywordLines(f.elements.phrases.value).filter(x => directWords(x) > 7).length : 0;
+    $('#kscount').textContent = `${clean} ${plural(clean, 'фраза', 'фразы', 'фраз')}${raw > clean ? ` · повторов уберётся: ${raw - clean}` : ''}${long ? ` · длиннее 7 слов: ${long}` : ''}`;
+    $('#kscount').classList.toggle('over', !!long);
   };
   for (const n of ['phrases', 'minus']) {
     f.elements[n].addEventListener('blur', () => { f.elements[n].value = keywordLines(f.elements[n].value).join('\n'); count(); });
   }
   f.elements.phrases.addEventListener('input', count);
+  f.elements.channel.addEventListener('change', count);
   count();
   submitForm(f, 'keyword_sets', k, exists, 'Набор сохранён');
 }
@@ -5002,6 +5032,7 @@ document.addEventListener('click', async e => {
     case 'newcampaign': editCampaign(); break;
     case 'adview': adView = b.dataset.id; render(); break;
     case 'kwdir': keywordDir = b.dataset.id; render(); break;
+    case 'kwplatform': kwPlatform = b.dataset.id; keywordDir = 'Все'; render(); break;
     case 'newks': editKeywordSet(); break;
     case 'delks': delKeywordSet(b.dataset.id); break;
     case 'kwcopy': keywordCopy(b.dataset.id, b.dataset.kind); break;

@@ -1246,3 +1246,8 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .adtextbtns{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
 .adtextbtns .chip{display:inline-flex;gap:4px;align-items:center;min-height:36px;padding:4px 10px;font-size:12px}
 .salesfield[hidden]{display:none}
+
+/* Площадки ключевых фраз и второй заголовок Директа. */
+.kwplatforms{margin:0 0 12px}
+.kwwarn{margin:0;font-size:12px;font-weight:700}
+.adtexttop .title2{font-weight:400;color:var(--muted)}
