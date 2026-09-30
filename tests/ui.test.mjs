@@ -1633,6 +1633,17 @@ check('все файлы логотипа Stock на месте и открыв�
 check('логотип для тёмного фона стоит на тёмной плашке', await page.$eval('.logoplate[href$="stock-logo-on-dark.svg"]',
   a => getComputedStyle(a).backgroundColor === 'rgb(20, 20, 20)'));
 check('про ловушку в именах исходников предупреждено', (await page.textContent('.logogrid + .notice')).includes('по цвету букв'));
+// квадратный знак вырастал до натурального размера и закрывал подписи
+const logoFit = await page.$$eval('.logoitem', items => items.map(it => {
+  const plate = it.querySelector('.logoplate').getBoundingClientRect();
+  const img = it.querySelector('img').getBoundingClientRect();
+  const cap = it.querySelector('figcaption').getBoundingClientRect();
+  return { src: it.querySelector('img').getAttribute('src'), inside: img.top >= plate.top - 1 && img.bottom <= plate.bottom + 1
+    && img.left >= plate.left - 1 && img.right <= plate.right + 1 && img.height > 20, capBelow: cap.top >= plate.bottom };
+}));
+check('каждый знак Stock помещается в свою плашку', logoFit.every(l => l.inside), JSON.stringify(logoFit.filter(l => !l.inside)));
+check('подписи логотипов не перекрыты', logoFit.every(l => l.capBelow));
+await (await page.$('.logogrid')).screenshot({ path: path.join(OUT, 'intel-stock-logos.png') });
 // комплект соцсетей: все картинки на месте и скачиваются
 const socImgs = await page.$$eval('.socialkit img', is => is.map(i => ({ src: i.getAttribute('src'), ok: i.complete && i.naturalWidth > 0 })));
 check('комплект соцсетей: 21 картинка', socImgs.length === 21, String(socImgs.length));

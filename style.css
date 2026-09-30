@@ -1294,3 +1294,9 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .navsection + .navsection{margin-top:6px;padding-top:4px;border-top:1px solid #232323}
 .nav .navgroup{padding:10px 12px 6px}
 .tabbar span{white-space:nowrap}
+
+/* Логотипы в плашке. Процентная высота в ячейке сетки не работает: у ячейки
+   нет своей высоты, и квадратный знак вырастал до натурального размера,
+   закрывая подписи. Предел — высота плашки без отступов (150 − 2 × 20). */
+.logoplate{overflow:hidden}
+.logoplate img{max-width:100%;max-height:110px;width:auto;height:auto;object-fit:contain;display:block}
