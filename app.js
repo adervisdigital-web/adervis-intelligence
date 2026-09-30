@@ -62,13 +62,14 @@ const FIELDS = {
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
   brand: ['id', 'title', 'kind', 'sort', 'data', 'section'],
   campaigns: ['id', 'name', 'channel', 'direction', 'goal', 'status', 'starts_on', 'ends_on', 'budget', 'spent',
-    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id', 'keyword_set_id'],
+    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id', 'keyword_set_id', 'sales'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
   leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id', 'next_step', 'next_on', 'lost_reason'],
   prospects: ['id', 'name', 'city', 'category', 'address', 'website', 'phone', 'email', 'socials', 'direction',
     'source', 'status', 'external_id', 'lead_id', 'note', 'magnet_id', 'next_on', 'lost_reason'],
   kpi_targets: ['id', 'target'],
   keyword_sets: ['id', 'name', 'direction', 'channel', 'phrases', 'minus', 'note', 'sort'],
+  ad_texts: ['id', 'keyword_set_id', 'title', 'body', 'long_text', 'status', 'note', 'sort'],
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
@@ -130,7 +131,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -148,7 +149,8 @@ function createApi(cfg) {
         selectAll('prospects', 'created_at'),
         selectAll('kpi_targets', 'id'),
         selectAll('lead_magnets', 'created_at'),
-        selectAll('keyword_sets', 'sort')
+        selectAll('keyword_sets', 'sort'),
+        selectAll('ad_texts', 'sort')
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -164,6 +166,7 @@ function createApi(cfg) {
         kpi_targets: kpiTargets.map(r => fromRow('kpi_targets', r)),
         lead_magnets: magnets.map(r => fromRow('lead_magnets', r)),
         keyword_sets: keywordSets.map(r => fromRow('keyword_sets', r)),
+        ad_texts: adTexts.map(r => fromRow('ad_texts', r)),
         publications, ai, members, activity, accounts
       };
     },
@@ -229,7 +232,7 @@ let me = null;
 const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
-  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: []
+  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -397,7 +400,7 @@ function filters(categories) {
 }
 
 const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук',
-  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', decisions: 'решение' };
+  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', ad_texts: 'объявление', decisions: 'решение' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -1403,6 +1406,8 @@ function campaignStats(c) {
     leads: leads.length, deals: deals.length,
     dealSum: deals.reduce((n, l) => n + Number(l.amount || 0), 0),
     cpl: leads.length ? Math.round(Number(c.spent || 0) / leads.length) : null,
+    sales: Number(c.sales || 0),
+    cps: Number(c.sales) ? Math.round(Number(c.spent || 0) / Number(c.sales)) : null,
     over: c.budget > 0 && c.spent > c.budget,
     overdue: c.status === 'Идёт' && c.ends_on && c.ends_on < today()
   };
@@ -1412,16 +1417,19 @@ function adStats() {
   const sum = (list, f) => list.reduce((n, r) => n + Number(r[f] || 0), 0);
   const running = db.campaigns.filter(c => c.status === 'Идёт');
   const fromCampaigns = db.leads.filter(l => l.campaign_id);
-  const spentAll = sum(db.campaigns, 'spent');
+  // Stock продаёт на своём сайте, а не заявками: его расход идёт в цену
+  // продажи, а в цену заявки не подмешивается.
+  const forLeads = list => list.filter(c => c.direction !== 'Stock');
+  const leadSpent = sum(forLeads(db.campaigns), 'spent');
   const channels = [...new Set(db.campaigns.map(c => c.channel))].map(ch => {
     const list = db.campaigns.filter(c => c.channel === ch);
     const got = db.leads.filter(l => l.source === ch);
     const deals = got.filter(l => l.status === 'Сделка');
-    const spent = sum(list, 'spent');
+    const spent = sum(list, 'spent'), lspent = sum(forLeads(list), 'spent');
     return {
-      channel: ch, campaigns: list.length, budget: sum(list, 'budget'), spent,
-      leads: got.length, deals: deals.length, dealSum: sum(deals, 'amount'),
-      cpl: got.length ? Math.round(spent / got.length) : null
+      channel: ch, campaigns: list.length, budget: sum(list, 'budget'), spent, lspent,
+      leads: got.length, deals: deals.length, dealSum: sum(deals, 'amount'), sales: sum(list, 'sales'),
+      cpl: got.length && lspent ? Math.round(lspent / got.length) : null
     };
   }).sort((x, y) => y.spent - x.spent);
   return {
@@ -1429,7 +1437,8 @@ function adStats() {
     runningSpent: sum(running, 'spent'), runningBudget: sum(running, 'budget'),
     leads: fromCampaigns.length,
     deals: fromCampaigns.filter(l => l.status === 'Сделка').length,
-    cpl: fromCampaigns.length ? Math.round(spentAll / fromCampaigns.length) : null
+    sales: sum(db.campaigns, 'sales'),
+    cpl: fromCampaigns.length && leadSpent ? Math.round(leadSpent / fromCampaigns.length) : null
   };
 }
 
@@ -1536,8 +1545,8 @@ function renderAds() {
   const metrics = `<div class="grid metrics">${[
     ['Идут кампании', st.running.length, st.running.length ? `потрачено ${rub(st.runningSpent)} из ${rub(st.runningBudget)}` : 'ни одна не запущена'],
     ['Заявки из кампаний', st.leads, 'привязанные к кампании'],
-    ['Средняя цена заявки', rub(st.cpl), st.leads ? 'весь расход ÷ заявки из кампаний' : 'заявок из кампаний пока нет'],
-    ['Сделки из кампаний', st.deals, 'из привязанных заявок']
+    ['Средняя цена заявки', rub(st.cpl), st.leads ? 'расход ÷ заявки из кампаний, без Stock' : 'заявок из кампаний пока нет'],
+    ['Сделки из кампаний', st.deals, st.sales ? `и продаж Stock: ${st.sales}` : 'из привязанных заявок']
   ].map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small></div>`).join('')}</div>`;
 
   const counts = CAMPAIGN_STATUS.map(s => [s, db.campaigns.filter(c => c.status === s).length]).filter(([, n]) => n);
@@ -1562,9 +1571,11 @@ function renderAds() {
       <div class="budgetbar${cs.over ? ' over' : ''}" role="img" aria-label="Потрачено ${pct}% бюджета"><i style="width:${pct}%"></i></div>
       <p class="budgetline"><b>${rub(c.spent)}</b> <span class="muted">из ${rub(c.budget)}</span>${cs.over ? ' <span class="minus">перерасход</span>' : ''}</p>
       <div class="campaignnums">
-        <span><b>${cs.leads}</b><small>заявок</small></span>
+        ${c.direction === 'Stock' || cs.sales ? `<span><b>${cs.sales}</b><small>продаж</small></span>
+        <span class="${c.spent && !cs.sales ? 'minus' : ''}"><b>${cs.cps === null ? '—' : num(cs.cps)}</b><small>цена продажи</small></span>
+        <span><b>${cs.leads}</b><small>заявок</small></span>` : `<span><b>${cs.leads}</b><small>заявок</small></span>
         <span class="${c.spent && !cs.leads ? 'minus' : ''}"><b>${cs.cpl === null ? '—' : num(cs.cpl)}</b><small>цена заявки</small></span>
-        <span><b>${cs.deals}</b><small>сделок</small></span>
+        <span><b>${cs.deals}</b><small>сделок</small></span>`}
       </div>
       ${cs.overdue ? '<p class="minus campaignwarn">Срок вышел, а статус «Идёт»</p>' : ''}
       ${(() => { const ks = c.keyword_set_id && db.keyword_sets.find(k => k.id === c.keyword_set_id); return ks
@@ -1585,11 +1596,11 @@ function renderAds() {
 
   const table = `<div class="head"><h2>По каналам</h2><small class="muted">за всё время</small></div>
     <div class="card tablewrap"><table class="table adtable">
-    <thead><tr><th>Канал</th><th>Кампаний</th><th>Бюджет</th><th>Потрачено</th><th>Заявок</th><th>Цена заявки</th><th>Сделок</th></tr></thead>
+    <thead><tr><th>Канал</th><th>Кампаний</th><th>Бюджет</th><th>Потрачено</th><th>Заявок</th><th>Цена заявки</th><th>Сделок</th>${st.sales ? '<th>Продаж Stock</th>' : ''}</tr></thead>
     <tbody>${st.channels.map(c => `<tr>
       <td><b>${E(c.channel)}</b></td><td>${c.campaigns}</td><td>${rub(c.budget)}</td><td>${rub(c.spent)}</td>
-      <td>${c.leads}</td><td class="${c.spent && !c.leads ? 'minus' : ''}">${c.spent && !c.leads ? 'заявок нет' : rub(c.cpl)}</td>
-      <td>${c.deals}</td></tr>`).join('')}</tbody></table></div>`;
+      <td>${c.leads}</td><td class="${c.lspent && !c.leads ? 'minus' : ''}">${c.lspent && !c.leads ? 'заявок нет' : rub(c.cpl)}</td>
+      <td>${c.deals}</td>${st.sales ? `<td>${c.sales}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
 
   return head + metrics
     + `<div class="head"><h2>Кампании</h2>${filters}</div>`
@@ -2632,7 +2643,7 @@ const KPI = [
   { id: 'conversion', name: 'Конверсия в сделку', unit: '%', better: 'more', how: 'сделки ÷ закрытые заявки' },
   { id: 'avg_check', name: 'Средний чек', unit: ' ₽', better: 'more', how: 'сумма сделок ÷ число сделок' },
   { id: 'reach', name: 'Охват публикаций', unit: '', better: 'more', how: 'просмотры вышедших за период постов' },
-  { id: 'cpl', name: 'Цена заявки', unit: ' ₽', better: 'less', how: 'расход кампаний ÷ их заявки' },
+  { id: 'cpl', name: 'Цена заявки', unit: ' ₽', better: 'less', how: 'расход кампаний ÷ их заявки, без Stock' },
   { id: 'cac', name: 'Цена сделки', unit: ' ₽', better: 'less', how: 'расход кампаний ÷ их сделки' },
   { id: 'romi', name: 'ROMI', unit: '%', better: 'more', how: '(сделки из рекламы − расход) ÷ расход' },
   { id: 'reply_rate', name: 'Ответы на письма', unit: '%', better: 'more', how: 'ответили ÷ кому написали, за всё время' }
@@ -2645,7 +2656,7 @@ function kpiValues(period) {
   const deals = leads.filter(l => l.status === 'Сделка');
   const closed = leads.filter(l => ['Сделка', ...LOST].includes(l.status));
   const camps = db.campaigns.filter(c => String(c.starts_on) >= from || !c.ends_on || String(c.ends_on) >= from);
-  const spent = sumOf(camps, 'spent');
+  const spent = sumOf(camps.filter(c => c.direction !== 'Stock'), 'spent');
   const cLeads = leads.filter(l => l.campaign_id && camps.some(c => c.id === l.campaign_id));
   const cDeals = cLeads.filter(l => l.status === 'Сделка');
   const posts = db.content.filter(p => p.status === 'Опубликовано' && (period === 'all' || (p.date && p.date >= from)));
@@ -2774,8 +2785,10 @@ const keywordLines = t => [...new Set(String(t || '').split('\n')
 function keywordStats(k) {
   const camps = db.campaigns.filter(c => c.keyword_set_id === k.id);
   const leads = db.leads.filter(l => camps.some(c => c.id === l.campaign_id));
-  const spent = sumOf(camps, 'spent');
-  return { camps: camps.length, spent, leads: leads.length, cpl: leads.length && spent ? Math.round(spent / leads.length) : null };
+  const spent = sumOf(camps, 'spent'), sales = sumOf(camps, 'sales');
+  return { camps: camps.length, spent, leads: leads.length, sales,
+    cpl: leads.length && spent ? Math.round(spent / leads.length) : null,
+    cps: sales && spent ? Math.round(spent / sales) : null };
 }
 
 function renderKeywords() {
@@ -2798,9 +2811,12 @@ function renderKeywords() {
       ${mi.length ? `<div class="kwlist minus">${mi.slice(0, 8).map(x => `<span class="kw">−${E(x)}</span>`).join('')}${mi.length > 8 ? `<span class="kw more">ещё ${mi.length - 8}</span>` : ''}</div>` : ''}
       ${st.camps ? `<div class="campaignnums">
         <span><b>${st.camps}</b><small>кампаний</small></span>
-        <span><b>${st.leads}</b><small>заявок</small></span>
-        <span class="${st.spent && !st.leads ? 'minus' : ''}"><b>${st.cpl === null ? '—' : num(st.cpl)}</b><small>цена заявки</small></span>
+        ${k.direction === 'Stock' ? `<span><b>${st.sales}</b><small>продаж</small></span>
+        <span class="${st.spent && !st.sales ? 'minus' : ''}"><b>${st.cps === null ? '—' : num(st.cps)}</b><small>цена продажи</small></span>`
+          : `<span><b>${st.leads}</b><small>заявок</small></span>
+        <span class="${st.spent && !st.leads ? 'minus' : ''}"><b>${st.cpl === null ? '—' : num(st.cpl)}</b><small>цена заявки</small></span>`}
       </div>` : '<small class="muted">Ещё ни в одной кампании — выберите набор в карточке кампании.</small>'}
+      ${adTextsBlock(k)}
       <div class="kwactions">
         <button class="chip" data-action="kwcopy" data-id="${E(k.id)}" data-kind="phrases">${icon('copy', 14)} Фразы</button>
         ${mi.length ? `<button class="chip" data-action="kwcopy" data-id="${E(k.id)}" data-kind="minus">${icon('copy', 14)} Минус-фразы</button>` : ''}
@@ -2821,6 +2837,75 @@ async function keywordCopy(id, kind) {
   } catch (e) {
     toast('Не удалось скопировать — откройте набор и выделите текст вручную');
   }
+}
+
+// Объявления набора: у сегмента свои слова. Точных лимитов не навязываем —
+// они зависят от формата объявления; счётчики показывают, сколько знаков.
+const AD_STATUS = ['Черновик', 'В работе', 'Выключено'];
+const adTextsOf = setId => db.ad_texts.filter(a => a.keyword_set_id === setId).sort((a, b) => a.sort - b.sort);
+
+function adTextsBlock(k) {
+  const list = adTextsOf(k.id);
+  return `<div class="adtexts"><div class="adtextshead"><b>Объявления ${list.length ? `<span class="muted">${list.length}</span>` : ''}</b>
+      <button class="chip" data-action="newad" data-id="${E(k.id)}">+ Объявление</button></div>
+    ${list.map(a => `<div class="adtext${a.status === 'Выключено' ? ' off' : ''}">
+      <div class="adtexttop"><b>${E(a.title)}</b>${a.status !== 'Черновик' ? tag(a.status, a.status === 'В работе' ? 'good' : '') : ''}</div>
+      ${a.body ? `<p>${E(a.body)}</p>` : ''}
+      <div class="adtextbtns">
+        <button class="chip" data-action="adcopy" data-id="${E(a.id)}" data-kind="title">${icon('copy', 13)} Заголовок</button>
+        ${a.body ? `<button class="chip" data-action="adcopy" data-id="${E(a.id)}" data-kind="body">${icon('copy', 13)} Текст</button>` : ''}
+        ${a.long_text ? `<button class="chip" data-action="adcopy" data-id="${E(a.id)}" data-kind="long_text">${icon('copy', 13)} Длинный</button>` : ''}
+        <button class="chip" data-action="editad" data-id="${E(a.id)}" aria-label="Изменить объявление «${E(a.title)}»">${icon('edit', 13)}</button>
+      </div></div>`).join('') || '<small class="muted">Пока нет — у каждого сегмента свои слова.</small>'}
+  </div>`;
+}
+
+async function adTextCopy(id, kind) {
+  const a = db.ad_texts.find(x => x.id === id);
+  try {
+    await navigator.clipboard.writeText(a[kind]);
+    toast({ title: 'Заголовок', body: 'Текст', long_text: 'Длинный текст' }[kind] + ' скопирован');
+  } catch (e) {
+    toast('Не удалось скопировать — откройте объявление и выделите текст вручную');
+  }
+}
+
+function editAdText(id, setId) {
+  const exists = db.ad_texts.some(a => a.id === id);
+  const a = db.ad_texts.find(x => x.id === id) || {
+    id: uid(), keyword_set_id: setId, title: '', body: '', long_text: '', status: 'Черновик', note: '', sort: 100
+  };
+  const set = db.keyword_sets.find(k => k.id === a.keyword_set_id);
+  modal(`<h2>Объявление</h2><form id="atf">
+    <p class="muted">Набор: «${E(set?.name || '')}». Лимиты знаков зависят от формата объявления — сверьте в рекламном кабинете.</p>
+    <label>Заголовок</label><input name="title" required maxlength="100" value="${E(a.title)}"><small class="counter" data-for="title"></small>
+    <label>Короткий текст</label><textarea name="body" maxlength="500" style="min-height:70px">${E(a.body)}</textarea><small class="counter" data-for="body"></small>
+    <label>Длинный текст</label><textarea name="long_text" maxlength="1000" style="min-height:120px">${E(a.long_text)}</textarea><small class="counter" data-for="long_text"></small>
+    <div class="formgrid">
+      <div><label>Статус</label><select name="status">${opts(AD_STATUS, a.status)}</select></div>
+      <div><label>Заметка</label><input name="note" maxlength="500" value="${E(a.note)}" placeholder="Что проверяем этим вариантом"></div>
+    </div>
+    ${set?.direction === 'Stock' ? '<p class="muted">Для Stock не пишем «лицензия», «официальный», «партнёр Envato».</p>' : ''}
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${exists ? `<button type="button" class="danger" data-action="delad" data-id="${E(a.id)}">Удалить</button>` : ''}</div></form>`);
+  const f = $('#atf');
+  const count = () => f.querySelectorAll('.counter[data-for]').forEach(c => {
+    const n = f.elements[c.dataset.for].value.length;
+    c.textContent = `${n} ${plural(n, 'знак', 'знака', 'знаков')}`;
+  });
+  f.addEventListener('input', count);
+  count();
+  submitForm(f, 'ad_texts', a, exists, 'Объявление сохранено');
+}
+
+function delAdText(id) {
+  const a = db.ad_texts.find(x => x.id === id);
+  if (!a) return;
+  askDelete('Удалить объявление?', `«${E(a.title)}» исчезнет из набора.`, async () => {
+    await api.remove('ad_texts', id);
+    db.ad_texts = db.ad_texts.filter(x => x.id !== id);
+    noteLocal('delete', 'ad_texts', a);
+  });
 }
 
 function editKeywordSet(id) {
@@ -2869,6 +2954,7 @@ function delKeywordSet(id) {
   askDelete('Удалить набор фраз?', `«${E(k.name)}» исчезнет.${n ? ` Кампании (${n}) останутся, но без набора.` : ''}`, async () => {
     await api.remove('keyword_sets', id);
     db.keyword_sets = db.keyword_sets.filter(x => x.id !== id);
+    db.ad_texts = db.ad_texts.filter(x => x.keyword_set_id !== id);
     db.campaigns.forEach(c => { if (c.keyword_set_id === id) c.keyword_set_id = null; });
     noteLocal('delete', 'keyword_sets', { ...k, title: k.name });
   });
@@ -2879,7 +2965,7 @@ function editCampaign(id) {
   const c = db.campaigns.find(x => x.id === id) || {
     id: uid(), name: '', channel: AD_CHANNELS[0], direction: 'Студия', goal: CAMPAIGN_GOALS[0], status: 'Готовим',
     starts_on: today(), ends_on: '', budget: 0, spent: 0, audience: '', creative: '', landing: '',
-    utm_medium: 'cpc', utm_campaign: '', utm_content: '', note: '', content_id: null, keyword_set_id: null
+    utm_medium: 'cpc', utm_campaign: '', utm_content: '', note: '', content_id: null, keyword_set_id: null, sales: 0
   };
   modal(`<h2>Кампания</h2><form id="cpf">
     <label>Название</label>
@@ -2893,6 +2979,8 @@ function editCampaign(id) {
       <div><label>Окончание</label><input type="date" name="ends_on" value="${E(c.ends_on || '')}"></div>
       <div><label>Бюджет, ₽</label><input type="number" name="budget" min="0" step="1" value="${E(String(c.budget || 0))}"></div>
       <div><label>Потрачено, ₽</label><input type="number" name="spent" min="0" step="1" value="${E(String(c.spent || 0))}"></div>
+      <div class="salesfield" ${c.direction === 'Stock' || Number(c.sales) ? '' : 'hidden'}><label>Продажи — из админки Stock</label>
+        <input type="number" name="sales" min="0" step="1" value="${E(String(c.sales || 0))}"></div>
     </div>
     <label>Ключевые фразы — набор для таргета</label>
     <select name="keyword_set_id"><option value="">Без набора</option>
@@ -2934,6 +3022,14 @@ function editCampaign(id) {
   f.addEventListener('input', preview);
   f.addEventListener('change', preview);
   preview();
+  // Продажи считаются там, где покупают на своём сайте, — у Stock.
+  const GOAL_BY_DIR = { 'Студия': 'Заявки на студию', 'CRM': 'Регистрации в CRM', 'Stock': 'Продажи Stock', 'Медиа': 'Охват и узнаваемость' };
+  let goalTouched = exists;
+  f.elements.goal.addEventListener('change', () => { goalTouched = true; });
+  f.elements.direction.addEventListener('change', () => {
+    f.querySelector('.salesfield').hidden = f.elements.direction.value !== 'Stock' && !Number(f.elements.sales.value);
+    if (!goalTouched) f.elements.goal.value = GOAL_BY_DIR[f.elements.direction.value] || f.elements.goal.value;
+  });
   submitForm(f, 'campaigns', c, exists, 'Кампания сохранена');
 }
 
@@ -3013,7 +3109,7 @@ function businessGaps() {
   }
 
   const running = db.campaigns.filter(c => c.status === 'Идёт');
-  const idle = running.filter(c => Number(c.spent) > 0 && !campaignStats(c).leads);
+  const idle = running.filter(c => Number(c.spent) > 0 && !campaignStats(c).leads && !Number(c.sales));
   if (idle.length) {
     gaps.push(['ads', `Кампания тратит без заявок: ${idle.map(c => c.name).join(', ')}`,
       'Деньги идут, а ни одна заявка к кампании не привязана. Либо не отмечена кампания в заявке, либо объявление не работает.']);
@@ -4770,7 +4866,7 @@ function exportJson() {
     brand: strip(db.brand), decisions: strip(db.decisions),
     campaigns: strip(db.campaigns), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications),
-    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), kpi_targets: strip(db.kpi_targets)
+    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), kpi_targets: strip(db.kpi_targets)
   }, null, 2), 'adervis-backup-' + today() + '.json');
 }
 
@@ -4909,6 +5005,10 @@ document.addEventListener('click', async e => {
     case 'newks': editKeywordSet(); break;
     case 'delks': delKeywordSet(b.dataset.id); break;
     case 'kwcopy': keywordCopy(b.dataset.id, b.dataset.kind); break;
+    case 'newad': editAdText(undefined, b.dataset.id); break;
+    case 'editad': editAdText(b.dataset.id); break;
+    case 'delad': delAdText(b.dataset.id); break;
+    case 'adcopy': adTextCopy(b.dataset.id, b.dataset.kind); break;
     case 'leadperiod': leadPeriod = b.dataset.id; render(); break;
     case 'leadview': leadView = b.dataset.id; render(); break;
     case 'movelead': moveLead(b.dataset.id, Number(b.dataset.step)); break;

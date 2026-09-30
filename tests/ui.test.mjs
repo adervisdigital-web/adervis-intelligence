@@ -106,6 +106,10 @@ const fake = (seedData) => {
         phrases: 'envato elements\nenvato elements скачать\nэнвато', minus: 'бесплатно\nторрент', note: 'Самые тёплые',
         _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
     ],
+    ad_texts: [
+      { id: 'at-1', keyword_set_id: 'ks-envato', title: 'Envato Elements без подписки', body: 'Вставьте ссылку — получите оригинал.',
+        long_text: '', status: 'В работе', note: '', sort: 10, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
+    ],
     lead_magnets: [
       { id: 'lm-audit', name: 'Разбор визуала за 15 минут', direction: 'Студия', format: 'Видеоразбор', status: 'Работает',
         audience: 'Кафе и салоны', promise: 'Три правки визуала за неделю', exchange: 'Ссылка и контакт',
@@ -1287,6 +1291,50 @@ check('набор считает свои кампании', /1\s?кампани
 await page.screenshot({ path: path.join(OUT, 'intel-keywords.png'), fullPage: true });
 await page.click('[data-action=adview][data-id=campaigns]');
 
+// --- 5п. объявления и продажи Stock
+await nav('ads');
+await page.click('[data-action=adview][data-id=keywords]');
+check('объявление видно в наборе', (await page.textContent('article[data-ks="ks-envato"] .adtexts')).includes('Envato Elements без подписки'));
+await page.click('[data-action=adcopy][data-id=at-1][data-kind=title]');
+check('заголовок копируется одной кнопкой', (await page.evaluate(() => navigator.clipboard.readText())) === 'Envato Elements без подписки');
+await page.click('article[data-ks="ks-envato"] [data-action=newad]');
+await page.fill('#atf input[name=title]', 'Шаблон нужен к вечеру?');
+await page.fill('#atf textarea[name=body]', 'Ссылка с Envato Elements → оригинал.');
+check('у полей счётчик знаков', (await page.textContent('#atf .counter[data-for=title]')) === '22 знака', await page.textContent('#atf .counter[data-for=title]'));
+check('для Stock напомнены запретные слова', (await page.textContent('#atf')).includes('не пишем «лицензия»'));
+await page.click('#atf button.primary');
+await page.waitForFunction(() => window.__STATE__.ad_texts.length === 2);
+check('новое объявление привязано к набору', (await state()).ad_texts.find(a => a.title === 'Шаблон нужен к вечеру?').keyword_set_id === 'ks-envato');
+// продажи Stock переносятся из его админки
+await page.click('[data-action=adview][data-id=campaigns]');
+const sc = (await state()).campaigns.find(c => c.name === 'Stock: Envato во ВК');
+await page.click(`article[data-cp="${sc.id}"]`);
+check('у кампании Stock есть поле продаж', await page.isVisible('#cpf input[name=sales]'));
+await page.fill('#cpf input[name=spent]', '900');
+await page.fill('#cpf input[name=sales]', '3');
+await page.click('#cpf button.primary');
+await page.waitForFunction(id => window.__STATE__.campaigns.find(c => c.id === id).sales === 3, sc.id);
+const scCard = (await page.textContent(`article[data-cp="${sc.id}"] .campaignnums`)).replace(/\s+/g, ' ');
+check('у Stock считается цена продажи, а не заявки', /3\s?продаж 300\s?цена продажи/.test(scCard), scCard);
+await page.click('[data-action=adview][data-id=keywords]');
+check('набор показывает продажи своих кампаний', /3\s?продаж/.test(await page.textContent('article[data-ks="ks-envato"] .campaignnums')));
+await page.click('[data-action=adview][data-id=campaigns]');
+await page.click('[data-action=newcampaign]');
+check('у кампании студии поля продаж нет', !(await page.isVisible('#cpf input[name=sales]')));
+await page.selectOption('#cpf select[name=direction]', 'Stock');
+check('поле продаж появляется при выборе Stock', await page.isVisible('#cpf input[name=sales]'));
+check('цель кампании следует за направлением', (await page.inputValue('#cpf select[name=goal]')) === 'Продажи Stock');
+await page.keyboard.press('Escape');
+await page.screenshot({ path: path.join(OUT, 'intel-adtexts.png'), fullPage: true });
+{
+  const st = await state();
+  const leadCamps = st.campaigns.filter(c => c.direction !== 'Stock');
+  const withCamp = st.leads.filter(l => l.campaign_id).length;
+  const want = Math.round(leadCamps.reduce((n, c) => n + Number(c.spent || 0), 0) / withCamp).toLocaleString('ru');
+  const tile = (await page.$$eval('.metric', m => m.map(x => x.innerText.replace(/\s+/g, ' ')))).find(t => /средняя цена заявки/i.test(t)) || '';
+  check('расход Stock не подмешан в цену заявки', tile.replace(/\s/g, '').includes(want.replace(/\s/g, '')), tile + ' / ждали ' + want);
+}
+
 // --- 6. задачи
 await nav('tasks');
 await page.check('input[data-task=t1]');
@@ -1298,11 +1346,15 @@ await page.waitForFunction(() => !window.__STATE__.tasks.some(t => t.id === 't5'
 check('задача удалена', true);
 
 // --- 7. журнал
+// Журнал держит последние 40 действий, поэтому проверяем свежие: правку
+// второго руководителя прямо перед чтением и своё последнее действие.
+await page.evaluate(() => window.__otherEdits('knowledge', 'k1', 'Правка Александра для журнала'));
+await page.click('#refresh');
 await nav('settings');
 const rows = await page.$$eval('.card:has(h2:text("Журнал изменений")) .row', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ')));
-check('журнал показывает правку второго руководителя', rows.some(r => /Изменил запись.*Правка Александра.*Александр/.test(r)), rows[0]);
-check('журнал показывает мои действия', rows.some(r => /Добавил запись.*Новая запись о студии.*Артём/.test(r)));
-check('журнал показывает удаление', rows.some(r => /Удалил запись/.test(r)));
+check('журнал показывает правку второго руководителя', rows.some(r => /Изменил запись.*Правка Александра для журнала.*Александр/.test(r)), rows[0]);
+check('журнал показывает мои действия', rows.some(r => /Добавил объявление.*Шаблон нужен к вечеру.*Артём/.test(r)), rows.slice(0, 6).join(' | '));
+check('журнал показывает удаление', rows.some(r => /Удалил задачу.*Посчитать бюджет офиса и найма.*Артём/.test(r)));
 await page.screenshot({ path: path.join(OUT, 'intel-settings.png') });
 
 // резервная копия: в файл должны попасть все разделы, а не только те,

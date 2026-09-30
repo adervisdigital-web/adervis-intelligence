@@ -1233,3 +1233,16 @@ html[data-theme=dark]{--g-magnet:#f472b6}
 .kw.more{color:var(--muted);background:transparent}
 .kwactions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
 .kwactions .chip{display:inline-flex;gap:5px;align-items:center;min-height:36px}
+
+/* Объявления внутри набора фраз. */
+.adtexts{display:grid;gap:6px;border-top:1px solid var(--line);padding-top:10px}
+.adtextshead{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.adtextshead .chip{min-height:36px}
+.adtext{border:1px solid var(--line);border-radius:10px;padding:9px 11px;display:grid;gap:4px;background:var(--bg)}
+.adtext.off{opacity:.6}
+.adtexttop{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.adtexttop b{font-size:14px;line-height:1.3}
+.adtext p{margin:0;font-size:13px;line-height:1.4}
+.adtextbtns{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px}
+.adtextbtns .chip{display:inline-flex;gap:4px;align-items:center;min-height:36px;padding:4px 10px;font-size:12px}
+.salesfield[hidden]{display:none}
