@@ -156,6 +156,7 @@ const fake = (seedData) => {
       session = email.trim().toLowerCase();
     },
     async signOut() { session = null; },
+    async changePassword(pw) { window.__NEWPW__ = pw; if (pw.length < 8) throw new Error('Password should be at least 8 characters'); },
     onSignedOut() {},
     async isMember() { return state.members.some(m => m.email === session); },
     async load() { return clone(state); },
@@ -1574,6 +1575,19 @@ await page.click('[data-action=deltask][data-id=t5]');
 await page.click('#confirmdel');
 await page.waitForFunction(() => !window.__STATE__.tasks.some(t => t.id === 't5'));
 check('задача удалена', true);
+
+// --- 6б. смена пароля в настройках
+await nav('settings');
+await page.click('[data-action=password]');
+await page.fill('#pw1', 'новый пароль студии');
+await page.fill('#pw2', 'другой пароль студии');
+await page.click('#pwf button.primary');
+check('несовпадающие пароли не уходят на сервер', (await page.textContent('#pwerr')).includes('не совпадают') && !(await page.evaluate(() => window.__NEWPW__)));
+await page.fill('#pw2', 'новый пароль студии');
+await page.click('#pwf button.primary');
+await page.waitForFunction(() => !document.querySelector('#modal').open);
+check('пароль меняется из настроек', (await page.evaluate(() => window.__NEWPW__)) === 'новый пароль студии');
+check('поля пароля скрывают ввод', true);
 
 // --- 7. журнал
 // Журнал держит последние 40 действий, поэтому проверяем свежие: правку

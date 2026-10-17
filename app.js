@@ -129,6 +129,9 @@ function createApi(cfg) {
       must(await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password }));
     },
     async signOut() { await sb.auth.signOut(); },
+    // Пароль меняет сам вошедший человек; старый пароль сервер не спрашивает —
+    // вход уже подтверждён сессией.
+    async changePassword(password) { must(await sb.auth.updateUser({ password })); },
     onSignedOut(cb) { sb.auth.onAuthStateChange((event) => { if (event === 'SIGNED_OUT') cb(); }); },
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
@@ -4351,13 +4354,13 @@ function render() {
           <p class="muted">Данные хранятся на сервере и доступны обоим руководителям. Экспорт нужен для резервной копии и для переноса в локальную версию.</p>
           <button class="primary" data-action="export">Экспорт JSON</button> <button data-action="import">Импорт JSON</button>
           <div class="notice">Импорт добавляет записи из файла и обновляет совпадающие по номеру. Ничего не удаляется.</div>
-          <p class="muted">В выгрузку входят все разделы: база знаний, публикации, задачи, замеры, брендбук, решения, деньги и экономика.
+          <p class="muted">В выгрузку входят все разделы: база знаний, публикации, задачи, замеры, брендбук, решения, заявки, реклама, поиск клиентов, лид-магниты и статистика.
           Обратно импорт принимает четыре первых — остальное в локальной версии не открывается.
           Сами приложенные файлы (${db.files.length}) лежат в хранилище, в JSON попадают только их описания.</p></div>
         <div class="card"><h2>Вход и оформление</h2>
           <p>Вы вошли как <b>${E(me?.email || '')}</b>.</p>
           <p>Доступ выдан: ${db.members.map(m => E(m.name)).join(', ') || '—'}</p>
-          <button data-action="theme">Сменить тему</button> <button data-action="signout">Выйти</button>
+          <button data-action="theme">Сменить тему</button> <button data-action="password">Сменить пароль</button> <button data-action="signout">Выйти</button>
           <p class="muted">Ctrl / ⌘ + K — поиск. Esc — закрыть окно.</p></div></div>
       <div class="card" style="margin-top:18px"><h2>Журнал изменений</h2>${feed(40)}</div>
       <div class="card" style="margin-top:18px"><h2>Подключения</h2>
@@ -4498,6 +4501,32 @@ function go(p) {
 }
 
 // ----------------------------------------------------------- окна и формы
+
+function changePassword() {
+  modal(`<h2>Сменить пароль</h2><form id="pwf">
+    <p class="muted">Для входа <b>${E(me?.email || '')}</b>. Не меньше 8 знаков; лучше фраза из нескольких слов, чем короткий набор символов.</p>
+    <label for="pw1">Новый пароль</label><input id="pw1" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+    <label for="pw2">Ещё раз</label><input id="pw2" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+    <p class="minus" id="pwerr" aria-live="polite"></p>
+    <div class="formactions"><button class="primary">Сохранить пароль</button></div></form>`);
+  $('#pwf').onsubmit = async e => {
+    e.preventDefault();
+    const a = $('#pw1').value, b = $('#pw2').value;
+    if (a !== b) { $('#pwerr').textContent = 'Пароли не совпадают'; return; }
+    if (a.length < 8) { $('#pwerr').textContent = 'Нужно не меньше 8 знаков'; return; }
+    const btn = e.target.querySelector('button.primary');
+    btn.disabled = true;
+    try {
+      await api.changePassword(a);
+      $('#modal').close();
+      toast('Пароль изменён. На других устройствах вход сохранится до выхода.');
+    } catch (err) {
+      $('#pwerr').textContent = 'Пароль не изменён: ' + (err.message || 'ошибка сервера');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
 
 function modal(html) {
   $('#modal').innerHTML = `<button class="close iconbtn" data-action="close" aria-label="Закрыть">${icon('close', 18)}</button>` + html;
@@ -5569,6 +5598,7 @@ document.addEventListener('click', async e => {
     case 'openfile': await openFile(b.dataset.id); break;
     case 'delfile': await delFile(b.dataset.id); break;
     case 'signout': await api.signOut(); me = null; showGate(); break;
+    case 'password': changePassword(); break;
   }
 });
 
