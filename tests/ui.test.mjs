@@ -110,6 +110,7 @@ const fake = (seedData) => {
         _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
     ],
     channel_stats: [],
+    survey_answers: [],
     ad_texts: [
       { id: 'at-1', keyword_set_id: 'ks-envato', title: 'Envato Elements без подписки', body: 'Вставьте ссылку — получите оригинал.',
         long_text: '', status: 'В работе', note: '', sort: 10, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
@@ -276,8 +277,8 @@ const fake = (seedData) => {
         const i = state[table].findIndex(x => x.id === o.id);
         const saved = { ...clone(o), _at: now(), _by: session };
         // как на сервере: статистика площадок в журнал не пишется
-        if (i < 0) { state[table].push(saved); if (table !== 'channel_stats') log('insert', table, saved); }
-        else { state[table][i] = saved; if (table !== 'channel_stats') log('update', table, saved); }
+        if (i < 0) { state[table].push(saved); if (!['channel_stats', 'survey_answers'].includes(table)) log('insert', table, saved); }
+        else { state[table][i] = saved; if (!['channel_stats', 'survey_answers'].includes(table)) log('update', table, saved); }
       }
     }
   };
@@ -331,7 +332,7 @@ check('с плитки можно уйти в её раздел',
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textContent));
 check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 19,
+check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 20,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
 check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
@@ -1566,6 +1567,40 @@ check('счётчик знаков обновился под новый текс
 await page.keyboard.press('Escape');
 await page.click('[data-action=contentnet][data-id="Все"]');
 
+// --- 5ф. анкета для владельцев
+await nav('survey');
+check('анкета: 69 вопросов, 24 главных', /Отвечено 0 из 69/.test(await page.textContent('#spdone')) && /из 24/.test(await page.textContent('#spstar')));
+check('у анкеты в меню — сколько главных без ответа', await page.$eval('#nav button[data-page=survey] .navbadge', b => !b.hidden && b.textContent === '24'));
+await page.click('.sq[data-q="1.1"] .sqopt:nth-child(1)');
+await page.waitForFunction(() => window.__STATE__.survey_answers.some(a => a.id === '1.1'));
+check('отмеченный вариант сохраняется сам, без кнопки', JSON.stringify((await state()).survey_answers.find(a => a.id === '1.1').answer.picks) === '[0]');
+await page.waitForFunction(() => /Отвечено 1 из 69/.test(document.querySelector('#spdone').textContent));
+check('прогресс обновился без перерисовки', /главных \(★\): 1 из 24/.test(await page.textContent('#spstar')));
+check('счётчик в меню уменьшился', await page.$eval('#nav button[data-page=survey] .navbadge', b => b.textContent === '23'));
+// вариант с уточнением: поле появляется у отмеченного и сохраняет текст
+const moreOpt = '.sq[data-q="1.6"] .sqopt.hasmore';
+check('поле уточнения скрыто, пока вариант не отмечен', !(await page.isVisible(`${moreOpt} .sqmore`)));
+await page.click(`${moreOpt} input[type=checkbox]`);
+check('у отмеченного варианта появилось поле уточнения', await page.isVisible(`${moreOpt} .sqmore`));
+await page.fill(`${moreOpt} .sqmore`, '30 000');
+await page.fill('.sq[data-q="1.6"] .sqother', 'Сетевой маркетинг');
+await page.waitForFunction(() => { const a = window.__STATE__.survey_answers.find(x => x.id === '1.6'); return a && a.answer.other === 'Сетевой маркетинг'; });
+const a16 = (await state()).survey_answers.find(a => a.id === '1.6').answer;
+check('уточнение и «Другое» сохранены', Object.values(a16.texts)[0] === '30 000' && a16.picks.length === 1, JSON.stringify(a16));
+check('подписи вариантов без подчёркиваний', !(await page.textContent('.sq[data-q="1.6"]')).includes('___'));
+await page.fill('.sq[data-q="2.2"] .sqfree', 'Артём — съёмка, Александр — монтаж');
+await page.waitForFunction(() => window.__STATE__.survey_answers.some(a => a.id === '2.2' && a.answer.free));
+check('вопрос без вариантов принимает текст', true);
+await page.click('[data-action=surveyfilter][data-id="Только ★"]');
+check('фильтр «Только ★» оставляет главные', (await page.$$('.sq')).length === 24);
+await page.click('[data-action=surveyfilter][data-id="Без ответа"]');
+check('фильтр «Без ответа» прячет отвеченные', (await page.$$('.sq')).length === 66 && !(await page.$('.sq[data-q="1.1"]')));
+await page.click('[data-action=surveyfilter][data-id="Все"]');
+await page.click('#refresh');
+await nav('survey');
+check('после обновления ответы на месте', await page.$eval('.sq[data-q="1.1"] input[data-i="0"]', i => i.checked) && await page.$eval('.sq[data-q="1.1"]', c => c.classList.contains('answered')));
+await page.screenshot({ path: path.join(OUT, 'intel-survey.png') });
+
 // --- 6. задачи
 await nav('tasks');
 await page.check('input[data-task=t1]');
@@ -2324,7 +2359,7 @@ check('на телефоне меню поверх верхней панели',
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
 const sections = ['home', 'ads', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
-  'cases', 'content', 'prospects', 'magnets', 'keywords', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
+  'cases', 'content', 'prospects', 'magnets', 'keywords', 'survey', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {
   await m.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);

@@ -1343,3 +1343,34 @@ dialog .checkitem input,.checkitem input,dialog .aiplanrow input{width:18px;heig
 /* На телефоне кнопки шапки раздела переносятся под заголовок, а не
    растягивают страницу вбок. */
 @media(max-width:720px){.head{flex-wrap:wrap}.head > .headactions{flex:1 1 100%;justify-content:flex-start}}
+
+/* --- Анкета ---------------------------------------------------------------
+   Вариант — крупная плашка под палец; отмеченный подсвечен золотом и
+   галочкой, а не только цветом. Поле уточнения появляется у отмеченного. */
+.surveyprogress{display:grid;gap:10px;margin-bottom:8px;position:sticky;top:var(--topbar-h,68px);z-index:5}
+.sprow{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.sblock{margin-top:8px}
+.sqlist{display:grid;gap:12px}
+.sq{display:grid;gap:8px;border-left:3px solid var(--line)}
+.sq.answered{border-left-color:var(--gold)}
+.sq h3{margin:0;font-size:16px;line-height:1.4}
+.sqhead{display:flex;gap:8px;align-items:center}
+.sqnum{font-size:12px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.sqstar{font-size:11px;font-weight:700;color:var(--gold);border:1px solid color-mix(in srgb,var(--gold) 50%,var(--line));border-radius:99px;padding:1px 8px}
+.sqsaved{margin-left:auto;font-size:12px}
+.sqhint{margin:0;font-size:13px}
+.sqopts{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
+.sqopt{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0;padding:10px 12px;min-height:44px;border:1px solid var(--line);
+  border-radius:10px;cursor:pointer;background:var(--bg);font-size:14px;line-height:1.35;transition:border-color .12s,background .12s}
+.sqopt:hover{border-color:var(--gold)}
+.sqopt input[type=checkbox]{width:20px;height:20px;flex:none;accent-color:var(--gold);margin:0}
+.sqopt span{flex:1;min-width:0}
+.sqopt:has(input[type=checkbox]:checked){border-color:var(--gold);background:color-mix(in srgb,var(--gold) 12%,var(--panel))}
+.sqmore{display:none;flex-basis:100%;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit}
+.sqopt:has(input[type=checkbox]:checked) .sqmore{display:block}
+.sqfreelabel{font-size:12px;color:var(--muted);margin:2px 0 -4px}
+.sqfree,.sqother{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;min-height:44px}
+.sqfree{resize:vertical}
+@media(max-width:720px){.sqopts{grid-template-columns:1fr}.surveyprogress{top:0}}
+.sqopt input[type=checkbox]{align-self:center;position:relative;top:0}
+.sqopt > span{align-self:center}

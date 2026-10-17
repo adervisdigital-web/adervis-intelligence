@@ -26,7 +26,7 @@ function toast(text, ms = 3500) {
 // каждый на своей сетке и со своей толщиной линии.
 const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
 // Старые имена из кода приложения, чтобы не переписывать все вызовы.
-const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key' };
+const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check' };
 const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
 const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
@@ -72,6 +72,7 @@ const FIELDS = {
   ad_texts: ['id', 'keyword_set_id', 'title', 'title2', 'body', 'long_text', 'status', 'note', 'sort'],
   channel_stats: ['id', 'network', 'month', 'reach', 'reach_nonsubs', 'reach_posts', 'reach_clips', 'views', 'likes', 'shares',
     'comments', 'subs', 'subs_in', 'subs_out', 'visitors', 'site_clicks', 'new_dialogs'],
+  survey_answers: ['id', 'answer'],
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
@@ -136,7 +137,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats, survey] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -156,7 +157,8 @@ function createApi(cfg) {
         selectAll('lead_magnets', 'created_at'),
         selectAll('keyword_sets', 'sort'),
         selectAll('ad_texts', 'sort'),
-        selectAll('channel_stats', 'month')
+        selectAll('channel_stats', 'month'),
+        selectAll('survey_answers', 'id')
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -174,6 +176,7 @@ function createApi(cfg) {
         keyword_sets: keywordSets.map(r => fromRow('keyword_sets', r)),
         ad_texts: adTexts.map(r => fromRow('ad_texts', r)),
         channel_stats: channelStats.map(r => fromRow('channel_stats', r)),
+        survey_answers: survey.map(r => fromRow('survey_answers', r)),
         publications, ai, members, activity, accounts
       };
     },
@@ -239,7 +242,7 @@ let me = null;
 const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
-  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: [], channel_stats: []
+  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: [], channel_stats: [], survey_answers: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -260,7 +263,7 @@ let ai = {
 // выпустить контент, посчитать, вспомнить про компанию. Внутри группы — по
 // частоте обращения. Редкое («Система») свёрнуто, пока его не открыли.
 const SECTION_TITLE = {
-  home: 'Обзор', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
+  home: 'Обзор', survey: 'Анкета', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
   cases: 'Кейсы', competitors: 'Конкуренты',
   content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
@@ -268,7 +271,7 @@ const SECTION_TITLE = {
 };
 
 const NAV = [
-  ['', ['home']],
+  ['', ['home', 'survey']],
   ['Продажи', ['leads', 'prospects', 'magnets']],
   ['Реклама', ['ads', 'keywords']],
   ['Контент', ['content', 'assistant']],
@@ -3002,6 +3005,110 @@ function vkStatsCard() {
   </div>`;
 }
 
+// ------------------------------------------------------------------ анкета
+//
+// Вопросы владельцам о компании и приложении. Ответ сохраняется сам, через
+// мгновение после выбора, — кнопки «Сохранить» нет, потерять ничего нельзя.
+// Вариант с «___» раскрывает поле для уточнения, когда его отметили.
+const SURVEY = () => window.ADERVIS_SURVEY || [];
+let surveyFilter = 'Все';
+const surveyAnswer = id => db.survey_answers.find(a => a.id === id)?.answer || {};
+const isAnswered = a => !!((a.picks && a.picks.length) || (a.other || '').trim() || (a.free || '').trim());
+const optLabel = o => o.replace(/_{3,}/g, '…').replace(/\s+—\s*…$/, '').trim();
+
+function surveyStats() {
+  const qs = SURVEY().flatMap(b => b.qs);
+  const done = qs.filter(q => isAnswered(surveyAnswer(q.id)));
+  const stars = qs.filter(q => q.star);
+  return { total: qs.length, done: done.length, stars: stars.length,
+    starDone: stars.filter(q => isAnswered(surveyAnswer(q.id))).length,
+    starLeft: stars.filter(q => !isAnswered(surveyAnswer(q.id))).length };
+}
+
+function surveyQuestion(q) {
+  const a = surveyAnswer(q.id), picks = a.picks || [], texts = a.texts || {};
+  return `<article class="card sq${isAnswered(a) ? ' answered' : ''}" data-q="${E(q.id)}">
+    <div class="sqhead"><span class="sqnum">${E(q.id)}</span>${q.star ? '<span class="sqstar" title="Ответить в первую очередь">★ главное</span>' : ''}
+      <small class="sqsaved" aria-live="polite">${isAnswered(a) ? 'отвечено' : ''}</small></div>
+    <h3>${E(q.text)}</h3>
+    ${q.hint ? `<p class="muted sqhint">${E(q.hint)}</p>` : ''}
+    ${q.opts.length ? `<div class="sqopts">${q.opts.map((o, i) => {
+      const more = /_{3,}/.test(o);
+      return `<label class="sqopt${more ? ' hasmore' : ''}"><input type="checkbox" data-i="${i}" ${picks.includes(i) ? 'checked' : ''}>
+        <span>${E(optLabel(o))}</span>
+        ${more ? `<input class="sqmore" type="text" data-more="${i}" maxlength="300" placeholder="уточните" value="${E(texts[i] || '')}">` : ''}</label>`;
+    }).join('')}</div>` : ''}
+    ${q.free ? `<label class="sqfreelabel">${E(q.freeLabel || 'Ответ')}</label>
+      <textarea class="sqfree" maxlength="1500" rows="2" placeholder="Напишите своими словами">${E(a.free || '')}</textarea>` : ''}
+    ${q.other ? `<input class="sqother" type="text" maxlength="500" placeholder="Другое — своими словами" value="${E(a.other || '')}">` : ''}
+  </article>`;
+}
+
+function renderSurvey() {
+  const st = surveyStats();
+  const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
+  const head = heading('Анкета', 'Вопросы о компании и приложении. Отмечайте варианты — ответ сохраняется сам. Можно отвечать частями и с телефона; начните со «★ главное».');
+  const progress = `<div class="card surveyprogress">
+    <div class="sprow"><b id="spdone">Отвечено ${st.done} из ${st.total}</b><span id="spstar" class="muted">главных (★): ${st.starDone} из ${st.stars}</span></div>
+    <div class="budgetbar" role="img" aria-label="Отвечено ${pct}%"><i id="spbar" style="width:${pct}%"></i></div>
+    <div class="filters" role="group" aria-label="Какие вопросы показать">${['Все', 'Только ★', 'Без ответа'].map(f =>
+      `<button class="chip${surveyFilter === f ? ' on' : ''}" data-action="surveyfilter" data-id="${f}" aria-pressed="${surveyFilter === f}">${f}</button>`).join('')}</div>
+  </div>`;
+  const keep = q => surveyFilter === 'Все' || (surveyFilter === 'Только ★' ? q.star : !isAnswered(surveyAnswer(q.id)));
+  const blocks = SURVEY().map(b => {
+    const qs = b.qs.filter(keep);
+    if (!qs.length) return '';
+    const left = b.qs.filter(q => !isAnswered(surveyAnswer(q.id))).length;
+    return `<section class="sblock"><div class="head"><h2>${E(b.n)}. ${E(b.title)}</h2>
+      <small class="muted">${left ? `без ответа: ${left}` : 'всё отвечено'}</small></div>
+      <div class="sqlist">${qs.map(surveyQuestion).join('')}</div></section>`;
+  }).join('');
+  return head + progress + (blocks || '<div class="card empty"><h2>Всё отвечено</h2><p>Спасибо. Напишите в чат «ответил» — ответы разнесу по разделам приложения.</p></div>');
+}
+
+// Ответ собирается из карточки и уходит через 700 мс после последнего
+// изменения: печатают — не дёргаем сервер на каждую букву.
+const surveyTimers = {};
+function wireSurvey() {
+  document.querySelectorAll('.sq').forEach(card => {
+    const id = card.dataset.q;
+    const collect = () => ({
+      picks: [...card.querySelectorAll('input[type=checkbox]:checked')].map(i => Number(i.dataset.i)),
+      texts: Object.fromEntries([...card.querySelectorAll('[data-more]')].filter(i => i.value.trim()).map(i => [i.dataset.more, i.value.trim()])),
+      other: card.querySelector('.sqother')?.value.trim() || '',
+      free: card.querySelector('.sqfree')?.value.trim() || ''
+    });
+    const save = () => {
+      clearTimeout(surveyTimers[id]);
+      card.querySelector('.sqsaved').textContent = 'сохраняю…';
+      surveyTimers[id] = setTimeout(async () => {
+        const answer = collect();
+        try {
+          await api.upsertAll('survey_answers', [{ id, answer }]);
+          upsertLocal('survey_answers', { id, answer, _at: new Date().toISOString() });
+          card.classList.toggle('answered', isAnswered(answer));
+          card.querySelector('.sqsaved').textContent = isAnswered(answer) ? 'сохранено' : '';
+          const st = surveyStats();
+          $('#spdone').textContent = `Отвечено ${st.done} из ${st.total}`;
+          $('#spstar').textContent = `главных (★): ${st.starDone} из ${st.stars}`;
+          $('#spbar').style.width = Math.round(100 * st.done / st.total) + '%';
+          updateNav();
+        } catch (e) {
+          card.querySelector('.sqsaved').textContent = 'не сохранилось';
+          handleError(e);
+        }
+      }, 700);
+    };
+    card.addEventListener('change', save);
+    card.addEventListener('input', e => { if (e.target.matches('input[type=text], textarea')) save(); });
+    // поле уточнения сразу отмечает свой вариант
+    card.querySelectorAll('[data-more]').forEach(inp => inp.addEventListener('input', () => {
+      const box = card.querySelector(`input[type=checkbox][data-i="${inp.dataset.more}"]`);
+      if (inp.value.trim() && !box.checked) box.checked = true;
+    }));
+  });
+}
+
 // Итоги недели — текстом, который можно переслать партнёру как есть.
 // Сделки и холодные сообщения считаются по дате последней правки:
 // отдельной истории статусов нет, и это сказано в самом тексте.
@@ -4167,6 +4274,7 @@ function render() {
 
   if (page === 'ads') s = renderAds();
   if (page === 'keywords') s = renderKeywords();
+  if (page === 'survey') s = renderSurvey();
   if (page === 'leads') s = renderLeads();
   if (page === 'prospects') s = renderProspects();
   if (page === 'magnets') s = renderMagnets();
@@ -4424,6 +4532,7 @@ function render() {
   const sitef = $('#sitef');
   if (sitef) sitef.onsubmit = e => { e.preventDefault(); siteSearch(); };
 
+  if (page === 'survey') wireSurvey();
   const vkf = $('#vkstatfile');
   if (vkf) vkf.onchange = e => { const file = e.target.files[0]; e.target.value = ''; if (file) importVkStats(file); };
 
@@ -4460,7 +4569,10 @@ function navCounts() {
   const by = { home: list, leads: [], prospects: [], ads: [], content: [] };
   const kind = { l: 'leads', pr: 'prospects', cp: 'ads', p: 'content' };
   for (const x of list) by[kind[x.ref.slice(0, x.ref.indexOf(':'))]]?.push(x);
-  return Object.fromEntries(Object.entries(by).map(([k, v]) => [k, { n: v.length, late: v.some(x => x.late) }]));
+  const out = Object.fromEntries(Object.entries(by).map(([k, v]) => [k, { n: v.length, late: v.some(x => x.late) }]));
+  // у анкеты счётчик — сколько главных вопросов (★) ещё без ответа
+  if (typeof surveyStats === 'function') out.survey = { n: surveyStats().starLeft, late: false };
+  return out;
 }
 
 function updateNav() {
@@ -5341,7 +5453,7 @@ function exportJson() {
     brand: strip(db.brand), decisions: strip(db.decisions),
     campaigns: strip(db.campaigns), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications),
-    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), channel_stats: strip(db.channel_stats), kpi_targets: strip(db.kpi_targets)
+    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), channel_stats: strip(db.channel_stats), survey_answers: strip(db.survey_answers), kpi_targets: strip(db.kpi_targets)
   }, null, 2), 'adervis-backup-' + today() + '.json');
 }
 
@@ -5504,6 +5616,7 @@ document.addEventListener('click', async e => {
     case 'orgaddall': orgAdd(finder.orgs); break;
     case 'importprospects': importCompanies(); break;
     case 'weekcopy': weekCopy(); break;
+    case 'surveyfilter': surveyFilter = b.dataset.id; render(); break;
     case 'vkstatpick': $('#vkstatfile').click(); break;
     case 'sitecreate': editProspect(undefined, {
       name: (finder.site.title || '').slice(0, 200), website: finder.url, source: 'Сайт',
