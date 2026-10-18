@@ -1374,3 +1374,7 @@ dialog .checkitem input,.checkitem input,dialog .aiplanrow input{width:18px;heig
 @media(max-width:720px){.sqopts{grid-template-columns:1fr}.surveyprogress{top:0}}
 .sqopt input[type=checkbox]{align-self:center;position:relative;top:0}
 .sqopt > span{align-self:center}
+
+/* План развития: готовое приглушено, ближайшее подсвечено золотом. */
+.timeline .roadstage.done{border-left-color:var(--line);opacity:.8}
+.timeline .roadstage.next{border-left-color:var(--gold)}
