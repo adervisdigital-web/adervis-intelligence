@@ -3565,11 +3565,22 @@ function vkStatsCard() {
 
 // ------------------------------------------------------------------ анкета
 //
-// Вопросы владельцам о компании и приложении. Ответ сохраняется сам, через
-// мгновение после выбора, — кнопки «Сохранить» нет, потерять ничего нельзя.
-// Вариант с «___» раскрывает поле для уточнения, когда его отметили.
-const SURVEY = () => window.ADERVIS_SURVEY || [];
+// Вопросы владельцам. Ответ сохраняется сам, через мгновение после выбора,
+// — кнопки «Сохранить» нет, потерять ничего нельзя. Вариант с «___»
+// раскрывает поле для уточнения, когда его отметили.
+// Анкеты идут по очереди: на странице — первая, где остались вопросы без
+// ответа. Отвеченное со страницы уходит (ответы остаются в базе), но не
+// сразу, а при следующем открытии раздела — иначе вопрос исчезал бы, пока
+// дописываешь уточнение.
+const SURVEYS = () => [
+  { n: 1, title: 'Компания и приложение', blocks: window.ADERVIS_SURVEY || [] },
+  { n: 2, title: 'История и люди', blocks: window.ADERVIS_SURVEY_2 || [] }
+].filter(x => x.blocks.length);
+const currentSurvey = () => SURVEYS().find(x => x.blocks.some(b => b.qs.some(q => !isAnswered(surveyAnswer(q.id)))))
+  || SURVEYS()[SURVEYS().length - 1] || { n: 0, title: '', blocks: [] };
+const SURVEY = () => currentSurvey().blocks;
 let surveyFilter = 'Все';
+let surveyHidden = null; // что было отвечено, когда раздел открыли
 const surveyAnswer = id => db.survey_answers.find(a => a.id === id)?.answer || {};
 const isAnswered = a => !!((a.picks && a.picks.length) || (a.other || '').trim() || (a.free || '').trim());
 const optLabel = o => o.replace(/_{3,}/g, '…').replace(/\s+—\s*…$/, '').trim();
@@ -3586,7 +3597,7 @@ function surveyStats() {
 function surveyQuestion(q) {
   const a = surveyAnswer(q.id), picks = a.picks || [], texts = a.texts || {};
   return `<article class="card sq${isAnswered(a) ? ' answered' : ''}" data-q="${E(q.id)}">
-    <div class="sqhead"><span class="sqnum">${E(q.id)}</span>${q.star ? '<span class="sqstar" title="Ответить в первую очередь">★ главное</span>' : ''}
+    <div class="sqhead"><span class="sqnum">${E(q.id.replace(/^\d+-/, ''))}</span>${q.star ? '<span class="sqstar" title="Ответить в первую очередь">★ главное</span>' : ''}
       <small class="sqsaved" aria-live="polite">${isAnswered(a) ? 'отвечено' : ''}</small></div>
     <h3>${E(q.text)}</h3>
     ${q.hint ? `<p class="muted sqhint">${E(q.hint)}</p>` : ''}
@@ -3603,16 +3614,17 @@ function surveyQuestion(q) {
 }
 
 function renderSurvey() {
-  const st = surveyStats();
+  const cur = currentSurvey(), st = surveyStats();
+  if (!surveyHidden) surveyHidden = new Set(db.survey_answers.filter(a => isAnswered(a.answer || {})).map(a => a.id));
   const pct = st.total ? Math.round(100 * st.done / st.total) : 0;
-  const head = heading('Анкета', 'Вопросы о компании и приложении. Отмечайте варианты — ответ сохраняется сам. Можно отвечать частями и с телефона; начните со «★ главное».');
+  const head = heading('Анкета', 'Вопросы владельцам — чтобы приложение знало компанию. Отмечайте варианты, ответ сохраняется сам. Отвеченное уходит со страницы, ответы остаются в базе.');
   const progress = `<div class="card surveyprogress">
-    <div class="sprow"><b id="spdone">Отвечено ${st.done} из ${st.total}</b><span id="spstar" class="muted">главных (★): ${st.starDone} из ${st.stars}</span></div>
+    <div class="sprow"><b id="spdone">Анкета ${cur.n} · ${E(cur.title)}: отвечено ${st.done} из ${st.total}</b><span id="spstar" class="muted">главных (★): ${st.starDone} из ${st.stars}</span></div>
     <div class="budgetbar" role="img" aria-label="Отвечено ${pct}%"><i id="spbar" style="width:${pct}%"></i></div>
-    <div class="filters" role="group" aria-label="Какие вопросы показать">${['Все', 'Только ★', 'Без ответа'].map(f =>
+    <div class="filters" role="group" aria-label="Какие вопросы показать">${['Все', 'Только ★'].map(f =>
       `<button class="chip${surveyFilter === f ? ' on' : ''}" data-action="surveyfilter" data-id="${f}" aria-pressed="${surveyFilter === f}">${f}</button>`).join('')}</div>
   </div>`;
-  const keep = q => surveyFilter === 'Все' || (surveyFilter === 'Только ★' ? q.star : !isAnswered(surveyAnswer(q.id)));
+  const keep = q => !surveyHidden.has(q.id) && (surveyFilter === 'Все' || q.star);
   const blocks = SURVEY().map(b => {
     const qs = b.qs.filter(keep);
     if (!qs.length) return '';
@@ -3621,7 +3633,10 @@ function renderSurvey() {
       <small class="muted">${left ? `без ответа: ${left}` : 'всё отвечено'}</small></div>
       <div class="sqlist">${qs.map(surveyQuestion).join('')}</div></section>`;
   }).join('');
-  return head + progress + (blocks || '<div class="card empty"><h2>Всё отвечено</h2><p>Спасибо. Напишите в чат «ответил» — ответы разнесу по разделам приложения.</p></div>');
+  const past = SURVEYS().filter(x => x.n < cur.n)
+    .map(x => `анкета ${x.n} «${E(x.title)}» — ${x.blocks.flatMap(b => b.qs).filter(q => isAnswered(surveyAnswer(q.id))).length} ответов`);
+  return head + progress + (blocks || '<div class="card empty"><h2>Всё отвечено</h2><p>Спасибо. Напишите в чат «ответил» — ответы разнесу по разделам приложения.</p></div>')
+    + (past.length ? `<p class="muted">Сохранено в базе: ${past.join(', ')}.</p>` : '');
 }
 
 // Ответ собирается из карточки и уходит через 700 мс после последнего
@@ -3647,7 +3662,7 @@ function wireSurvey() {
           card.classList.toggle('answered', isAnswered(answer));
           card.querySelector('.sqsaved').textContent = isAnswered(answer) ? 'сохранено' : '';
           const st = surveyStats();
-          $('#spdone').textContent = `Отвечено ${st.done} из ${st.total}`;
+          $('#spdone').textContent = `Анкета ${currentSurvey().n} · ${currentSurvey().title}: отвечено ${st.done} из ${st.total}`;
           $('#spstar').textContent = `главных (★): ${st.starDone} из ${st.stars}`;
           $('#spbar').style.width = Math.round(100 * st.done / st.total) + '%';
           updateNav();
@@ -5175,7 +5190,7 @@ function go(p) {
   // Календарь стал видом контент-плана; старые ссылки на него ведут туда же.
   if (p === 'calendar') { contentView = 'calendar'; p = 'content'; }
   page = sections.some(s => s[0] === p) ? p : 'home';
-  query = ''; category = 'Все';
+  query = ''; category = 'Все'; surveyHidden = null;
   document.body.classList.remove('menu');
   $('#crumb').textContent = sections.find(s => s[0] === page)[2];
   render();

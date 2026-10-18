@@ -1655,12 +1655,12 @@ await page.click('[data-action=contentnet][data-id="Все"]');
 
 // --- 5ф. анкета для владельцев
 await nav('survey');
-check('анкета: 69 вопросов, 24 главных', /Отвечено 0 из 69/.test(await page.textContent('#spdone')) && /из 24/.test(await page.textContent('#spstar')));
+check('анкета: 69 вопросов, 24 главных', /отвечено 0 из 69/.test(await page.textContent('#spdone')) && /из 24/.test(await page.textContent('#spstar')));
 check('у анкеты в меню — сколько главных без ответа', await page.$eval('#nav button[data-page=survey] .navbadge', b => !b.hidden && b.textContent === '24'));
 await page.click('.sq[data-q="1.1"] .sqopt:nth-child(1)');
 await page.waitForFunction(() => window.__STATE__.survey_answers.some(a => a.id === '1.1'));
 check('отмеченный вариант сохраняется сам, без кнопки', JSON.stringify((await state()).survey_answers.find(a => a.id === '1.1').answer.picks) === '[0]');
-await page.waitForFunction(() => /Отвечено 1 из 69/.test(document.querySelector('#spdone').textContent));
+await page.waitForFunction(() => /отвечено 1 из 69/.test(document.querySelector('#spdone').textContent));
 check('прогресс обновился без перерисовки', /главных \(★\): 1 из 24/.test(await page.textContent('#spstar')));
 check('счётчик в меню уменьшился', await page.$eval('#nav button[data-page=survey] .navbadge', b => b.textContent === '23'));
 // вариант с уточнением: поле появляется у отмеченного и сохраняет текст
@@ -1679,12 +1679,26 @@ await page.waitForFunction(() => window.__STATE__.survey_answers.some(a => a.id 
 check('вопрос без вариантов принимает текст', true);
 await page.click('[data-action=surveyfilter][data-id="Только ★"]');
 check('фильтр «Только ★» оставляет главные', (await page.$$('.sq')).length === 24);
-await page.click('[data-action=surveyfilter][data-id="Без ответа"]');
-check('фильтр «Без ответа» прячет отвеченные', (await page.$$('.sq')).length === 66 && !(await page.$('.sq[data-q="1.1"]')));
+check('отвеченный вопрос не исчезает, пока раздел открыт', !!(await page.$('.sq[data-q="1.1"]')));
 await page.click('[data-action=surveyfilter][data-id="Все"]');
 await page.click('#refresh');
 await nav('survey');
-check('после обновления ответы на месте', await page.$eval('.sq[data-q="1.1"] input[data-i="0"]', i => i.checked) && await page.$eval('.sq[data-q="1.1"]', c => c.classList.contains('answered')));
+check('при следующем открытии отвеченные ушли со страницы', (await page.$$('.sq')).length === 66 && !(await page.$('.sq[data-q="1.1"]')));
+check('ответы при этом остались в базе', (await state()).survey_answers.some(a => a.id === '1.1'));
+// первая анкета закрыта — открывается вторая
+await page.evaluate(() => {
+  for (const b of window.ADERVIS_SURVEY) for (const q of b.qs)
+    if (!window.__STATE__.survey_answers.some(a => a.id === q.id)) window.__STATE__.survey_answers.push({ id: q.id, answer: { picks: [0] } });
+});
+await page.click('#refresh');
+await nav('survey');
+check('после первой анкеты — вторая: история и люди', /Анкета 2 · История и люди: отвечено 0 из 47/.test(await page.textContent('#spdone')) && /из 18/.test(await page.textContent('#spstar')));
+check('о первой — строка, что ответы сохранены', (await page.textContent('#view')).includes('анкета 1 «Компания и приложение» — 69 ответов'));
+check('номер вопроса без служебной приставки', (await page.textContent('.sq[data-q="2-1.1"] .sqnum')) === '1.1');
+check('у анкеты в меню — главные второй анкеты', await page.$eval('#nav button[data-page=survey] .navbadge', b => b.textContent === '18'));
+await page.fill('.sq[data-q="2-1.3"] .sqfree', 'Артём — дизайнер, Александр — оператор');
+await page.waitForFunction(() => window.__STATE__.survey_answers.some(a => a.id === '2-1.3' && a.answer.free));
+check('ответ второй анкеты сохраняется под своим номером', true);
 await page.screenshot({ path: path.join(OUT, 'intel-survey.png') });
 
 // --- 5х. диалоги: бот для клиентов, переписка, скрипты

@@ -179,6 +179,15 @@ check('служебная роль может пополнять базу зна
   (await fail('service_role', '', `insert into public.knowledge(id,title,body,category,source,access,status)
     values ('svc1','Через служебный ключ','Текст','Компания','Ручной ввод','Публичное','Подтверждено')`)) === null);
 
+// --- анкеты владельцев: номера первой («1.1») и второй («2-1.1»)
+check('ответ первой анкеты сохраняется', (await fail('authenticated', 'artem@adervis.ru',
+  `insert into public.survey_answers(id, answer) values ('1.1', '{"picks":[0]}')`)) === null);
+check('ответ второй анкеты сохраняется', (await fail('authenticated', 'artem@adervis.ru',
+  `insert into public.survey_answers(id, answer) values ('2-1.1', '{"free":"Начинали вдвоём"}')`)) === null);
+check('чужой номер вопроса не проходит', (await fail('authenticated', 'artem@adervis.ru',
+  `insert into public.survey_answers(id, answer) values ('x; drop', '{}')`)) !== null);
+check('посторонний не видит ответы анкеты', (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.survey_answers')).rows[0].c === 0);
+
 // --- переписка с клиентами (бывший OTR)
 check('скрипты продаж перенесены', (await as('authenticated', 'artem@adervis.ru', 'select count(*)::int c from public.sales_scripts')).rows[0].c === 23);
 check('настройки бота созданы', (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.outreach_settings where id='main'`)).rows[0].c === 1);
