@@ -2954,7 +2954,7 @@ function chatHtml(p) {
         <textarea id="dlgtext" rows="2" maxlength="4000" aria-label="Ответ клиенту" placeholder="Ответ клиенту…"></textarea>
         <button class="primary" id="dlgsend" ${dialog.sending ? 'disabled' : ''}>${icon('send', 16)}<span>${dialog.sending ? 'Отправляю…' : 'Отправить'}</span></button>
       </div>
-      <small class="muted dlghint">${bot ? 'Ваш ответ выключит бота в этом диалоге — дальше ведёте вы.' : `Уйдёт клиенту в ${E(ch)} от имени бота студии.`} Ctrl+Enter — отправить.</small>
+      <small class="muted dlghint">${bot ? 'Ваш ответ выключит бота в этом диалоге — дальше ведёте вы.' : `Уйдёт клиенту в ${E(ch)} от имени ${ch === 'ВКонтакте' ? 'сообщества' : 'бота студии'}.`} Ctrl+Enter — отправить.</small>
     </form>
   </section>`;
 }
@@ -3316,6 +3316,8 @@ function paintChannels(code) {
   const c = channelInfo || {}, tg = c.telegram || {};
   const u = tg.username || db.outreach.tg_bot_username || '';
   const tgState = tg.connected ? tag('Работает', 'good') : tg.token ? tag('Ключ есть, не подключён', 'warn') : tag('Не подключён', 'idle');
+  const vk = c.vk || {};
+  const vkState = vk.connected ? tag('Работает', 'good') : vk.token ? tag('Ключ есть, не подключён', 'warn') : tag('Не подключён', 'idle');
   box.innerHTML = `${c.error ? `<div class="notice error">Не удалось проверить: ${E(c.error)}</div>` : ''}
     <div class="channelcard"><div class="head" style="margin:0 0 8px"><h3 style="margin:0">${icon('telegram', 18)} Telegram</h3>${tgState}</div>
       ${tg.connected
@@ -3335,10 +3337,37 @@ function paintChannels(code) {
           <p class="muted">Или отправьте боту: <code>/link ${E(code)}</code>. Код действует 15 минут.</p>`
           : `<button class="chip" data-action="tglink">${c.manager ? 'Подключить другой чат' : 'Получать заявки в Telegram'}</button>`}` : ''}
     </div>
-    <div class="channelcard"><div class="head" style="margin:0 0 8px"><h3 style="margin:0">${icon('social', 18)} ВКонтакте</h3>${tag('Следующий', 'idle')}</div>
-      <p class="muted">Сообщения сообщества adervis_digital: бот ответит, соберёт заявку, переписка будет здесь. Нужен ключ сообщества с доступом к сообщениям.</p></div>
+    <div class="channelcard"><div class="head" style="margin:0 0 8px"><h3 style="margin:0">${icon('social', 18)} ВКонтакте</h3>${vkState}</div>
+      ${vk.connected
+        ? `<p>Сообщество ${vk.screen ? `<a href="https://vk.com/${E(vk.screen)}" target="_blank" rel="noopener noreferrer">${E(vk.name || vk.screen)}</a>` : E(vk.name)}: бот отвечает в личных сообщениях, переписка — здесь.</p>`
+        : `<ol class="steps"><li>В сообществе откройте «Управление» → «Работа с API» → «Ключи доступа» → «Создать ключ».</li>
+            <li>Отметьте «Управление сообществом» и «Сообщения сообщества», подтвердите.</li>
+            <li>Вставьте ключ сюда — сообщения, кнопки бота и адрес для событий приложение настроит само.</li></ol>`}
+      ${vk.token && !vk.connected && vk.status && vk.status !== 'none' ? `<div class="notice">ВКонтакте ещё не подтвердил адрес (${E(VK_STATUS[vk.status] || vk.status)}). Нажмите «Подключить с сохранённым ключом» через минуту или подтвердите вручную: «Работа с API» → «Callback API» → «Подтвердить».</div>` : ''}
+      ${vk.others?.length ? `<p class="muted">В сообществе есть и другие адреса для событий: ${vk.others.map(E).join(', ')}. Если это старый OTR — его можно удалить в «Callback API».</p>` : ''}
+      <form id="vkkeyf" class="inlinerow">
+        <input type="password" id="vkkey" autocomplete="off" spellcheck="false" maxlength="400" aria-label="Ключ сообщества ВКонтакте" placeholder="${vk.token ? 'Ключ сохранён — вставьте новый, чтобы заменить' : 'Ключ сообщества: vk1.a…'}">
+        <button class="primary">${vk.token ? 'Заменить и подключить' : 'Подключить'}</button></form>
+      ${vk.token && !vk.connected ? '<p><button class="chip" data-action="vkconnect">Подключить с сохранённым ключом</button></p>' : ''}
+      <p class="muted" id="vkerr" role="alert"></p></div>
     <div class="channelcard"><div class="head" style="margin:0 0 8px"><h3 style="margin:0">${icon('photo', 18)} Instagram</h3>${tag('Потом', 'idle')}</div>
       <p class="muted">Директ через приложение Meta: нужен бизнес-аккаунт, связанный со страницей Facebook.</p></div>`;
+  const vkForm = $('#vkkeyf');
+  vkForm.onsubmit = async e => {
+    e.preventDefault();
+    const key = $('#vkkey').value.trim();
+    if (!/^vk1\.a\.[\w-]{40,}$|^[0-9a-f]{80,90}$/.test(key)) { $('#vkerr').textContent = 'Это не похоже на ключ сообщества: он начинается с vk1.a. и очень длинный — скопируйте целиком.'; return; }
+    vkForm.querySelector('button').disabled = true;
+    $('#vkerr').textContent = 'Сохраняю ключ и настраиваю сообщество — до 15 секунд…';
+    try {
+      await api.setChannelSecret('vk_token', key);
+      $('#vkkey').value = '';
+      await vkConnect();
+    } catch (err) {
+      $('#vkerr').textContent = 'Не подключилось: ' + (err.message || 'ошибка сервера');
+      vkForm.querySelector('button').disabled = false;
+    }
+  };
   const form = $('#tgkeyf');
   form.onsubmit = async e => {
     e.preventDefault();
@@ -3364,6 +3393,16 @@ async function tgConnect() {
   paintChannels();
   render();
   toast(`Бот @${r.username} подключён`);
+}
+
+const VK_STATUS = { unconfigured: 'адрес не проверен', failed: 'проверка не прошла', wait: 'проверяется' };
+
+async function vkConnect() {
+  const r = await api.channels({ action: 'vk-connect' });
+  channelInfo = await api.channels({ action: 'status' });
+  paintChannels();
+  render();
+  toast(r.status === 'ok' ? `Сообщество «${r.name}» подключено` : `Ключ принят, ВКонтакте проверяет адрес — ${VK_STATUS[r.status] || 'подождите минуту'}`, 6000);
 }
 
 async function tgLink() {
@@ -5027,7 +5066,8 @@ function render() {
       ['Готово', 'Контент и ИИ', 'Контент-план по площадкам, публикация в Telegram, парсер вышедших постов. ИИ: посты, идеи, план на месяц, ключевые фразы, объявления, первое сообщение компании.'],
       ['Готово', 'Аналитика', 'Метрики с целями, статистика ВКонтакте по месяцам, итоги недели, анкета владельцев.'],
       ['Ждёт ключей', 'ВКонтакте и Яндекс', 'Сервисный ключ VK — парсер прочитает посты и просмотры группы. Ключ Яндекса — поиск организаций прямо из приложения.'],
-      ['Дальше', 'ВКонтакте и Instagram в «Диалогах»', 'Сообщения сообщества и директ — в той же переписке, с тем же ботом и анкетой.'],
+      ['Готово', 'ВКонтакте в «Диалогах»', 'Сообщения сообщества — в той же переписке, с тем же ботом и анкетой. Подключается одним ключом сообщества.'],
+      ['Дальше', 'Instagram в «Диалогах»', 'Директ — в той же переписке, с тем же ботом и анкетой.'],
       ['Дальше', 'Напоминания в Telegram', 'Бот каждое утро присылает «На сегодня»: заявки без ответа, наступившие шаги, публикации дня.'],
       ['Дальше', 'Связь с Adervis CRM', 'Заявки и сделки из CRM появляются в «Заявках» сами — цена заявки и воронка считаются без ручного ввода.'],
       ['Потом', 'Картинки для постов', 'Генерация обложек и иллюстраций к публикациям в стиле брендбука.'],
@@ -5057,7 +5097,8 @@ function render() {
         ${[['Supabase · база и вход', 'Подключён'], ['AI-провайдер', 'Подключён'],
           ['Telegram · публикация', db.publications.some(x => x.channel === 'Telegram') ? 'Работает' : 'Готов, нужен бот'],
           ['Telegram · бот для клиентов', db.outreach.tg_bot_username ? 'Работает' : 'Не подключён — «Диалоги» → «Каналы»'],
-          ['ВКонтакте', 'Следующий на очереди'], ['Threads', 'Нужна верификация Meta'],
+          ['ВКонтакте · сообщения сообщества', db.outreach.vk_community_id ? 'Подключены' : 'Не подключены — «Диалоги» → «Каналы»'],
+          ['Threads', 'Нужна верификация Meta'],
           ['Яндекс.Метрика', 'Не подключена'], ['Adervis CRM', 'Не подключена']]
           .map(([x, st]) => `<div class="row">${x}${tag(st)}</div>`).join('')}
         <p class="muted">Публикаций отправлено: ${db.publications.length}. Telegram включается двумя секретами проекта: токен бота и адрес канала.</p></div>`;
@@ -6222,6 +6263,10 @@ document.addEventListener('click', async e => {
       try { await tgConnect(); } catch (err) { $('#tgerr').textContent = 'Не подключилось: ' + (err.message || 'ошибка сервера'); b.disabled = false; }
       break;
     case 'tglink': tgLink(); break;
+    case 'vkconnect':
+      b.disabled = true;
+      try { await vkConnect(); } catch (err) { $('#vkerr').textContent = 'Не подключилось: ' + (err.message || 'ошибка сервера'); b.disabled = false; }
+      break;
     case 'orgadd': orgAdd([finder.orgs[Number(b.dataset.id)]]); break;
     case 'orgaddall': orgAdd(finder.orgs); break;
     case 'importprospects': importCompanies(); break;

@@ -73,7 +73,7 @@ export function portfolioReply(text: string, videos: unknown): Reply {
 
 // Входящее обновление Telegram → одно понятное событие.
 export type TgEvent =
-  | { type: 'text'; chatId: number; text: string; name: string; username: string; messageId: number }
+  | { type: 'text'; chatId: number; text: string; name: string; username: string; messageId: number; attachment?: boolean }
   | { type: 'voice'; chatId: number; fileId: string; name: string; username: string; messageId: number }
   | { type: 'button'; chatId: number; data: string; name: string; username: string; callbackId: string }
   | { type: 'skip' };
@@ -91,6 +91,12 @@ export function parseUpdate(upd: any): TgEvent {
     if (typeof msg.text === 'string' && msg.text.trim()) return { type: 'text', text: msg.text.trim().slice(0, 4000), ...base };
     const voice = msg.voice ?? msg.video_note;
     if (voice?.file_id) return { type: 'voice', fileId: String(voice.file_id), ...base };
+    // фото, видео, файл: подпись — как текст, без подписи — отметка о вложении
+    const att = msg.photo ? 'фото' : msg.video ? 'видео' : msg.animation ? 'анимация' : msg.document ? 'файл' : msg.sticker ? 'стикер' : '';
+    if (att) {
+      const caption = String(msg.caption ?? '').trim();
+      return caption ? { type: 'text', text: caption.slice(0, 4000), ...base } : { type: 'text', text: `📎 ${att}`, attachment: true, ...base };
+    }
     return { type: 'skip' };
   }
   const cb = upd?.callback_query;
@@ -99,6 +105,66 @@ export function parseUpdate(upd: any): TgEvent {
     return { type: 'button', chatId, data: String(cb.data).slice(0, 64), callbackId: String(cb.id), ...who(cb.from, chatId) };
   }
   return { type: 'skip' };
+}
+
+// ВКонтакте: событие Callback API → то же понятное событие. Пишем только
+// людям в личных сообщениях сообщества; беседы (peer_id от 2e9) пропускаем.
+// message_reply — исходящее сообщение сообщества: если его написал админ
+// прямо во ВКонтакте (есть admin_author_id), оно тоже попадёт в переписку.
+export type VkEvent =
+  | { type: 'text'; peerId: number; text: string; messageId: string; attachment?: boolean }
+  | { type: 'voice'; peerId: number; url: string; messageId: string }
+  | { type: 'button'; peerId: number; data: string; messageId: string }
+  | { type: 'reply'; peerId: number; text: string; messageId: string; manual: boolean }
+  | { type: 'skip' };
+
+const VK_ATT: Record<string, string> = { photo: 'фото', video: 'видео', doc: 'файл', sticker: 'стикер', audio: 'аудио', wall: 'запись', link: 'ссылка', graffiti: 'граффити' };
+
+export function parseVk(body: any): VkEvent {
+  if (body?.type === 'message_new') {
+    const m = body.object?.message;
+    const peerId = Number(m?.peer_id);
+    if (!m || !peerId || peerId >= 2e9 || peerId !== Number(m.from_id)) return { type: 'skip' };
+    const messageId = String(m.id || m.conversation_message_id || '');
+    let payload: any = null;
+    try { payload = typeof m.payload === 'string' ? JSON.parse(m.payload) : null; } catch { /* не наша кнопка */ }
+    if (payload?.command === 'start') return { type: 'text', peerId, text: '/start', messageId };
+    if (typeof payload?.b === 'string' && payload.b) return { type: 'button', peerId, data: payload.b.slice(0, 64), messageId };
+    const text = String(m.text ?? '').trim();
+    const atts: any[] = Array.isArray(m.attachments) ? m.attachments : [];
+    const voice = atts.find(a => a?.type === 'audio_message')?.audio_message;
+    if (!text && (voice?.link_ogg || voice?.link_mp3)) return { type: 'voice', peerId, url: String(voice.link_ogg || voice.link_mp3), messageId };
+    if (text) return { type: 'text', peerId, text: text.slice(0, 4000), messageId };
+    if (atts.length) {
+      return { type: 'text', peerId, messageId, attachment: true,
+        text: '📎 ' + [...new Set(atts.map(a => VK_ATT[a?.type] ?? 'вложение'))].join(', ') };
+    }
+    return { type: 'skip' };
+  }
+  if (body?.type === 'message_reply') {
+    const m = body.object;
+    const peerId = Number(m?.peer_id);
+    if (!m || !peerId || peerId >= 2e9) return { type: 'skip' };
+    return { type: 'reply', peerId, text: String(m.text ?? '').slice(0, 4000), messageId: String(m.id ?? ''), manual: !!m.admin_author_id };
+  }
+  return { type: 'skip' };
+}
+
+// Клавиатура в стиле Telegram → встроенная клавиатура ВКонтакте. Там не
+// больше 10 кнопок и 6 рядов, подпись — до 40 знаков; лишнее раскладываем
+// по две в ряд. Кнопка-ссылка — open_link, остальные шлют payload {b: …}.
+export function vkKeyboard(kb?: Keyboard): string {
+  if (!kb) return '';
+  const all = kb.inline_keyboard.flat().slice(0, 10);
+  let rows = kb.inline_keyboard;
+  if (rows.length > 6 || rows.flat().length > 10) {
+    rows = [];
+    for (let i = 0; i < all.length; i += 2) rows.push(all.slice(i, i + 2));
+  }
+  return JSON.stringify({ inline: true, buttons: rows.map(r => r.map(b => b.url
+    ? { action: { type: 'open_link', link: b.url, label: b.text.slice(0, 40) } }
+    : { action: { type: 'text', label: b.text.slice(0, 40), payload: JSON.stringify({ b: b.callback_data ?? '' }) },
+        color: b.callback_data === 'm:brief' ? 'primary' : 'secondary' })) });
 }
 
 // Бриф: шаги 0, 2, 4, 5 — свободный ответ; 1 и 3 — кнопки.

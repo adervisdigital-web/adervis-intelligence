@@ -3,7 +3,9 @@
 // от OTR, где отправку мог вызвать любой, знающий номер лида.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
-import { admin, secret, settings, tgApi, tgSend, addMessage, json, CORS, SUPABASE_URL, PUBLIC_KEY, type Sb } from '../_shared/outreach.ts';
+import {
+  admin, secret, settings, tgApi, tgSend, addMessage, json, CORS, SUPABASE_URL, PUBLIC_KEY, vkApi, vkChannel, VK_V, type Sb
+} from '../_shared/outreach.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -22,6 +24,7 @@ Deno.serve(async (req) => {
     switch (body?.action) {
       case 'status': return json(await status(sb));
       case 'tg-connect': return json(await tgConnect(sb));
+      case 'vk-connect': return json(await vkConnect(sb));
       case 'link-code': return json(await linkCode(sb));
       case 'send': return json(await send(sb, String(body.prospectId ?? ''), String(body.text ?? ''), me.email ?? ''));
       case 'read': await sb.from('prospects').update({ unread: 0 }).eq('id', String(body.prospectId ?? '')); return json({ ok: true });
@@ -52,11 +55,72 @@ async function status(sb: Sb) {
       lastError: info?.result?.last_error_message ?? '', lastErrorAt: info?.result?.last_error_date ?? 0
     };
   }
-  return {
-    ok: true, telegram, manager: !!cfg.manager_chat_id,
-    vk: { token: has.has('vk_token'), confirmation: has.has('vk_confirmation') },
-    instagram: { token: has.has('ig_page_token') }
-  };
+  let vk: Record<string, unknown> = { token: has.has('vk_token'), connected: false };
+  if (has.has('vk_token') && cfg.vk_community_id) {
+    const tok = await secret(sb, 'vk_token');
+    const [g, list] = await Promise.all([vkGroup(tok, cfg.vk_community_id), vkServers(tok, Number(cfg.vk_community_id))]);
+    const mine = list.items.find((x: any) => x.url === VK_URL);
+    vk = { token: true, connected: mine?.status === 'ok', status: mine?.status ?? 'none', name: g?.name ?? '', screen: g?.screen_name ?? '',
+      others: list.items.filter((x: any) => x !== mine).map((x: any) => hostOf(x.url)), error: list.error };
+  }
+  return { ok: true, telegram, manager: !!cfg.manager_chat_id, vk, instagram: { token: has.has('ig_page_token') } };
+}
+
+// --------------------------------------------------------------- ВКонтакте
+// Подключение одним действием: ключ сообщества с доступом к управлению и
+// сообщениям — и дальше всё настраивается само: сообщения и кнопки бота в
+// сообществе, адрес для событий, его подтверждение и секрет.
+const VK_URL = `${SUPABASE_URL}/functions/v1/vk-bot`;
+const hostOf = (u: string) => { try { return new URL(u).host; } catch { return String(u).slice(0, 60); } };
+const vkErr = (r: any, fallback: string) => r?.error?.error_code === 15 || r?.error?.error_code === 27
+  ? fallback : `${fallback} (ВКонтакте: ${r?.error?.error_msg ?? 'нет ответа'})`;
+
+async function vkGroup(tok: string, id?: number) {
+  const r = await vkApi(tok, 'groups.getById', id ? { group_id: id } : {});
+  return (r?.response?.groups ?? r?.response ?? [])[0] ?? null;
+}
+async function vkServers(tok: string, gid: number) {
+  const r = await vkApi(tok, 'groups.getCallbackServers', { group_id: gid });
+  return { items: r?.response?.items ?? [], error: r?.error?.error_msg ?? '' };
+}
+
+async function vkConnect(sb: Sb) {
+  const tok = await secret(sb, 'vk_token');
+  if (!tok) throw new Error('Сначала вставьте ключ сообщества');
+  const group = await vkGroup(tok);
+  if (!group?.id) throw new Error('ВКонтакте не принял ключ — нужен ключ сообщества, а не личный');
+  const gid = Number(group.id);
+  const NO_MANAGE = 'У ключа нет доступа к управлению сообществом — создайте ключ заново и отметьте «Управление сообществом»';
+  const conf = await vkApi(tok, 'groups.getCallbackConfirmationCode', { group_id: gid });
+  if (!conf?.response?.code) throw new Error(vkErr(conf, NO_MANAGE));
+  const vkSecret = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+  await sb.from('channel_secrets').upsert([
+    { name: 'vk_confirmation', value: String(conf.response.code) }, { name: 'vk_secret', value: vkSecret }
+  ]);
+  await sb.from('outreach_settings').update({ vk_community_id: gid }).eq('id', 'main');
+  // сообщения сообщества и кнопки бота; кнопка «Начать» в новом диалоге
+  await vkApi(tok, 'groups.setSettings', { group_id: gid, messages: 1, bot_capabilities: 1, bot_start_button: 1 });
+
+  const { items } = await vkServers(tok, gid);
+  let serverId = items.find((x: any) => x.url === VK_URL)?.id;
+  if (serverId) {
+    const r = await vkApi(tok, 'groups.editCallbackServer', { group_id: gid, server_id: serverId, url: VK_URL, title: 'Intelligence', secret_key: vkSecret });
+    if (r?.error) throw new Error(vkErr(r, NO_MANAGE));
+  } else {
+    const r = await vkApi(tok, 'groups.addCallbackServer', { group_id: gid, url: VK_URL, title: 'Intelligence', secret_key: vkSecret });
+    serverId = r?.response?.server_id;
+    if (!serverId) throw new Error(vkErr(r, NO_MANAGE));
+  }
+  const set = await vkApi(tok, 'groups.setCallbackSettings', { group_id: gid, server_id: serverId, api_version: VK_V, message_new: 1, message_reply: 1 });
+  if (set?.error) throw new Error(vkErr(set, NO_MANAGE));
+  // ВКонтакте сам проверяет адрес строкой подтверждения — ждём до десяти секунд
+  let status = '';
+  for (let i = 0; i < 5 && status !== 'ok' && status !== 'failed'; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    status = (await vkServers(tok, gid)).items.find((x: any) => x.id === serverId)?.status ?? '';
+  }
+  return { ok: true, name: group.name, screen: group.screen_name, status,
+    others: items.filter((x: any) => x.url !== VK_URL).map((x: any) => hostOf(x.url)) };
 }
 
 // Подключение: ключ проверяется у Telegram, бот подписывается на сообщения
@@ -103,6 +167,12 @@ async function send(sb: Sb, prospectId: string, text: string, email: string) {
     const r = await tgSend(tok, Number(p.tg_chat_id), text);
     if (!r?.ok) throw new Error(/blocked/i.test(r?.description ?? '') ? 'Клиент заблокировал бота' : 'Telegram не доставил: ' + (r?.description ?? ''));
     channel = 'Telegram'; external = String(r.result?.message_id ?? '');
+  } else if (p.vk_peer_id) {
+    const tok = await secret(sb, 'vk_token');
+    if (!tok) throw new Error('ВКонтакте не подключён');
+    const id = await vkChannel(tok).send(Number(p.vk_peer_id), text);
+    if (id === null) throw new Error('ВКонтакте не доставил сообщение — возможно, человек запретил сообщения от сообщества');
+    channel = 'ВКонтакте'; external = id;
   } else {
     throw new Error('У этого контакта нет переписки в подключённых каналах');
   }

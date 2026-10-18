@@ -214,7 +214,10 @@ const fake = (seedData) => {
       if (window.__CHFAIL__) throw new Error(window.__CHFAIL__);
       const sec = window.__SECRETS__ || {};
       if (payload.action === 'status') {
-        return { ok: true, manager: !!state.outreach.manager_chat_id, vk: {}, instagram: {},
+        const vkOn = !!window.__VKCONNECTED__;
+        return { ok: true, manager: !!state.outreach.manager_chat_id, instagram: {},
+          vk: { token: !!sec.vk_token, connected: vkOn, status: vkOn ? 'ok' : 'none', name: vkOn ? 'ADERVIS Digital' : '', screen: vkOn ? 'adervis_digital' : '',
+            others: vkOn ? ['efepnuuxtzwzygwipgxt.supabase.co'] : [] },
           telegram: { token: !!sec.tg_bot_token, connected: !!window.__TGCONNECTED__, username: state.outreach.tg_bot_username, pending: 0, lastError: '' } };
       }
       if (payload.action === 'tg-connect') {
@@ -222,6 +225,12 @@ const fake = (seedData) => {
         window.__TGCONNECTED__ = true;
         state.outreach.tg_bot_username = 'adervis_hello_bot';
         return { ok: true, username: 'adervis_hello_bot' };
+      }
+      if (payload.action === 'vk-connect') {
+        if (!sec.vk_token) throw new Error('Сначала вставьте ключ сообщества');
+        window.__VKCONNECTED__ = true;
+        state.outreach.vk_community_id = 123;
+        return { ok: true, name: 'ADERVIS Digital', screen: 'adervis_digital', status: 'ok', others: ['efepnuuxtzwzygwipgxt.supabase.co'] };
       }
       if (payload.action === 'link-code') return { ok: true, code: '123456', username: state.outreach.tg_bot_username };
       const p = state.prospects.find(x => x.id === payload.prospectId);
@@ -1724,6 +1733,17 @@ await page.click('[data-action=tglink]');
 await page.waitForSelector('#chbody a.btnlink');
 check('ссылка для уведомлений менеджеру ведёт в бота с кодом', (await page.getAttribute('#chbody a.btnlink', 'href')) === 'https://t.me/adervis_hello_bot?start=link_123456'
   && (await page.textContent('#chbody')).includes('/link 123456'));
+// ВКонтакте: ключ сообщества — и всё остальное настраивается само
+await page.fill('#vkkey', 'abc');
+await page.click('#vkkeyf button');
+check('ВК: не ключ — на сервер не уходит', (await page.textContent('#vkerr')).includes('не похоже') && !(await page.evaluate(() => window.__SECRETS__.vk_token)));
+const fakeVk = 'vk1.a.' + 'y'.repeat(60);
+await page.fill('#vkkey', fakeVk);
+await page.click('#vkkeyf button');
+await page.waitForFunction(() => document.querySelector('#chbody')?.textContent.includes('ADERVIS Digital'));
+check('ВК: ключ записан, сообщество подключено одним действием', (await page.evaluate(() => window.__SECRETS__.vk_token)) === fakeVk
+  && await page.evaluate(() => window.__CHANNELS__.some(c => c.action === 'vk-connect')) && (await page.inputValue('#vkkey')) === '');
+check('ВК: другие адреса для событий в сообществе показаны', (await page.textContent('#chbody')).includes('efepnuuxtzwzygwipgxt'));
 await page.click('#modal [data-action=close]');
 check('пустой раздел показывает подключённого бота', (await page.textContent('.dlgempty')).includes('@adervis_hello_bot'));
 

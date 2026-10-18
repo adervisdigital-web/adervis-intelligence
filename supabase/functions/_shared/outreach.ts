@@ -2,7 +2,10 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { providerRequest, providerText, modelAttempts, RETRY_STATUS, TRUSTED_STATUS, type Provider } from '../ai-write/compose.ts';
-import type { Fact, Keyboard } from './bot.ts';
+import { vkKeyboard, type Fact, type Keyboard } from './bot.ts';
+import { addMessage, history, type Channel, type Deps } from './flow.ts';
+
+export { addMessage, history };
 
 export const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 export const PUBLIC_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY');
@@ -43,23 +46,6 @@ export async function tgSend(tok: string, chatId: number, text: string, keyboard
   const r = await tgApi(tok, 'sendMessage', body);
   if (!r?.ok) console.error('tgSend:', r?.description);
   return r;
-}
-
-export async function addMessage(sb: Sb, row: {
-  prospect_id: string; channel: string; direction: 'in' | 'out'; text: string;
-  author?: string; kind?: string; meta?: Record<string, unknown>; external_id?: string;
-}) {
-  const { error } = await sb.from('messages').insert({
-    prospect_id: row.prospect_id, channel: row.channel, direction: row.direction, text: row.text.slice(0, 8000),
-    author: (row.author ?? '').slice(0, 120), kind: row.kind ?? 'text', meta: row.meta ?? {}, external_id: row.external_id ?? ''
-  });
-  if (error) console.error('addMessage:', error.message);
-}
-
-export async function history(sb: Sb, prospectId: string, n = 8): Promise<{ in: boolean; text: string }[]> {
-  const { data } = await sb.from('messages').select('direction,text').eq('prospect_id', prospectId)
-    .order('created_at', { ascending: false }).limit(n);
-  return (data ?? []).reverse().map((m: any) => ({ in: m.direction === 'in', text: String(m.text ?? '') }));
 }
 
 // Факты для ответов клиенту — только публичные и проверенные, как у черновиков.
@@ -114,20 +100,29 @@ export const AI_IS_GEMINI = PROVIDER === 'gemini' && !!AI_KEY;
 // Голосовое → текст. Умеет только Gemini; у других провайдеров просим написать.
 export async function transcribe(tok: string, fileId: string): Promise<string> {
   if (!AI_IS_GEMINI) return '';
+  const f = await tgApi(tok, 'getFile', { file_id: fileId }).catch(() => null);
+  const path = f?.result?.file_path;
+  if (!path || Number(f?.result?.file_size ?? 0) > 8_000_000) return '';
+  return transcribeUrl(`https://api.telegram.org/file/bot${tok}/${path}`);
+}
+
+// Голосовое ВКонтакте приходит ссылкой на файл. Скачиваем только с серверов
+// Telegram и ВКонтакте — чужой адрес сюда попасть не должен.
+const AUDIO_HOSTS = /^https:\/\/([\w-]+\.)*(telegram\.org|userapi\.com|vkuseraudio\.net|vkuser\.net|vk\.com|vk\.me)\//;
+export async function transcribeUrl(url: string): Promise<string> {
+  if (!AI_IS_GEMINI || !AUDIO_HOSTS.test(url)) return '';
   try {
-    const f = await tgApi(tok, 'getFile', { file_id: fileId });
-    const path = f?.result?.file_path;
-    if (!path || Number(f?.result?.file_size ?? 0) > 8_000_000) return '';
-    const dl = await fetch(`https://api.telegram.org/file/bot${tok}/${path}`, { signal: AbortSignal.timeout(20_000) });
+    const dl = await fetch(url, { signal: AbortSignal.timeout(20_000) });
     if (!dl.ok) return '';
     const bytes = new Uint8Array(await dl.arrayBuffer());
+    if (bytes.length > 8_000_000) return '';
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     const base = AI_BASE || 'https://generativelanguage.googleapis.com/v1beta';
     const res = await fetch(`${base}/models/${MODEL}:generateContent?key=${encodeURIComponent(AI_KEY)}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(30_000),
       body: JSON.stringify({ contents: [{ parts: [
-        { inlineData: { mimeType: 'audio/ogg', data: btoa(bin) } },
+        { inlineData: { mimeType: /\.mp3(\?|$)/.test(url) ? 'audio/mpeg' : 'audio/ogg', data: btoa(bin) } },
         { text: 'Точно транскрибируй голосовое сообщение на русском. Только текст, без пояснений и кавычек.' }
       ] }], generationConfig: { temperature: 0 } })
     });
@@ -142,4 +137,60 @@ export function sameSecret(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+// «Сегодня» по пермскому времени (UTC+5): ночная заявка не должна стать вчерашней.
+export const permToday = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
+
+// Всё, что нужно разговору бота: ИИ с дневным потолком, факты базы знаний,
+// уведомление менеджеру. Уведомления идут в Telegram с любого канала.
+export function botDeps(sb: Sb, actor: string, cfg: Record<string, any>, tgTok: string): Deps {
+  return {
+    sb,
+    ai: prompt => aiText(sb, prompt, actor),
+    aiAllowed: () => botAiAllowed(sb, actor),
+    facts: () => publicFacts(sb),
+    notify: async text => { if (tgTok && cfg.manager_chat_id) await tgSend(tgTok, Number(cfg.manager_chat_id), text); },
+    today: permToday
+  };
+}
+
+export function telegramChannel(tok: string): Channel {
+  return {
+    name: 'Telegram', key: 'tg_chat_id', source: 'Telegram-бот',
+    send: async (id, text, kb) => {
+      const r = await tgSend(tok, Number(id), text, kb);
+      return r?.ok ? String(r.result?.message_id ?? '') : null;
+    }
+  };
+}
+
+// ---------------------------------------------------------------- ВКонтакте
+export const VK_V = '5.199';
+
+export async function vkApi(tok: string, method: string, params: Record<string, string | number>): Promise<any> {
+  const body = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])), access_token: tok, v: VK_V });
+  const res = await fetch(`https://api.vk.com/method/${method}`, { method: 'POST', body, signal: AbortSignal.timeout(15_000) });
+  return res.json().catch(() => ({ error: { error_msg: `HTTP ${res.status}` } }));
+}
+
+export function vkChannel(tok: string): Channel {
+  return {
+    name: 'ВКонтакте', key: 'vk_peer_id', source: 'ВКонтакте-бот',
+    send: async (id, text, kb) => {
+      const params: Record<string, string | number> = {
+        peer_id: Number(id), message: text.slice(0, 4096), random_id: crypto.getRandomValues(new Uint32Array(1))[0] % 2147483647
+      };
+      const k = vkKeyboard(kb);
+      if (k) params.keyboard = k;
+      const r = await vkApi(tok, 'messages.send', params);
+      if (r?.error) { console.error('vk send:', r.error.error_code, r.error.error_msg); return null; }
+      return String(r?.response ?? '');
+    },
+    profile: async id => {
+      const r = await vkApi(tok, 'users.get', { user_ids: Number(id) });
+      const u = r?.response?.[0];
+      return u ? { name: `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim(), link: `https://vk.com/id${id}` } : null;
+    }
+  };
 }
