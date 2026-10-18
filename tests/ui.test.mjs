@@ -111,6 +111,16 @@ const fake = (seedData) => {
     ],
     channel_stats: [],
     survey_answers: [],
+    messages: [],
+    sales_scripts: [
+      { id: 's1-price', stage: 1, sort: 30, title: '[Сколько стоит?] Перевод в звонок', body: 'Зависит от задачи.\n\nДавайте так: {call} — {call_link}.', note: '',
+        _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' },
+      { id: 's0-partner', stage: 0, sort: 40, title: '[Любая площадка] Партнёрский заход', body: 'Добрый день! {rest} отлично подходит по формату.', note: 'Проверить: цифры',
+        _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
+    ],
+    outreach: { id: 'main', tg_bot_username: '', tg_welcome_text: '', tg_welcome_text_b: '', tg_ab_enabled: false, portfolio_text: '',
+      portfolio_videos: [], brief_questions: [], ai_enabled: true, ai_extra: '', quick_replies: ['Отлично!', 'Пришлю примеры'],
+      cta: { call: 'Созвон на 5 минут', call_link: '', brief: 'Короткий бриф', brief_link: '', meeting: 'Встреча' } },
     ad_texts: [
       { id: 'at-1', keyword_set_id: 'ks-envato', title: 'Envato Elements без подписки', body: 'Вставьте ссылку — получите оригинал.',
         long_text: '', status: 'В работе', note: '', sort: 10, _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' }
@@ -143,6 +153,39 @@ const fake = (seedData) => {
     left: 29
   };
   window.__failNext = () => { nextFails = true; };
+  // Переписка как на сервере: сообщение двигает «последнее» у компании.
+  const touchDialog = (p, m) => Object.assign(p, { last_message_at: m.created_at, last_text: m.text.slice(0, 160),
+    last_direction: m.direction, unread: m.direction === 'in' ? (p.unread || 0) + 1 : p.unread || 0 });
+  window.__incoming = (prospectId, text, extra = {}) => {
+    const p = state.prospects.find(x => x.id === prospectId);
+    const m = { id: 'm' + (state.messages.length + 1), prospect_id: prospectId, channel: 'Telegram', direction: 'in', author: p.name,
+      kind: 'text', text, meta: {}, external_id: '', created_at: new Date(Date.now() + state.messages.length).toISOString(), ...extra };
+    state.messages.push(m);
+    touchDialog(p, m);
+  };
+  window.__seedDialogs = () => {
+    const at = new Date(Date.now() - 4 * 36e5).toISOString();
+    state.prospects.push(
+      { id: 'tg-ivan', name: 'Иван', city: 'Пермь', category: 'Кофейня у реки', address: '', website: '', phone: '+7 900 000-00-00', email: '',
+        socials: 'https://t.me/ivan_coffee', direction: 'Студия', source: 'Telegram-бот', status: 'Заявка', external_id: '', lead_id: 'l3', note: '',
+        magnet_id: null, next_on: null, lost_reason: '', tg_chat_id: 111, bot_mode: 'human', unread: 0, _at: at, _by: null },
+      { id: 'tg-olga', name: 'Ольга', city: '', category: '', address: '', website: '', phone: '', email: '', socials: '', direction: 'Студия',
+        source: 'Telegram-бот', status: 'Ответили', external_id: '', lead_id: null, note: '', magnet_id: null, next_on: null, lost_reason: '',
+        tg_chat_id: 222, bot_mode: 'bot', unread: 0, _at: at, _by: null });
+    const add = (id, direction, text, minutesAgo, extra = {}) => {
+      const m = { id: 'm' + (state.messages.length + 1), prospect_id: id, channel: 'Telegram', direction, author: direction === 'in' ? '' : 'бот',
+        kind: 'text', text, meta: {}, external_id: '', created_at: new Date(Date.now() - minutesAgo * 6e4).toISOString(), ...extra };
+      state.messages.push(m);
+      touchDialog(state.prospects.find(x => x.id === id), m);
+    };
+    add('tg-olga', 'in', 'Здравствуйте, сколько стоит ролик?', 300);
+    add('tg-olga', 'out', 'Здравствуйте! Ролики — от 15 000 ₽. Рассказать подробнее?', 299, { author: 'ИИ', kind: 'ai' });
+    add('tg-ivan', 'in', '/start', 260);
+    add('tg-ivan', 'out', 'Здравствуйте! Это помощник студии ADERVIS.', 259, { kind: 'system' });
+    add('tg-ivan', 'in', '📋 Оставить заявку', 258, { kind: 'button' });
+    add('tg-ivan', 'in', '📋 Заявка заполнена', 250, { kind: 'brief_complete', meta: { brief: { business: 'Кофейня у реки', format: 'Клипы / Reels', city: 'Пермь', budget: 'до 30 000 ₽', name: 'Иван', contact: '+7 900 000-00-00' } } });
+    add('tg-ivan', 'in', 'Подробности на https://coffee.example/menu. Когда сможете снять?', 240);
+  };
   // правка «вторым руководителем», пока окно открыто
   window.__otherEdits = (table, id, title) => {
     const row = state[table].find(x => x.id === id);
@@ -151,6 +194,49 @@ const fake = (seedData) => {
   };
 
   window.__INTEL_API__ = {
+    pollMs: 300,
+    async messages(prospectId, since) {
+      return clone(state.messages.filter(m => m.prospect_id === prospectId && (!since || m.created_at > since))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at)));
+    },
+    async dialogsSince(since) {
+      return clone(state.prospects.filter(p => p.last_message_at && Date.parse(p.last_message_at) > Date.parse(since)));
+    },
+    async saveOutreach(o) {
+      boom();
+      Object.assign(state.outreach, clone(o));
+      log('update', 'outreach_settings', { id: 'main' });
+      return clone(state.outreach);
+    },
+    async setChannelSecret(name, value) { window.__SECRETS__ = { ...(window.__SECRETS__ || {}), [name]: value }; },
+    async channels(payload) {
+      (window.__CHANNELS__ ||= []).push(clone(payload));
+      if (window.__CHFAIL__) throw new Error(window.__CHFAIL__);
+      const sec = window.__SECRETS__ || {};
+      if (payload.action === 'status') {
+        return { ok: true, manager: !!state.outreach.manager_chat_id, vk: {}, instagram: {},
+          telegram: { token: !!sec.tg_bot_token, connected: !!window.__TGCONNECTED__, username: state.outreach.tg_bot_username, pending: 0, lastError: '' } };
+      }
+      if (payload.action === 'tg-connect') {
+        if (!sec.tg_bot_token) throw new Error('Сначала вставьте ключ бота от @BotFather');
+        window.__TGCONNECTED__ = true;
+        state.outreach.tg_bot_username = 'adervis_hello_bot';
+        return { ok: true, username: 'adervis_hello_bot' };
+      }
+      if (payload.action === 'link-code') return { ok: true, code: '123456', username: state.outreach.tg_bot_username };
+      const p = state.prospects.find(x => x.id === payload.prospectId);
+      if (payload.action === 'read') { p.unread = 0; return { ok: true }; }
+      if (payload.action === 'mode') { p.bot_mode = payload.mode; return { ok: true, mode: payload.mode }; }
+      if (payload.action === 'send') {
+        const m = { id: 'm' + (state.messages.length + 1), prospect_id: p.id, channel: 'Telegram', direction: 'out', author: session,
+          kind: 'text', text: payload.text, meta: {}, external_id: '', created_at: new Date(Date.now() + state.messages.length).toISOString() };
+        state.messages.push(m);
+        touchDialog(p, m);
+        Object.assign(p, { unread: 0, bot_mode: 'human', status: ['Найден', 'Изучили'].includes(p.status) ? 'Написали' : p.status });
+        return { ok: true, channel: 'Telegram' };
+      }
+      throw new Error('Неизвестное действие');
+    },
     async user() { return session ? { email: session } : null; },
     async signIn(email, password) {
       if (password !== 'secret') { const e = new Error('Invalid login credentials'); throw e; }
@@ -332,7 +418,7 @@ check('с плитки можно уйти в её раздел',
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textContent));
 check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 20,
+check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 21,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
 check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
@@ -1601,6 +1687,129 @@ await nav('survey');
 check('после обновления ответы на месте', await page.$eval('.sq[data-q="1.1"] input[data-i="0"]', i => i.checked) && await page.$eval('.sq[data-q="1.1"]', c => c.classList.contains('answered')));
 await page.screenshot({ path: path.join(OUT, 'intel-survey.png') });
 
+// --- 5х. диалоги: бот для клиентов, переписка, скрипты
+await nav('dialogs');
+check('«Диалоги» — в группе «Продажи»', await page.$eval('#nav .navsection[data-group="Продажи"]', s => !!s.querySelector('[data-page=dialogs]')));
+check('без бота — предложение подключить Telegram', await page.isVisible('.dlgempty [data-action=dlgchannels]'));
+await page.click('.dlgempty [data-action=dlgchannels]');
+await page.waitForSelector('#tgkeyf');
+check('каналы: Telegram не подключён', (await page.textContent('#chbody')).includes('Не подключён'));
+check('поле ключа скрывает символы', (await page.getAttribute('#tgkey', 'type')) === 'password');
+await page.fill('#tgkey', 'не ключ');
+await page.click('#tgkeyf button');
+check('неверный ключ не уходит на сервер', (await page.textContent('#tgerr')).includes('не похоже') && !(await page.evaluate(() => window.__SECRETS__)));
+const fakeKey = '7700000000:AAE' + 'x'.repeat(32);
+await page.fill('#tgkey', fakeKey);
+await page.click('#tgkeyf button');
+await page.waitForFunction(() => document.querySelector('#chbody')?.textContent.includes('@adervis_hello_bot'));
+check('ключ записан в хранилище ключей и бот подключён', (await page.evaluate(() => window.__SECRETS__.tg_bot_token)) === fakeKey
+  && (await page.textContent('#chbody')).includes('Работает'));
+check('ключ не остался ни в поле, ни в данных приложения', (await page.inputValue('#tgkey')) === ''
+  && !(await page.evaluate(k => JSON.stringify(window.__STATE__).includes(k), fakeKey)));
+await page.click('[data-action=tglink]');
+await page.waitForSelector('#chbody a.btnlink');
+check('ссылка для уведомлений менеджеру ведёт в бота с кодом', (await page.getAttribute('#chbody a.btnlink', 'href')) === 'https://t.me/adervis_hello_bot?start=link_123456'
+  && (await page.textContent('#chbody')).includes('/link 123456'));
+await page.click('#modal [data-action=close]');
+check('пустой раздел показывает подключённого бота', (await page.textContent('.dlgempty')).includes('@adervis_hello_bot'));
+
+// приходят переписки
+await page.evaluate(() => window.__seedDialogs());
+await page.click('#refresh');
+await page.waitForSelector('.dlgitem');
+check('диалоги по свежести: сверху тот, кто писал последним', await page.$$eval('.dlgtext b', bs => bs[0].textContent === 'Иван' && bs[1].textContent === 'Ольга'));
+check('непрочитанные — числом у диалога', (await page.textContent('.dlgitem[data-dlg=tg-ivan] .dlgun')) === '4');
+check('счётчик «Диалогов» в меню — сколько ждут ответа, просрочено', await page.$eval('#nav button[data-page=dialogs] .navbadge', b => !b.hidden && b.textContent === '1' && b.classList.contains('late')));
+await page.click('[data-action=dlgfilter][data-id="Ведёт бот"]');
+check('фильтр «Ведёт бот»', await page.$$eval('.dlgitem', is => is.length === 1 && is[0].dataset.dlg === 'tg-olga'));
+await page.click('[data-action=dlgfilter][data-id="Все"]');
+await page.click('.dlgitem[data-dlg=tg-ivan]');
+await page.waitForSelector('.dlgchat .bubble');
+check('переписка: сообщения клиента и бота', (await page.$$('.dlgmsgs .bubble.in')).length >= 2 && (await page.$$('.dlgmsgs .bubble.out.auto')).length === 1);
+check('нажатая кнопка показана как кнопка', (await page.textContent('.bubble.tap')).includes('Кнопка: «📋 Оставить заявку»'));
+check('заполненная анкета — карточкой со ссылкой на заявку', (await page.textContent('.briefmsg')).includes('Кофейня у реки') && await page.isVisible('.briefmsg [data-action=openlead]'));
+check('ссылка в сообщении кликабельна и безопасна', (await page.getAttribute('.dlgmsgs a[href^="https://coffee"]', 'href')) === 'https://coffee.example/menu'
+  && (await page.getAttribute('.dlgmsgs a[href^="https://coffee"]', 'rel')).includes('noopener'));
+check('бот в этом диалоге выключен', (await page.textContent('[data-action=dlgmode]')).includes('Бот выключен'));
+await page.click('[data-action=dlgquick][data-id="1"]');
+check('быстрый ответ встаёт в поле, а не уходит сразу', (await page.inputValue('#dlgtext')) === 'Пришлю примеры' && !(await page.evaluate(() => (window.__CHANNELS__ || []).some(c => c.action === 'send'))));
+await page.fill('#dlgtext', '');
+await page.click('[data-action=dlgscript]');
+await page.waitForSelector('.scriptitem');
+check('скрипты по этапам, незаданная ссылка — предупреждение', (await page.textContent('#modal')).includes('Ответы на вопросы') && (await page.textContent('#modal .notice')).includes('ссылка на созвон'));
+await page.click('.scriptitem[data-id=s1-price]');
+check('скрипт подставлен: {call} заменён, {call_link} виден', (await page.inputValue('#dlgtext')).includes('Созвон на 5 минут — {call_link}'));
+await page.fill('#dlgtext', 'Иван, сможем снять в четверг. Удобно?');
+await page.keyboard.press('Control+Enter');
+await page.waitForFunction(() => window.__STATE__.messages.some(m => m.direction === 'out' && m.text.startsWith('Иван, сможем')));
+await page.waitForFunction(() => [...document.querySelectorAll('.dlgmsgs .bubble.out')].some(b => b.textContent.includes('сможем снять')));
+check('ответ ушёл через сервер и виден в переписке', (await page.evaluate(() => window.__CHANNELS__.find(c => c.action === 'send'))).prospectId === 'tg-ivan'
+  && (await page.textContent('.dlgmsgs .bubble.out:last-of-type small')).includes('Артём'));
+check('поле очистилось, отметка «ждёт ответа» снята', (await page.inputValue('#dlgtext')) === '' && !(await page.$('.dlgitem[data-dlg=tg-ivan] .dlgwaiting'))
+  && await page.$eval('#nav button[data-page=dialogs] .navbadge', b => b.hidden));
+// клиент отвечает, пока диалог открыт: сообщение приходит само и сразу прочитано
+await page.fill('#dlgtext', 'черновик ответа');
+await page.evaluate(() => window.__incoming('tg-ivan', 'Да, в четверг удобно'));
+await page.waitForFunction(() => [...document.querySelectorAll('.dlgmsgs .bubble.in')].some(b => b.textContent.includes('в четверг удобно')), null, { timeout: 5000 });
+await page.waitForFunction(() => window.__STATE__.prospects.find(p => p.id === 'tg-ivan').unread === 0, null, { timeout: 5000 });
+check('новое сообщение появилось само и отмечено прочитанным', true);
+check('набранный ответ не стёрся при обновлении', (await page.inputValue('#dlgtext')) === 'черновик ответа');
+// чужой диалог: непрочитанные видны в списке
+await page.evaluate(() => window.__incoming('tg-olga', 'А сроки какие?'));
+await page.waitForSelector('.dlgitem[data-dlg=tg-olga] .dlgun', { timeout: 5000 });
+check('у другого диалога — счётчик непрочитанных', (await page.textContent('.dlgitem[data-dlg=tg-olga] .dlgun')) === '1');
+await page.click('.dlgitem[data-dlg=tg-olga]');
+await page.waitForFunction(() => window.__STATE__.prospects.find(p => p.id === 'tg-olga').unread === 0);
+check('ответ ИИ подписан', (await page.textContent('.dlgmsgs .bubble.out.auto small')).includes('ИИ-помощник'));
+await page.click('[data-action=dlgmode]');
+await page.waitForFunction(() => window.__STATE__.prospects.find(p => p.id === 'tg-olga').bot_mode === 'human');
+check('бота можно выключить в диалоге', (await page.textContent('[data-action=dlgmode]')).includes('Бот выключен'));
+await page.click('[data-action=dlgmode]');
+await page.waitForFunction(() => window.__STATE__.prospects.find(p => p.id === 'tg-olga').bot_mode === 'bot');
+await page.screenshot({ path: path.join(OUT, 'intel-dialogs.png') });
+
+// тексты бота
+await page.click('[data-action=dlgbot]');
+await page.fill('#bbrief', 'Раз\nДва\nТри');
+await page.click('#botf button.primary');
+check('анкета бота — ровно шесть вопросов', (await page.textContent('#boterr')).includes('ровно шесть'));
+await page.fill('#bbrief', '');
+await page.fill('#bquick', 'Отлично!\nПозвоню через час');
+await page.fill('#bcalllink', 'https://t.me/adervis_artem');
+await page.check('#botf [name=tg_ab_enabled]');
+await page.fill('#bwelcomeb', 'Привет! Помощник ADERVIS на связи.');
+await page.click('#botf button.primary');
+await page.waitForFunction(() => window.__STATE__.outreach.cta.call_link === 'https://t.me/adervis_artem');
+const out = (await state()).outreach;
+check('тексты бота сохранены', out.tg_ab_enabled === true && out.quick_replies[1] === 'Позвоню через час' && out.brief_questions.length === 0);
+check('новый быстрый ответ — в переписке', (await page.textContent('.dlgquick')).includes('Позвоню через час'));
+check('правка текстов бота — в журнале', (await state()).activity.some(a => a.entity === 'outreach_settings'));
+
+// скрипты
+await page.click('[data-action=dlgscripts]');
+await page.click('[data-action=dlgscriptnew][data-id="2"]');
+await page.fill('#sctitle', '[Дорого] Минимальный вход');
+await page.fill('#scbody', 'Начнём с одного ролика для {rest}: {call} — {call_link}');
+await page.click('#scf button.primary');
+await page.waitForFunction(() => window.__STATE__.sales_scripts.some(s => s.title === '[Дорого] Минимальный вход'));
+check('новый скрипт сохранён на нужном этапе', (await state()).sales_scripts.find(s => s.title === '[Дорого] Минимальный вход').stage === 2
+  && (await page.textContent('#modal')).includes('[Дорого] Минимальный вход'));
+await page.click('#modal [data-action=close]');
+await page.click('[data-action=dlgscript]');
+await page.click('.scriptitem:has-text("Минимальный вход")');
+check('скрипт берёт ссылку на созвон из текстов бота', (await page.inputValue('#dlgtext')).includes('Созвон на 5 минут — https://t.me/adervis_artem')
+  && (await page.inputValue('#dlgtext')).includes('для вашего заведения'));
+await page.fill('#dlgtext', '');
+
+// «На сегодня» зовёт ответить
+await page.evaluate(() => window.__incoming('tg-ivan', 'Вы тут?'));
+await page.waitForFunction(() => document.querySelector('#nav button[data-page=dialogs] .navbadge')?.hidden === false, null, { timeout: 5000 });
+await nav('home');
+check('«На сегодня»: клиент ждёт ответа', (await page.textContent('.todaycard')).includes('Ждёт ответа в Telegram'));
+await page.click('.todayrow[data-id="dl:tg-ivan"]');
+await page.waitForSelector('.dlgchat');
+check('из «На сегодня» — сразу в переписку', (await page.textContent('#crumb')) === 'Диалоги' && (await page.textContent('.dlgwho b')) === 'Иван');
+
 // --- 6. задачи
 await nav('tasks');
 await page.check('input[data-task=t1]');
@@ -2356,10 +2565,27 @@ const hit = await m.evaluate(() => {
 });
 check('на телефоне меню поверх верхней панели', hit === 'sidebar');
 
+// диалоги на телефоне: список и переписка — по очереди
+await m.evaluate(() => document.body.classList.remove('menu'));
+await m.evaluate(() => window.__seedDialogs());
+await m.click('#refresh');
+await m.click('#tabbar button[data-page=dialogs]');
+await m.waitForSelector('.dlgitem');
+check('«Диалоги» — в нижней панели', (await m.textContent('#crumb')) === 'Диалоги');
+await m.click('.dlgitem[data-dlg=tg-ivan]');
+await m.waitForSelector('.dlgchat .bubble');
+check('на телефоне переписка открывается на весь экран', await m.isHidden('.dlglist') && await m.isVisible('.dlgback') && await m.isVisible('#dlgtext'));
+check('поле ответа — над нижней панелью', await m.evaluate(() =>
+  document.querySelector('#dlgsend').getBoundingClientRect().bottom <= document.querySelector('#tabbar').getBoundingClientRect().top));
+await m.screenshot({ path: path.join(OUT, 'intel-mobile-dialog.png') });
+await m.click('.dlgback');
+check('«назад» возвращает к списку', await m.isVisible('.dlglist') && await m.isHidden('.dlgchat'));
+await m.click('#tabbar button[data-page=home]');
+
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
 const sections = ['home', 'ads', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
-  'cases', 'content', 'prospects', 'magnets', 'keywords', 'survey', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
+  'cases', 'content', 'dialogs', 'prospects', 'magnets', 'keywords', 'survey', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {
   await m.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);

@@ -1378,3 +1378,102 @@ dialog .checkitem input,.checkitem input,dialog .aiplanrow input{width:18px;heig
 /* План развития: готовое приглушено, ближайшее подсвечено золотом. */
 .timeline .roadstage.done{border-left-color:var(--line);opacity:.8}
 .timeline .roadstage.next{border-left-color:var(--gold)}
+
+/* --- Диалоги --------------------------------------------------------------
+   Список слева, переписка справа; на телефоне — по очереди. Высота — по окну:
+   прокручиваются список и сообщения, а не вся страница. Свои сообщения —
+   золотом, ответы бота — пунктиром: видно, где писал человек. */
+.dialogs{display:grid;grid-template-columns:minmax(250px,340px) minmax(0,1fr);gap:16px;
+  height:max(460px,calc(100dvh - var(--dlg-top,220px) - 24px))}
+.dlglist{display:flex;flex-direction:column;gap:10px;padding:14px;min-height:0}
+.dlglist .filters{gap:6px}
+.dlgitems{flex:1;overflow:auto;display:grid;align-content:start;gap:2px;margin:0 -6px;padding:0 6px}
+.dlgitem{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;text-align:left;width:100%;
+  padding:10px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--ink)}
+.dlgitem:hover{border-color:var(--line);background:var(--bg)}
+.dlgitem.on{border-color:var(--gold);background:var(--gold-bg)}
+.dlgch{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--bg);color:var(--muted)}
+.dlgtext{min-width:0;display:grid;line-height:1.35}
+.dlgtext b,.dlgtext small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlgtext small i{font-style:normal}
+.dlgitem.unread .dlgtext small{color:var(--ink)}
+.dlgmeta{display:grid;justify-items:end;gap:4px}
+.dlgmeta small{font-size:11px;white-space:nowrap}
+.dlgun{min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:var(--gold);color:var(--ink-on-gold);font-size:11px;display:grid;place-items:center}
+.dlgwaiting{width:9px;height:9px;border-radius:50%;background:var(--gold)}
+.dlgchat{display:flex;flex-direction:column;padding:0;min-height:0;overflow:hidden}
+.dlgnone{align-items:center;justify-content:center}
+.dlghead{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.dlgwho{flex:1;min-width:0;display:grid;line-height:1.35}
+.dlgwho b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlgwho small{display:flex;gap:5px;align-items:center;white-space:nowrap;overflow:hidden}
+.dlgtools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.dlgtools .tag{margin:0}
+.dlgtools .chip{display:inline-flex;gap:5px;align-items:center}
+.dlgback{display:none}
+.dlgmsgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:8px;background:var(--bg)}
+.dlgwait{margin:auto;text-align:center}
+.dlgday{text-align:center;margin:8px 0 2px}
+.dlgday span{font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:2px 10px}
+.bubble{max-width:min(560px,82%);padding:9px 12px;border-radius:14px 14px 14px 4px;background:var(--panel);border:1px solid var(--line);align-self:flex-start;line-height:1.45}
+.bubble p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.bubble small{display:block;margin-top:3px;font-size:11px}
+.bubble .ic{vertical-align:-2px}
+.bubble.out{align-self:flex-end;border-radius:14px 14px 4px 14px;background:var(--gold-bg);border-color:color-mix(in srgb,var(--gold) 40%,var(--line))}
+.bubble.out small{text-align:right}
+.bubble.out.auto{background:var(--panel);border-style:dashed;border-color:var(--line)}
+.bubble.tap{background:transparent;border-style:dashed;font-size:13px}
+.bubble.tap p{color:var(--muted)}
+.briefmsg{align-self:stretch;max-width:none;border-color:var(--gold);border-radius:12px}
+.briefmsg > b{display:flex;gap:6px;align-items:center}
+.briefmsg .netfacts{margin:8px 0}
+.dlgform{border-top:1px solid var(--line);padding:10px 16px 12px;display:grid;gap:8px}
+.dlgquick{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
+.dlgquick .chip{white-space:nowrap;flex:none;display:inline-flex;gap:5px;align-items:center}
+.dlgcompose{display:flex;gap:8px;align-items:flex-end}
+.dlgcompose textarea{flex:1;min-width:0;min-height:46px;max-height:200px;resize:vertical;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit}
+.dlgcompose textarea:focus{border-color:var(--gold);outline:none}
+.dlgcompose .primary{display:inline-flex;gap:6px;align-items:center;min-height:46px}
+.dlghint{font-size:12px}
+.dlgempty{max-width:680px;text-align:left}
+.dlgempty h2{margin-bottom:8px}
+
+/* окна «Скрипты», «Тексты бота», «Каналы» */
+.scriptpick,.scriptlist{display:grid;gap:6px;margin-bottom:6px}
+.scriptitem{display:grid;gap:3px;text-align:left;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+.scriptitem:hover{border-color:var(--gold)}
+.scriptitem small,.scriptrow small{display:block;line-height:1.4}
+.scriptitem .tag{justify-self:start}
+.scriptrow{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.scriptrow > div{min-width:0}
+.scriptrow .chip{flex:none}
+dialog label.checkrow{display:flex;gap:10px;align-items:flex-start;color:var(--ink);font-size:14px;cursor:pointer}
+dialog label.checkrow input{width:18px;height:18px;flex:none;margin:2px 0 0;accent-color:var(--gold)}
+.channelcard{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:12px}
+.channelcard h3{display:flex;gap:8px;align-items:center}
+.channelcard .inlinerow{margin-top:8px}
+.channelcard code,.steps code{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px}
+.steps{margin:6px 0;padding-left:20px}
+.steps li{margin:4px 0}
+.btnlink{display:inline-flex;gap:6px;align-items:center;padding:10px 15px;border-radius:9px;background:var(--gold);color:var(--ink-on-gold) !important;font-weight:600;text-decoration:none}
+
+@media(max-width:900px){
+  .dialogs{grid-template-columns:minmax(0,1fr)}
+  .dialogs.open .dlglist,.dialogs:not(.open) .dlgchat{display:none}
+  #view:has(.dialogs.open) > .head{display:none}
+  .dlgback{display:grid;place-items:center;flex:none}
+  .dlgtools .tag{display:none}
+}
+@media(max-width:720px){
+  /* снизу — нижняя панель разделов */
+  .dialogs{height:max(360px,calc(100dvh - var(--dlg-top,160px) - 84px - env(safe-area-inset-bottom)))}
+  .dlgtools .chip span{display:none}
+  .briefmsg .netfacts{grid-template-columns:1fr 1fr}
+  .dlghead{padding:10px 12px;gap:8px}
+  .dlgmsgs{padding:12px}
+  .dlgform{padding:8px 12px 10px}
+  .dlgcompose .primary span{display:none}
+  .dlgcompose .primary{width:46px;justify-content:center;padding:0}
+  .bubble{max-width:88%}
+  .dlghint{display:none}
+}

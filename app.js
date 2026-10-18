@@ -26,7 +26,7 @@ function toast(text, ms = 3500) {
 // каждый на своей сетке и со своей толщиной линии.
 const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
 // Старые имена из кода приложения, чтобы не переписывать все вызовы.
-const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check' };
+const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat' };
 const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
 const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
@@ -73,9 +73,14 @@ const FIELDS = {
   channel_stats: ['id', 'network', 'month', 'reach', 'reach_nonsubs', 'reach_posts', 'reach_clips', 'views', 'likes', 'shares',
     'comments', 'subs', 'subs_in', 'subs_out', 'visitors', 'site_clicks', 'new_dialogs'],
   survey_answers: ['id', 'answer'],
-  lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch']
+  lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch'],
+  sales_scripts: ['id', 'stage', 'title', 'body', 'note', 'sort']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
+// Эти поля ведёт сервер — бот и переписка. Приложение их показывает, но не
+// отправляет обратно: иначе сохранение карточки затёрло бы сообщение,
+// пришедшее, пока она была открыта.
+const SERVER_FIELDS = { prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction'] };
 
 function toRow(table, o) {
   const row = {};
@@ -86,6 +91,7 @@ function toRow(table, o) {
 
 function fromRow(table, r) {
   const o = { _at: r.updated_at, _by: r.updated_by };
+  for (const f of SERVER_FIELDS[table] || []) o[f] = r[f];
   for (const f of FIELDS[table]) o[f] = r[f === 'date' ? DATE_COLUMN[table] : f];
   if (table === 'content') { o.date = r.publish_on || ''; o.url = r.url || ''; }
   return o;
@@ -137,7 +143,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats, survey] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats, survey, scripts, outreach] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -158,7 +164,9 @@ function createApi(cfg) {
         selectAll('keyword_sets', 'sort'),
         selectAll('ad_texts', 'sort'),
         selectAll('channel_stats', 'month'),
-        selectAll('survey_answers', 'id')
+        selectAll('survey_answers', 'id'),
+        selectAll('sales_scripts', 'sort'),
+        sb.from('outreach_settings').select('*').eq('id', 'main').maybeSingle().then(must)
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -177,9 +185,33 @@ function createApi(cfg) {
         ad_texts: adTexts.map(r => fromRow('ad_texts', r)),
         channel_stats: channelStats.map(r => fromRow('channel_stats', r)),
         survey_answers: survey.map(r => fromRow('survey_answers', r)),
+        sales_scripts: scripts.map(r => fromRow('sales_scripts', r)),
+        outreach: outreach || {},
         publications, ai, members, activity, accounts
       };
     },
+
+    // Переписка грузится по одному диалогу: сообщений много, и все сразу
+    // приложению не нужны. Последние 300 — с конца, новые — после отметки.
+    async messages(prospectId, since) {
+      if (since) {
+        return must(await sb.from('messages').select('*').eq('prospect_id', prospectId)
+          .gt('created_at', since).order('created_at').limit(300));
+      }
+      const rows = must(await sb.from('messages').select('*').eq('prospect_id', prospectId)
+        .order('created_at', { ascending: false }).limit(300));
+      return rows.reverse();
+    },
+    // Что изменилось в диалогах после отметки — лёгкий опрос, пока раздел открыт.
+    async dialogsSince(since) {
+      return must(await sb.from('prospects').select('*').gt('last_message_at', since)).map(r => fromRow('prospects', r));
+    },
+    async saveOutreach(o) {
+      return must(await sb.from('outreach_settings').update(o).eq('id', 'main').select().single());
+    },
+    // Ключ бота уходит в базу и обратно в браузер не возвращается никогда.
+    async setChannelSecret(name, value) { must(await sb.rpc('set_channel_secret', { p_name: name, p_value: value })); },
+    channels: payload => callFn('channels', payload),
 
     // Файлы лежат в закрытом хранилище: прямая ссылка без входа не работает.
     async uploadFile(record, file) {
@@ -242,7 +274,8 @@ let me = null;
 const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
-  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: [], channel_stats: [], survey_answers: []
+  prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: [], channel_stats: [], survey_answers: [],
+  sales_scripts: [], outreach: {}
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -263,7 +296,7 @@ let ai = {
 // выпустить контент, посчитать, вспомнить про компанию. Внутри группы — по
 // частоте обращения. Редкое («Система») свёрнуто, пока его не открыли.
 const SECTION_TITLE = {
-  home: 'Обзор', survey: 'Анкета', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
+  home: 'Обзор', survey: 'Анкета', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', dialogs: 'Диалоги', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
   cases: 'Кейсы', competitors: 'Конкуренты',
   content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
@@ -272,7 +305,7 @@ const SECTION_TITLE = {
 
 const NAV = [
   ['', ['home', 'survey']],
-  ['Продажи', ['leads', 'prospects', 'magnets']],
+  ['Продажи', ['leads', 'dialogs', 'prospects', 'magnets']],
   ['Реклама', ['ads', 'keywords']],
   ['Контент', ['content', 'assistant']],
   ['Аналитика', ['analytics', 'decisions']],
@@ -281,8 +314,9 @@ const NAV = [
 ];
 // В меню пункт короче заголовка раздела: группа уже говорит, о чём речь.
 const NAV_LABEL = { ads: 'Кампании', assistant: 'ИИ-помощник', products: 'Услуги и продукты', tasks: 'Задачи' };
-// На телефоне — нижняя панель: четыре главных раздела и «Ещё».
-const TABBAR = ['home', 'leads', 'ads', 'content'];
+// На телефоне — нижняя панель: четыре главных раздела и «Ещё». Отвечать
+// клиентам с телефона нужнее, чем править кампании, — поэтому «Диалоги».
+const TABBAR = ['home', 'leads', 'dialogs', 'content'];
 const TAB_LABEL = { ads: 'Реклама', content: 'Контент' };
 
 const sections = NAV.flatMap(([, ids]) => ids).map(id => [id, '', SECTION_TITLE[id]]);
@@ -418,7 +452,8 @@ function filters(categories) {
 }
 
 const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук',
-  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', ad_texts: 'объявление', channel_stats: 'статистику', decisions: 'решение' };
+  leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', ad_texts: 'объявление', channel_stats: 'статистику', decisions: 'решение',
+  sales_scripts: 'скрипт продаж', outreach_settings: 'тексты бота' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -2167,6 +2202,11 @@ function todayList() {
       push('pr:' + p.id, 'clients', p.name, `Молчат ${daysWord(daysAgo(p._at))} — одно напоминание`, localDate(p._at), true);
     }
   }
+  // Клиент написал, бот в диалоге выключен: больше трёх часов без ответа — просрочено.
+  for (const p of db.prospects.filter(p => waitingReply(p) && p.last_message_at)) {
+    const hours = (Date.now() - Date.parse(p.last_message_at)) / 36e5;
+    push('dl:' + p.id, 'chat', p.name, `Ждёт ответа в ${CHANNEL_OF(p)}: «${String(p.last_text || '').slice(0, 60)}»`, localDate(p.last_message_at), hours > 3);
+  }
   for (const c of db.campaigns.filter(c => c.status === 'Идёт' && c.ends_on)) {
     const left = -daysAgo(c.ends_on);
     if (left < 0) push('cp:' + c.id, 'ads', c.name, 'Срок кампании вышел — обновите статус и расход', String(c.ends_on), true);
@@ -2199,6 +2239,7 @@ function todayOpen(ref) {
   else if (kind === 'pr') { go('prospects'); editProspect(id); }
   else if (kind === 'cp') { go('ads'); editCampaign(id); }
   else if (kind === 'p') { go('content'); editP(id); }
+  else if (kind === 'dl') openDialog(id);
 }
 
 // ------------------------------------------------------------ лид-магниты
@@ -2810,11 +2851,528 @@ async function prospectToLead(id) {
 function delProspect(id) {
   const p = db.prospects.find(x => x.id === id);
   if (!p) return;
-  askDelete('Удалить компанию?', `«${E(p.name)}» исчезнет из поиска клиентов. Заявка, если была, останется.`, async () => {
+  askDelete('Удалить компанию?', `«${E(p.name)}» исчезнет из поиска клиентов${CHANNEL_OF(p) ? ' вместе со всей перепиской в «Диалогах»' : ''}. Заявка, если была, останется.`, async () => {
     await api.remove('prospects', id);
     db.prospects = db.prospects.filter(x => x.id !== id);
     noteLocal('delete', 'prospects', { ...p, title: p.name });
   });
+}
+
+// ---------------------------------------------------------------- диалоги
+//
+// Переписка с клиентами из Telegram, ВКонтакте и Instagram — бывший ADERVIS
+// OTR. Собеседник — компания «Поиска клиентов»: та же воронка, заметки и
+// заявка. Бот отвечает сам, собирает анкету и зовёт менеджера; стоит
+// человеку ответить из приложения — бот в этом диалоге замолкает.
+// Сообщения грузятся по одному диалогу, новые — опросом: раз в 15 секунд,
+// пока раздел открыт, и раз в минуту — для счётчика в меню.
+
+const CHANNEL_OF = p => p.tg_chat_id ? 'Telegram' : p.vk_peer_id ? 'ВКонтакте' : p.ig_user_id ? 'Instagram' : '';
+const CHANNEL_ICON = { Telegram: 'telegram', 'ВКонтакте': 'social', Instagram: 'photo' };
+const SCRIPT_STAGES = ['Первое сообщение', 'Ответы на вопросы', 'Возражения и закрытие'];
+// Клиент написал последним, а бот в диалоге выключен — ответить должен человек.
+const waitingReply = p => !!CHANNEL_OF(p) && p.last_direction === 'in' && p.bot_mode === 'human';
+const DIALOG_FILTERS = [
+  ['Все', () => true],
+  ['Ждут ответа', waitingReply],
+  ['Непрочитанные', p => p.unread > 0],
+  ['Ведёт бот', p => p.bot_mode !== 'human']
+];
+let dialog = { id: '', filter: 'Все', q: '', msgs: [], forId: '', loading: false, sending: false, polling: false, stick: false, drafts: {} };
+
+const dialogs = () => db.prospects.filter(p => CHANNEL_OF(p) && p.last_message_at)
+  .sort((a, b) => Date.parse(b.last_message_at) - Date.parse(a.last_message_at));
+const msgTime = iso => new Date(iso).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+const listTime = iso => localDate(iso) === today() ? msgTime(iso) : localDate(iso) === dayShift(-1) ? 'вчера' : shortDate(localDate(iso));
+const dayLabel = d => d === today() ? 'Сегодня' : d === dayShift(-1) ? 'Вчера'
+  : new Date(d + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' });
+
+// Ссылки в сообщениях кликабельны; всё остальное — только текст.
+function linkify(s) {
+  return String(s ?? '').split(/(https?:\/\/[^\s<>"'«»]+)/g).map((part, i) => {
+    if (i % 2 === 0) return E(part);
+    const tail = (part.match(/[.,:;!?)]+$/) || [''])[0];
+    const url = part.slice(0, part.length - tail.length);
+    return `<a href="${E(url)}" target="_blank" rel="noopener noreferrer">${E(url)}</a>${E(tail)}`;
+  }).join('');
+}
+
+function msgHtml(m, p) {
+  const time = msgTime(m.created_at);
+  if (m.kind === 'brief_complete') {
+    const b = m.meta?.brief || {};
+    const rows = [['Бизнес', b.business], ['Формат', b.format], ['Город', b.city], ['Бюджет', b.budget], ['Имя', b.name], ['Контакт', b.contact]]
+      .filter(([, v]) => v);
+    return `<div class="bubble briefmsg"><b>${icon('leads', 15)} Анкета заполнена — заявка в воронке</b>
+      <dl class="netfacts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${E(v)}</dd></div>`).join('')}</dl>
+      ${p.lead_id ? `<button class="chip" data-action="openlead" data-id="${E(p.lead_id)}">Открыть заявку</button>` : ''}
+      <small>${time}</small></div>`;
+  }
+  const auto = m.author === 'бот' || m.author === 'ИИ';
+  const who = m.direction === 'in' ? '' : m.author === 'ИИ' ? 'ИИ-помощник' : m.author === 'бот' ? 'бот' : memberName(m.author);
+  const text = m.kind === 'button' ? `Кнопка: «${E(m.text)}»` : (m.kind === 'voice' ? icon('voice', 14) + ' ' : '') + linkify(m.text);
+  return `<div class="bubble ${m.direction === 'in' ? 'in' : 'out'}${auto ? ' auto' : ''}${m.kind === 'button' ? ' tap' : ''}">
+    <p>${text}</p><small>${who ? E(who) + ' · ' : ''}${time}</small></div>`;
+}
+
+const dialogItem = p => {
+  const ch = CHANNEL_OF(p), on = p.id === dialog.id;
+  return `<button class="dlgitem${on ? ' on' : ''}${p.unread ? ' unread' : ''}" data-dlg="${E(p.id)}"${on ? ' aria-current="true"' : ''}>
+    <span class="dlgch" title="${E(ch)}">${icon(CHANNEL_ICON[ch], 16)}</span>
+    <span class="dlgtext"><b>${E(p.name)}</b><small>${p.last_direction === 'out' ? '<i>Мы:</i> ' : ''}${E(p.last_text || '')}</small></span>
+    <span class="dlgmeta"><small>${listTime(p.last_message_at)}</small>${p.unread
+      ? `<b class="dlgun" aria-label="непрочитанных: ${p.unread}">${p.unread}</b>`
+      : waitingReply(p) ? '<b class="dlgwaiting" title="Ждёт ответа" aria-label="ждёт ответа"></b>' : ''}</span>
+  </button>`;
+};
+
+function chatHtml(p) {
+  const ch = CHANNEL_OF(p), bot = p.bot_mode !== 'human';
+  let lastDay = '';
+  const body = dialog.forId !== p.id || (dialog.loading && !dialog.msgs.length)
+    ? '<p class="muted dlgwait">Загружаю переписку…</p>'
+    : dialog.msgs.map(m => {
+      const d = localDate(m.created_at), sep = d !== lastDay ? `<div class="dlgday"><span>${dayLabel(d)}</span></div>` : '';
+      lastDay = d;
+      return sep + msgHtml(m, p);
+    }).join('') || '<p class="muted dlgwait">Сообщений пока нет.</p>';
+  const quick = (Array.isArray(db.outreach.quick_replies) ? db.outreach.quick_replies : []).filter(Boolean).slice(0, 8);
+  return `<section class="card dlgchat" aria-label="Переписка: ${E(p.name)}">
+    <header class="dlghead">
+      <button type="button" class="iconbtn dlgback" data-action="dlgback" aria-label="К списку диалогов">${icon('back', 18)}</button>
+      <div class="dlgwho"><b>${E(p.name)}</b><small class="muted">${icon(CHANNEL_ICON[ch], 13)} ${E(ch)}${p.category ? ' · ' + E(p.category.slice(0, 60)) : ''}</small></div>
+      <div class="dlgtools">${tag(p.status)}
+        <button type="button" class="chip${bot ? ' on' : ''}" data-action="dlgmode" aria-pressed="${bot}"
+          title="${bot ? 'Бот отвечает сам. Нажмите, чтобы вести диалог самому' : 'Бот молчит, отвечаете вы. Нажмите, чтобы бот снова отвечал'}">${icon('ai', 14)} ${bot ? 'Бот отвечает' : 'Бот выключен'}</button>
+        <button type="button" class="chip" data-pr="${E(p.id)}" aria-label="Карточка компании">${icon('edit', 14)}<span>Карточка</span></button></div>
+    </header>
+    <div class="dlgmsgs" id="dlgmsgs">${body}</div>
+    <form class="dlgform" id="dlgform">
+      <div class="dlgquick">${quick.map((q, i) => `<button type="button" class="chip" data-action="dlgquick" data-id="${i}">${E(q)}</button>`).join('')}
+        <button type="button" class="chip" data-action="dlgscript">${icon('script', 14)} Скрипт</button></div>
+      <div class="dlgcompose">
+        <textarea id="dlgtext" rows="2" maxlength="4000" aria-label="Ответ клиенту" placeholder="Ответ клиенту…"></textarea>
+        <button class="primary" id="dlgsend" ${dialog.sending ? 'disabled' : ''}>${icon('send', 16)}<span>${dialog.sending ? 'Отправляю…' : 'Отправить'}</span></button>
+      </div>
+      <small class="muted dlghint">${bot ? 'Ваш ответ выключит бота в этом диалоге — дальше ведёте вы.' : `Уйдёт клиенту в ${E(ch)} от имени бота студии.`} Ctrl+Enter — отправить.</small>
+    </form>
+  </section>`;
+}
+
+function dialogsEmpty() {
+  const u = db.outreach.tg_bot_username;
+  return `<div class="card empty dlgempty"><h2>Переписок пока нет</h2>
+    ${u ? `<p>Бот <a href="https://t.me/${E(u)}" target="_blank" rel="noopener noreferrer">@${E(u)}</a> подключён. Как только клиент ему напишет, диалог появится здесь, а заполненная анкета станет заявкой в воронке.</p>
+      <p class="muted">Ссылку на бота стоит поставить в шапку группы ВКонтакте, на сайт, в подпись и на визитку.</p>`
+    : `<p>Подключите Telegram-бота для клиентов: он ответит на вопросы по базе знаний, покажет работы и соберёт заявку за минуту. Всё, что ему пишут, будет здесь.</p>
+      <div class="formactions"><button class="primary" data-action="dlgchannels">Подключить Telegram</button></div>`}
+  </div>`;
+}
+
+function renderDialogs() {
+  const head = heading('Диалоги', 'Переписка с клиентами из Telegram, ВКонтакте и Instagram. Бот отвечает сам и собирает заявку; ответ человека выключает бота в этом диалоге.',
+    `<div class="headactions"><button data-action="dlgscripts">${icon('script', 15)} Скрипты</button>
+      <button data-action="dlgbot">${icon('ai', 15)} Тексты бота</button>
+      <button class="primary" data-action="dlgchannels">${icon('link', 15)} Каналы</button></div>`);
+  const all = dialogs();
+  if (!all.length) return head + dialogsEmpty();
+  const filt = DIALOG_FILTERS.find(([n]) => n === dialog.filter) || DIALOG_FILTERS[0];
+  const q = dialog.q.toLowerCase();
+  const rows = all.filter(filt[1]).filter(p => !q || `${p.name} ${p.category} ${p.city} ${p.last_text}`.toLowerCase().includes(q));
+  const open = all.find(p => p.id === dialog.id);
+  return head + `<div class="dialogs${open ? ' open' : ''}">
+    <aside class="card dlglist">
+      <input class="input" id="dlgq" placeholder="Имя, компания, текст…" value="${E(dialog.q)}" aria-label="Поиск по диалогам">
+      <div class="filters">${DIALOG_FILTERS.map(([n, fn]) => {
+        const c = all.filter(fn).length;
+        return n === 'Все' || c || dialog.filter === n
+          ? `<button class="chip${dialog.filter === n ? ' on' : ''}" data-action="dlgfilter" data-id="${E(n)}" aria-pressed="${dialog.filter === n}">${n} <b>${c}</b></button>` : '';
+      }).join('')}</div>
+      <div class="dlgitems">${rows.map(dialogItem).join('') || '<p class="muted dlgwait">Под отбор ничего не подошло.</p>'}</div>
+    </aside>
+    ${open ? chatHtml(open) : '<section class="card dlgchat dlgnone"><p class="muted">Выберите диалог слева.</p></section>'}
+  </div>`;
+}
+
+// Перерисовка не должна сбивать набор ответа и прокрутку переписки.
+function dialogSnapshot() {
+  const a = document.activeElement, box = $('#dlgmsgs');
+  return {
+    focus: a && a.id && $('#view').contains(a) ? a.id : '', start: a?.selectionStart, end: a?.selectionEnd,
+    atBottom: !box || box.scrollHeight - box.scrollTop - box.clientHeight < 40, top: box?.scrollTop ?? 0,
+    listTop: $('.dlgitems')?.scrollTop ?? 0
+  };
+}
+
+function wireDialogs(keep) {
+  const ta = $('#dlgtext');
+  if (ta) {
+    ta.value = dialog.drafts[dialog.id] || '';
+    ta.oninput = () => { dialog.drafts[dialog.id] = ta.value; };
+    ta.onkeydown = e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); dialogSend(); } };
+    $('#dlgform').onsubmit = e => { e.preventDefault(); dialogSend(); };
+  }
+  const q = $('#dlgq');
+  if (q) q.oninput = () => { dialog.q = q.value; render(); };
+  fitDialogs();
+  const box = $('#dlgmsgs');
+  if (box) box.scrollTop = dialog.stick || keep.atBottom ? box.scrollHeight : keep.top;
+  dialog.stick = false;
+  const items = $('.dlgitems');
+  if (items) items.scrollTop = keep.listTop;
+  const el = keep.focus && document.getElementById(keep.focus);
+  if (el) { el.focus(); try { el.setSelectionRange(keep.start, keep.end); } catch (e) { /* не текстовое поле */ } }
+}
+
+// Список и переписка занимают окно до низа: прокручиваются они, а не страница.
+function fitDialogs() {
+  const grid = $('.dialogs');
+  if (grid) grid.style.setProperty('--dlg-top', Math.round(grid.getBoundingClientRect().top + window.scrollY) + 'px');
+}
+window.addEventListener('resize', () => { if (page === 'dialogs') fitDialogs(); });
+
+async function openDialog(id) {
+  if (page !== 'dialogs') go('dialogs');
+  dialog.id = id;
+  if (dialog.forId !== id) { dialog.msgs = []; dialog.forId = id; }
+  dialog.loading = true;
+  dialog.stick = true;
+  render();
+  try {
+    const rows = await api.messages(id);
+    if (dialog.id === id) dialog.msgs = rows;
+  } catch (err) {
+    toast('Переписка не загрузилась: ' + (err.message || 'ошибка сервера'), 6000);
+  } finally {
+    dialog.loading = false;
+  }
+  if (dialog.id !== id || page !== 'dialogs') return;
+  dialog.stick = true;
+  render();
+  markRead(id);
+}
+
+async function markRead(id) {
+  const p = db.prospects.find(x => x.id === id);
+  if (!p || !p.unread) return;
+  p.unread = 0;
+  if (page === 'dialogs') render(); else updateNav();
+  try { await api.channels({ action: 'read', prospectId: id }); } catch (err) { /* отметится при следующем открытии */ }
+}
+
+async function refreshOpenChat() {
+  const id = dialog.id;
+  if (!id || dialog.forId !== id || dialog.loading) return 0;
+  const rows = await api.messages(id, dialog.msgs[dialog.msgs.length - 1]?.created_at);
+  if (dialog.id !== id) return 0;
+  const seen = new Set(dialog.msgs.map(m => m.id));
+  const fresh = rows.filter(m => !seen.has(m.id));
+  dialog.msgs.push(...fresh);
+  return fresh.length;
+}
+
+// Что нового: компании, у которых последнее сообщение позже нашего.
+async function dialogTick() {
+  if (!api || !me || $('#shell').hidden || document.visibilityState !== 'visible' || dialog.polling) return;
+  dialog.polling = true;
+  try {
+    const stamps = db.prospects.map(p => p.last_message_at).filter(Boolean);
+    const since = stamps.length ? stamps.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a)) : '1970-01-01T00:00:00Z';
+    const changed = await api.dialogsSince(since);
+    for (const p of changed) upsertLocal('prospects', p);
+    const fresh = page === 'dialogs' && changed.some(p => p.id === dialog.id) ? await refreshOpenChat() : 0;
+    if (page === 'dialogs' && (changed.length || fresh)) render(); else if (changed.length) updateNav();
+    if (fresh && page === 'dialogs') markRead(dialog.id);
+  } catch (err) {
+    /* нет связи — спросим в следующий раз */
+  } finally {
+    dialog.polling = false;
+  }
+}
+let dialogTicks = 0;
+// Проверкам интерфейса нужен опрос побыстрее — подменённый сервер задаёт свой шаг.
+setInterval(() => { dialogTicks++; if (page === 'dialogs' || dialogTicks % 4 === 0) dialogTick(); }, window.__INTEL_API__?.pollMs || 15000);
+
+async function dialogSend() {
+  const p = db.prospects.find(x => x.id === dialog.id);
+  const text = (dialog.drafts[dialog.id] || '').trim();
+  if (!p || !text || dialog.sending) return;
+  dialog.sending = true;
+  render();
+  try {
+    await api.channels({ action: 'send', prospectId: p.id, text });
+    dialog.drafts[p.id] = '';
+    p.bot_mode = 'human';
+    p.unread = 0;
+    await refreshOpenChat().catch(() => 0);
+    await dialogTick();
+  } catch (err) {
+    toast('Не отправлено: ' + (err.message || 'ошибка сервера'), 8000);
+  } finally {
+    dialog.sending = false;
+    dialog.stick = true;
+    render();
+    $('#dlgtext')?.focus();
+  }
+}
+
+async function dialogMode() {
+  const p = db.prospects.find(x => x.id === dialog.id);
+  if (!p) return;
+  const mode = p.bot_mode === 'human' ? 'bot' : 'human';
+  try {
+    await api.channels({ action: 'mode', prospectId: p.id, mode });
+    p.bot_mode = mode;
+    render();
+    toast(mode === 'bot' ? 'Бот снова отвечает в этом диалоге' : 'Бот выключен — диалог ведёте вы');
+  } catch (err) {
+    toast('Не переключилось: ' + (err.message || 'ошибка сервера'), 6000);
+  }
+}
+
+// Готовый текст — в поле ответа, а не сразу клиенту: человек дочитает и поправит.
+function dialogInsert(text) {
+  const ta = $('#dlgtext');
+  if (!ta) return;
+  const cur = ta.value.trim();
+  ta.value = cur ? cur + ' ' + text : text;
+  dialog.drafts[dialog.id] = ta.value;
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+// Подстановки скриптов: {rest} — название компании, остальное — из «Текстов бота».
+// Незаданная ссылка остаётся видна в тексте как {call_link} — чтобы не ушла пустой.
+function fillScript(text, p) {
+  const cta = db.outreach.cta || {};
+  const fromBot = /бот$/i.test(p?.source || '');
+  const vars = { rest: fromBot ? '' : p?.name || '', call: cta.call || 'Созвон на 5 минут', call_link: cta.call_link || '',
+    brief: cta.brief || 'Короткий бриф', brief_link: cta.brief_link || '', meeting: cta.meeting || 'Встреча' };
+  return String(text || '').replace(/\{(rest|call|call_link|brief|brief_link|meeting)\}/g,
+    (m, k) => (vars[k] || '').trim() || (k === 'rest' ? 'вашего заведения' : m));
+}
+
+const scriptsByStage = () => SCRIPT_STAGES.map((name, stage) => [name, stage,
+  db.sales_scripts.filter(s => Number(s.stage) === stage).sort((a, b) => (a.sort ?? 100) - (b.sort ?? 100))]);
+const ctaGaps = () => { const c = db.outreach.cta || {}; return [!c.call_link && 'ссылка на созвон', !c.brief_link && 'ссылка на бриф'].filter(Boolean); };
+
+function pickScript() {
+  const p = db.prospects.find(x => x.id === dialog.id);
+  const gaps = ctaGaps();
+  modal(`<h2>Вставить скрипт</h2>
+    <p class="muted">Текст встанет в поле ответа — перед отправкой его можно поправить.</p>
+    ${gaps.length ? `<div class="notice">Не задана ${gaps.join(' и ')} — в тексте останется метка вроде {call_link}. Задайте в «Текстах бота».</div>` : ''}
+    ${scriptsByStage().map(([name, , list]) => list.length ? `<h3>${name}</h3><div class="scriptpick">${list.map(s => `<button class="scriptitem" data-action="dlgscriptuse" data-id="${E(s.id)}">
+      <b>${E(s.title)}</b><small>${E(fillScript(s.body, p).slice(0, 160))}${s.body.length > 160 ? '…' : ''}</small>
+      ${s.note ? `<span class="tag warn">${E(s.note)}</span>` : ''}</button>`).join('')}</div>` : '').join('')}`);
+}
+
+function scriptsModal() {
+  modal(`<h2>Скрипты продаж</h2>
+    <p class="muted">Заготовки ответов для «Диалогов». {rest} заменяется названием компании, {call}, {call_link}, {brief}, {brief_link} и {meeting} — тем, что задано в «Текстах бота».</p>
+    ${scriptsByStage().map(([name, stage, list]) => `<div class="head" style="margin:16px 0 8px"><h3 style="margin:0">${name}</h3>
+      <button class="chip" data-action="dlgscriptnew" data-id="${stage}">+ Скрипт</button></div>
+      ${list.length ? `<div class="scriptlist">${list.map(s => `<div class="scriptrow"><div><b>${E(s.title)}</b>
+        ${s.note ? ` <span class="tag warn">${E(s.note)}</span>` : ''}<small class="muted">${E(s.body.slice(0, 140))}${s.body.length > 140 ? '…' : ''}</small></div>
+        <button class="chip" data-action="dlgscriptedit" data-id="${E(s.id)}">Изменить</button></div>`).join('')}</div>`
+      : '<p class="muted">Пока пусто.</p>'}`).join('')}`);
+}
+
+function editScript(id, stage = 0) {
+  const exists = db.sales_scripts.some(s => s.id === id);
+  const s = db.sales_scripts.find(x => x.id === id) || { id: uid(), stage, title: '', body: '', note: '', sort: 100 };
+  modal(`<h2>${exists ? 'Скрипт' : 'Новый скрипт'}</h2><form id="scf">
+    <div class="formgrid">
+      <div><label for="scstage">Этап</label><select id="scstage" name="stage">${SCRIPT_STAGES.map((n, i) => `<option value="${i}" ${Number(s.stage) === i ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div><label for="scsort">Порядок в списке</label><input id="scsort" type="number" name="sort" min="0" max="10000" value="${E(s.sort ?? 100)}"></div>
+    </div>
+    <label for="sctitle">Название</label><input id="sctitle" name="title" required maxlength="160" value="${E(s.title)}" placeholder="[Сколько стоит?] Перевод в звонок">
+    <label for="scbody">Текст</label><textarea id="scbody" name="body" required maxlength="3000" style="min-height:160px">${E(s.body)}</textarea>
+    <label for="scnote">Пометка для себя</label><input id="scnote" name="note" maxlength="300" value="${E(s.note)}" placeholder="Например: проверить цифры">
+    <div class="formactions"><button class="primary">Сохранить</button>
+      <button type="button" data-action="dlgscripts">К списку</button>
+      ${exists ? `<button type="button" class="danger" data-action="dlgscriptdel" data-id="${E(s.id)}">Удалить</button>` : ''}</div></form>`);
+  $('#scf').onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target, btn = f.querySelector('button.primary');
+    btn.disabled = true;
+    const o = { ...s, stage: Number(f.elements.stage.value), sort: Number(f.elements.sort.value) || 100,
+      title: f.elements.title.value.trim(), body: f.elements.body.value.trim(), note: f.elements.note.value.trim() };
+    try {
+      const saved = exists ? await api.update('sales_scripts', o) : await api.insert('sales_scripts', o);
+      upsertLocal('sales_scripts', saved);
+      noteLocal(exists ? 'update' : 'insert', 'sales_scripts', saved);
+      scriptsModal();
+      toast('Скрипт сохранён');
+    } catch (err) {
+      btn.disabled = false;
+      handleError(err);
+    }
+  };
+}
+
+function delScript(id) {
+  const s = db.sales_scripts.find(x => x.id === id);
+  if (!s) return;
+  askDelete('Удалить скрипт?', `«${E(s.title)}» исчезнет из списка заготовок.`, async () => {
+    await api.remove('sales_scripts', id);
+    db.sales_scripts = db.sales_scripts.filter(x => x.id !== id);
+    noteLocal('delete', 'sales_scripts', s);
+  });
+}
+
+// Тексты бота: приветствие (и второй вариант для проверки, какой лучше),
+// примеры работ, вопросы анкеты, быстрые ответы и ссылки для скриптов.
+function botTexts() {
+  const o = db.outreach;
+  const lines = v => (Array.isArray(v) ? v : []).join('\n');
+  const cta = o.cta || {};
+  modal(`<h2>Тексты бота</h2><form id="botf">
+    <p class="muted">Пустое поле — бот берёт свой текст по умолчанию. Бот всегда честно представляется помощником студии.</p>
+    <label for="bwelcome">Приветствие</label>
+    <textarea id="bwelcome" name="tg_welcome_text" maxlength="2000" style="min-height:110px" placeholder="Здравствуйте! Это помощник студии ADERVIS…">${E(o.tg_welcome_text)}</textarea>
+    <label class="checkrow"><input type="checkbox" name="tg_ab_enabled" ${o.tg_ab_enabled ? 'checked' : ''}> Проверять второй вариант приветствия: половина новых клиентов увидит его</label>
+    <label for="bwelcomeb">Второй вариант</label>
+    <textarea id="bwelcomeb" name="tg_welcome_text_b" maxlength="2000" style="min-height:90px">${E(o.tg_welcome_text_b)}</textarea>
+    ${abStats()}
+    <label for="bportfolio">Ответ на «Примеры работ»</label>
+    <textarea id="bportfolio" name="portfolio_text" maxlength="2000" style="min-height:90px" placeholder="Наши работы: https://adervis.ru">${E(o.portfolio_text)}</textarea>
+    <label for="bvideos">Ссылки на видео — по одной в строке, до пяти, станут кнопками</label>
+    <textarea id="bvideos" name="portfolio_videos" maxlength="2000" style="min-height:70px" placeholder="https://vk.com/video…">${E(lines(o.portfolio_videos))}</textarea>
+    <label for="bbrief">Вопросы анкеты — ровно шесть строк: бизнес, формат, город, бюджет, имя, контакт</label>
+    <textarea id="bbrief" name="brief_questions" maxlength="2000" style="min-height:130px">${E(lines(o.brief_questions))}</textarea>
+    <label class="checkrow"><input type="checkbox" name="ai_enabled" ${o.ai_enabled !== false ? 'checked' : ''}> ИИ отвечает на вопросы клиентов по проверенным публичным записям базы знаний</label>
+    <label for="bextra">Дополнительно для ИИ — тон, о чём не говорить</label>
+    <textarea id="bextra" name="ai_extra" maxlength="3000" style="min-height:70px">${E(o.ai_extra)}</textarea>
+    <label for="bquick">Быстрые ответы в «Диалогах» — по одному в строке</label>
+    <textarea id="bquick" name="quick_replies" maxlength="2000" style="min-height:90px">${E(lines(o.quick_replies))}</textarea>
+    <fieldset class="pitchset"><legend>Подстановки в скриптах</legend>
+      <div class="formgrid">
+        <div><label for="bcall">{call}</label><input id="bcall" name="cta_call" maxlength="80" value="${E(cta.call || '')}" placeholder="Созвон на 5 минут"></div>
+        <div><label for="bcalllink">{call_link}</label><input id="bcalllink" name="cta_call_link" maxlength="300" value="${E(cta.call_link || '')}" placeholder="https://t.me/…"></div>
+        <div><label for="bbriefname">{brief}</label><input id="bbriefname" name="cta_brief" maxlength="80" value="${E(cta.brief || '')}" placeholder="Короткий бриф"></div>
+        <div><label for="bbrieflink">{brief_link}</label><input id="bbrieflink" name="cta_brief_link" maxlength="300" value="${E(cta.brief_link || '')}" placeholder="https://t.me/бот?start=brief"></div>
+        <div><label for="bmeeting">{meeting}</label><input id="bmeeting" name="cta_meeting" maxlength="80" value="${E(cta.meeting || '')}" placeholder="Встреча"></div>
+      </div></fieldset>
+    <p class="muted" id="boterr" role="alert"></p>
+    <div class="formactions"><button class="primary">Сохранить</button></div></form>`);
+  $('#botf').onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target.elements, btn = e.target.querySelector('button.primary');
+    const list = (v, max) => v.split('\n').map(x => x.trim()).filter(Boolean).slice(0, max);
+    const brief = list(f.brief_questions.value, 7);
+    const videos = list(f.portfolio_videos.value, 6);
+    const err = brief.length && brief.length !== 6 ? `Вопросов анкеты должно быть ровно шесть, сейчас ${brief.length}. Или очистите поле — бот возьмёт свои.`
+      : videos.length > 5 ? 'Видео — не больше пяти ссылок.'
+      : videos.some(u => !/^https:\/\//.test(u)) ? 'Ссылки на видео должны начинаться с https://'
+      : [f.cta_call_link.value, f.cta_brief_link.value].some(u => u.trim() && !/^https?:\/\//.test(u.trim())) ? 'Ссылки на созвон и бриф должны начинаться с https://'
+      : '';
+    $('#boterr').textContent = err;
+    if (err) return;
+    btn.disabled = true;
+    const row = {
+      tg_welcome_text: f.tg_welcome_text.value.trim(), tg_welcome_text_b: f.tg_welcome_text_b.value.trim(),
+      tg_ab_enabled: f.tg_ab_enabled.checked, portfolio_text: f.portfolio_text.value.trim(), portfolio_videos: videos,
+      brief_questions: brief, ai_enabled: f.ai_enabled.checked, ai_extra: f.ai_extra.value.trim(),
+      quick_replies: list(f.quick_replies.value, 12).map(x => x.slice(0, 200)),
+      cta: { call: f.cta_call.value.trim(), call_link: f.cta_call_link.value.trim(), brief: f.cta_brief.value.trim(),
+        brief_link: f.cta_brief_link.value.trim(), meeting: f.cta_meeting.value.trim() }
+    };
+    try {
+      db.outreach = await api.saveOutreach(row);
+      noteLocal('update', 'outreach_settings', { id: 'main' });
+      $('#modal').close();
+      render();
+      toast('Тексты бота сохранены');
+    } catch (err2) {
+      btn.disabled = false;
+      handleError(err2);
+    }
+  };
+}
+
+// Какое приветствие лучше: доля дошедших до заявки по каждому варианту.
+function abStats() {
+  const by = v => db.prospects.filter(p => p.tg_chat_id && p.ab_variant === v);
+  const [a, b] = [by('A'), by('B')];
+  if (!a.length && !b.length) return '';
+  const line = (name, list) => `${name}: ${list.length} ${plural(list.length, 'человек', 'человека', 'человек')}, заявок ${list.filter(p => p.status === 'Заявка').length}`;
+  return `<p class="muted">${line('Первый вариант', a)} · ${line('второй', b)}</p>`;
+}
+
+// Каналы: ключ бота вставляется здесь же и уходит прямо в базу — в браузер
+// он больше не возвращается, его читают только серверные функции.
+let channelInfo = null;
+
+async function channelsModal() {
+  modal(`<h2>Каналы</h2><div id="chbody"><p class="muted">Проверяю подключения…</p></div>`);
+  try { channelInfo = await api.channels({ action: 'status' }); } catch (err) { channelInfo = { error: err.message || 'нет связи' }; }
+  paintChannels();
+}
+
+function paintChannels(code) {
+  const box = $('#chbody');
+  if (!box) return;
+  const c = channelInfo || {}, tg = c.telegram || {};
+  const u = tg.username || db.outreach.tg_bot_username || '';
+  const tgState = tg.connected ? tag('Работает', 'good') : tg.token ? tag('Ключ есть, не подключён', 'warn') : tag('Не подключён', 'idle');
+  box.innerHTML = `${c.error ? `<div class="notice error">Не удалось проверить: ${E(c.error)}</div>` : ''}
+    <div class="channelcard"><div class="head" style="margin:0 0 8px"><h3 style="margin:0">${icon('telegram', 18)} Telegram</h3>${tgState}</div>
+      ${tg.connected
+        ? `<p>Бот <a href="https://t.me/${E(u)}" target="_blank" rel="noopener noreferrer">@${E(u)}</a> принимает сообщения.${tg.pending ? ` В очереди: ${tg.pending}.` : ''}</p>
+          ${tg.lastError ? `<div class="notice">Последняя ошибка Telegram: ${E(tg.lastError)}</div>` : ''}`
+        : `<ol class="steps"><li>Откройте <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a>, отправьте <code>/newbot</code>, придумайте имя и адрес бота для клиентов. Это не тот бот, что публикует посты.</li>
+            <li>BotFather пришлёт ключ вида <code>123456:ABC…</code> — вставьте его сюда.</li></ol>`}
+      <form id="tgkeyf" class="inlinerow">
+        <input type="password" id="tgkey" autocomplete="off" spellcheck="false" maxlength="200" aria-label="Ключ Telegram-бота" placeholder="${tg.token ? 'Ключ сохранён — вставьте новый, чтобы заменить' : 'Ключ от @BotFather'}">
+        <button class="primary">${tg.token ? 'Заменить и подключить' : 'Подключить'}</button></form>
+      ${tg.token && !tg.connected ? '<p><button class="chip" data-action="tgconnect">Подключить с сохранённым ключом</button></p>' : ''}
+      <p class="muted" id="tgerr" role="alert"></p>
+      ${tg.connected ? `<h3>Уведомления менеджеру</h3>
+        <p class="muted">${c.manager ? 'Подключены: новые заявки и просьбы связаться приходят в Telegram.' : 'Пока не подключены.'}
+          Откройте ссылку с телефона, где вы в Telegram, — бот запомнит этот чат и будет присылать туда заявки.</p>
+        ${code ? `<p><a class="btnlink" href="https://t.me/${E(u)}?start=link_${E(code)}" target="_blank" rel="noopener noreferrer">${icon('telegram', 15)} Открыть бота и подключить</a></p>
+          <p class="muted">Или отправьте боту: <code>/link ${E(code)}</code>. Код действует 15 минут.</p>`
+          : `<button class="chip" data-action="tglink">${c.manager ? 'Подключить другой чат' : 'Получать заявки в Telegram'}</button>`}` : ''}
+    </div>
+    <div class="channelcard"><div class="head" style="margin:0 0 8px"><h3 style="margin:0">${icon('social', 18)} ВКонтакте</h3>${tag('Следующий', 'idle')}</div>
+      <p class="muted">Сообщения сообщества adervis_digital: бот ответит, соберёт заявку, переписка будет здесь. Нужен ключ сообщества с доступом к сообщениям.</p></div>
+    <div class="channelcard"><div class="head" style="margin:0 0 8px"><h3 style="margin:0">${icon('photo', 18)} Instagram</h3>${tag('Потом', 'idle')}</div>
+      <p class="muted">Директ через приложение Meta: нужен бизнес-аккаунт, связанный со страницей Facebook.</p></div>`;
+  const form = $('#tgkeyf');
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const key = $('#tgkey').value.trim();
+    if (!/^\d{5,}:[\w-]{30,}$/.test(key)) { $('#tgerr').textContent = 'Это не похоже на ключ бота: он выглядит как 123456789:AAE… — скопируйте целиком из сообщения BotFather.'; return; }
+    form.querySelector('button').disabled = true;
+    $('#tgerr').textContent = 'Сохраняю ключ и подключаю…';
+    try {
+      await api.setChannelSecret('tg_bot_token', key);
+      $('#tgkey').value = '';
+      await tgConnect();
+    } catch (err) {
+      $('#tgerr').textContent = 'Не подключилось: ' + (err.message || 'ошибка сервера');
+      form.querySelector('button').disabled = false;
+    }
+  };
+}
+
+async function tgConnect() {
+  const r = await api.channels({ action: 'tg-connect' });
+  db.outreach.tg_bot_username = r.username || db.outreach.tg_bot_username;
+  channelInfo = await api.channels({ action: 'status' });
+  paintChannels();
+  render();
+  toast(`Бот @${r.username} подключён`);
+}
+
+async function tgLink() {
+  try {
+    const r = await api.channels({ action: 'link-code' });
+    paintChannels(r.code);
+  } catch (err) {
+    toast('Код не получен: ' + (err.message || 'ошибка сервера'), 6000);
+  }
 }
 
 // ------------------------------------------------------------------ метрики
@@ -4276,6 +4834,7 @@ function render() {
   if (page === 'keywords') s = renderKeywords();
   if (page === 'survey') s = renderSurvey();
   if (page === 'leads') s = renderLeads();
+  if (page === 'dialogs') s = renderDialogs();
   if (page === 'prospects') s = renderProspects();
   if (page === 'magnets') s = renderMagnets();
   if (page === 'decisions') s = renderDecisions();
@@ -4448,10 +5007,12 @@ function render() {
     const stages = [
       ['Готово', 'Знания и бренд', 'База знаний с источниками и статусом проверки, брендбук с логотипами и иконками, файлы к записям, журнал изменений, общий доступ обоих руководителей.'],
       ['Готово', 'Продажи', 'Заявки с воронкой и причинами отказов, лид-магниты, поиск клиентов с импортом из 2ГИС и контактами с сайтов, список «На сегодня».'],
+      ['Готово', 'Диалоги и бот продаж', 'Бывший ADERVIS OTR теперь здесь: Telegram-бот отвечает клиентам по базе знаний, собирает анкету и сам создаёт заявку в воронке. Переписка, скрипты продаж и быстрые ответы — в «Диалогах».'],
       ['Готово', 'Реклама', 'Кампании с метками и ценой заявки, продажи Stock, ключевые фразы для соцсетей и Директа, объявления.'],
       ['Готово', 'Контент и ИИ', 'Контент-план по площадкам, публикация в Telegram, парсер вышедших постов. ИИ: посты, идеи, план на месяц, ключевые фразы, объявления, первое сообщение компании.'],
       ['Готово', 'Аналитика', 'Метрики с целями, статистика ВКонтакте по месяцам, итоги недели, анкета владельцев.'],
       ['Ждёт ключей', 'ВКонтакте и Яндекс', 'Сервисный ключ VK — парсер прочитает посты и просмотры группы. Ключ Яндекса — поиск организаций прямо из приложения.'],
+      ['Дальше', 'ВКонтакте и Instagram в «Диалогах»', 'Сообщения сообщества и директ — в той же переписке, с тем же ботом и анкетой.'],
       ['Дальше', 'Напоминания в Telegram', 'Бот каждое утро присылает «На сегодня»: заявки без ответа, наступившие шаги, публикации дня.'],
       ['Дальше', 'Связь с Adervis CRM', 'Заявки и сделки из CRM появляются в «Заявках» сами — цена заявки и воронка считаются без ручного ввода.'],
       ['Потом', 'Картинки для постов', 'Генерация обложек и иллюстраций к публикациям в стиле брендбука.'],
@@ -4480,13 +5041,16 @@ function render() {
       <div class="card" style="margin-top:18px"><h2>Подключения</h2>
         ${[['Supabase · база и вход', 'Подключён'], ['AI-провайдер', 'Подключён'],
           ['Telegram · публикация', db.publications.some(x => x.channel === 'Telegram') ? 'Работает' : 'Готов, нужен бот'],
+          ['Telegram · бот для клиентов', db.outreach.tg_bot_username ? 'Работает' : 'Не подключён — «Диалоги» → «Каналы»'],
           ['ВКонтакте', 'Следующий на очереди'], ['Threads', 'Нужна верификация Meta'],
           ['Яндекс.Метрика', 'Не подключена'], ['Adervis CRM', 'Не подключена']]
           .map(([x, st]) => `<div class="row">${x}${tag(st)}</div>`).join('')}
         <p class="muted">Публикаций отправлено: ${db.publications.length}. Telegram включается двумя секретами проекта: токен бота и адрес канала.</p></div>`;
   }
 
+  const keep = page === 'dialogs' ? dialogSnapshot() : null;
   $('#view').innerHTML = s;
+  if (keep) wireDialogs(keep);
   if (page === 'brand' && deck.on) bindDeckSwipe();
   if (page === 'chain') bindGraph();
   const bar = $('.topbar');
@@ -4572,8 +5136,8 @@ try { const saved = JSON.parse(localStorage.getItem('intel.nav.closed')); if (Ar
 // Красный — если среди них есть просроченное.
 function navCounts() {
   const list = typeof todayList === 'function' && db ? todayList() : [];
-  const by = { home: list, leads: [], prospects: [], ads: [], content: [] };
-  const kind = { l: 'leads', pr: 'prospects', cp: 'ads', p: 'content' };
+  const by = { home: list, leads: [], dialogs: [], prospects: [], ads: [], content: [] };
+  const kind = { l: 'leads', dl: 'dialogs', pr: 'prospects', cp: 'ads', p: 'content' };
   for (const x of list) by[kind[x.ref.slice(0, x.ref.indexOf(':'))]]?.push(x);
   const out = Object.fromEntries(Object.entries(by).map(([k, v]) => [k, { n: v.length, late: v.some(x => x.late) }]));
   // у анкеты счётчик — сколько главных вопросов (★) ещё без ответа
@@ -5459,7 +6023,9 @@ function exportJson() {
     brand: strip(db.brand), decisions: strip(db.decisions),
     campaigns: strip(db.campaigns), leads: strip(db.leads),
     files: strip(db.files), publications: strip(db.publications),
-    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), channel_stats: strip(db.channel_stats), survey_answers: strip(db.survey_answers), kpi_targets: strip(db.kpi_targets)
+    prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), channel_stats: strip(db.channel_stats), survey_answers: strip(db.survey_answers), kpi_targets: strip(db.kpi_targets),
+    // тексты бота и скрипты; ключей ботов в браузере нет, поэтому и в копии их нет
+    sales_scripts: strip(db.sales_scripts), outreach_settings: db.outreach
   }, null, 2), 'adervis-backup-' + today() + '.json');
 }
 
@@ -5566,6 +6132,7 @@ document.addEventListener('click', async e => {
   if (b.dataset.l) { editLead(b.dataset.l); return; }
   if (b.dataset.cp) { editCampaign(b.dataset.cp); return; }
   if (b.dataset.pr) { editProspect(b.dataset.pr); return; }
+  if (b.dataset.dlg) { openDialog(b.dataset.dlg); return; }
   if (b.dataset.mg) { editMagnet(b.dataset.mg); return; }
   if (b.dataset.ks) { editKeywordSet(b.dataset.ks); return; }
   if (b.dataset.result) {
@@ -5618,6 +6185,28 @@ document.addEventListener('click', async e => {
     case 'delmagnet': delMagnet(b.dataset.id); break;
     case 'delprospect': delProspect(b.dataset.id); break;
     case 'prstatus': prospectFilter.status = b.dataset.id; render(); break;
+    case 'dlgfilter': dialog.filter = b.dataset.id; render(); break;
+    case 'dlgback': dialog.id = ''; render(); break;
+    case 'dlgmode': dialogMode(); break;
+    case 'dlgquick': dialogInsert((db.outreach.quick_replies || [])[Number(b.dataset.id)] || ''); break;
+    case 'dlgscript': pickScript(); break;
+    case 'dlgscriptuse': {
+      const s = db.sales_scripts.find(x => x.id === b.dataset.id);
+      $('#modal').close();
+      if (s) dialogInsert(fillScript(s.body, db.prospects.find(x => x.id === dialog.id)));
+      break;
+    }
+    case 'dlgscripts': scriptsModal(); break;
+    case 'dlgscriptnew': editScript(undefined, Number(b.dataset.id)); break;
+    case 'dlgscriptedit': editScript(b.dataset.id); break;
+    case 'dlgscriptdel': delScript(b.dataset.id); break;
+    case 'dlgbot': botTexts(); break;
+    case 'dlgchannels': channelsModal(); break;
+    case 'tgconnect':
+      b.disabled = true;
+      try { await tgConnect(); } catch (err) { $('#tgerr').textContent = 'Не подключилось: ' + (err.message || 'ошибка сервера'); b.disabled = false; }
+      break;
+    case 'tglink': tgLink(); break;
     case 'orgadd': orgAdd([finder.orgs[Number(b.dataset.id)]]); break;
     case 'orgaddall': orgAdd(finder.orgs); break;
     case 'importprospects': importCompanies(); break;

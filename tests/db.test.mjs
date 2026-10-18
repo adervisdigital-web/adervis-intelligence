@@ -22,7 +22,7 @@ await db.exec(`
   create or replace function auth.jwt() returns jsonb language sql stable as $$
     select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
   grant usage on schema public to anon, authenticated;
-  grant usage on schema auth to anon, authenticated;
+  grant usage on schema auth to anon, authenticated, service_role;
 
   -- хранилище файлов, как в Supabase: защита уже включена
   create schema storage;
@@ -178,6 +178,44 @@ check('служебная роль читает счётчик',
 check('служебная роль может пополнять базу знаний',
   (await fail('service_role', '', `insert into public.knowledge(id,title,body,category,source,access,status)
     values ('svc1','Через служебный ключ','Текст','Компания','Ручной ввод','Публичное','Подтверждено')`)) === null);
+
+// --- переписка с клиентами (бывший OTR)
+check('скрипты продаж перенесены', (await as('authenticated', 'artem@adervis.ru', 'select count(*)::int c from public.sales_scripts')).rows[0].c === 23);
+check('настройки бота созданы', (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.outreach_settings where id='main'`)).rows[0].c === 1);
+await as('service_role', '', `insert into public.prospects(id, name, source, tg_chat_id) values ('pt1', 'Иван', 'Telegram-бот', 111)`);
+await as('authenticated', 'artem@adervis.ru', `update public.prospects set note = 'Пишет из бота' where id = 'pt1'`);
+const ptAt = (await as('authenticated', 'artem@adervis.ru', `select updated_at::text t from public.prospects where id='pt1'`)).rows[0].t;
+await as('service_role', '', `insert into public.messages(id, prospect_id, channel, direction, text) values ('m1', 'pt1', 'Telegram', 'in', 'Здравствуйте, сколько стоит ролик?')`);
+check('новое сообщение не меняет время правки карточки',
+  (await as('authenticated', 'artem@adervis.ru', `select updated_at::text t from public.prospects where id='pt1'`)).rows[0].t === ptAt);
+await as('service_role', '', `insert into public.messages(id, prospect_id, channel, direction, text) values ('m2', 'pt1', 'Telegram', 'in', 'И сроки?')`);
+const pt = (await as('authenticated', 'artem@adervis.ru', `select unread, last_text, last_direction, last_message_at from public.prospects where id='pt1'`)).rows[0];
+check('входящие сообщения считаются непрочитанными', pt.unread === 2 && pt.last_text === 'И сроки?' && pt.last_direction === 'in' && pt.last_message_at, JSON.stringify(pt));
+await as('service_role', '', `insert into public.messages(id, prospect_id, channel, direction, text) values ('m3', 'pt1', 'Telegram', 'out', 'Ответили')`);
+check('исходящее не добавляет непрочитанных', (await as('authenticated', 'artem@adervis.ru', `select unread::int u from public.prospects where id='pt1'`)).rows[0].u === 2);
+check('участник видит переписку', (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.messages where prospect_id='pt1'`)).rows[0].c === 3);
+check('посторонний не видит переписку', (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.messages')).rows[0].c === 0);
+check('один Telegram-чат — один контакт',
+  (await fail('service_role', '', `insert into public.prospects(id, name, source, tg_chat_id) values ('pt2', 'Дубль', 'Telegram-бот', 111)`)) !== null);
+check('участник не читает ключи каналов', (await fail('authenticated', 'artem@adervis.ru', 'select * from public.channel_secrets')) !== null);
+check('участник сохраняет ключ через функцию',
+  (await fail('authenticated', 'artem@adervis.ru', `select public.set_channel_secret('tg_bot_token', '123:abc')`)) === null);
+const st = (await as('authenticated', 'artem@adervis.ru', `select * from public.channel_secret_status()`)).rows;
+check('видно, что ключ сохранён, но не сам ключ', st.some(r => r.name === 'tg_bot_token') && !JSON.stringify(st).includes('123:abc'), JSON.stringify(st));
+check('посторонний не сохраняет ключ',
+  (await fail('authenticated', 'stranger@gmail.com', `select public.set_channel_secret('tg_bot_token', 'evil')`)) !== null);
+check('аноним не сохраняет ключ', (await fail('anon', '', `select public.set_channel_secret('tg_bot_token', 'evil')`)) !== null);
+await as('authenticated', 'artem@adervis.ru', `select public.set_channel_secret('tg_bot_token', '')`);
+check('пустой ключ удаляет его', (await as('service_role', '', `select count(*)::int c from public.channel_secrets where name='tg_bot_token'`)).rows[0].c === 0);
+check('бот без входа не пишет журнал, правка человека — пишет',
+  (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.activity where entity='prospects' and entity_id='pt1'`)).rows[0].c === 1);
+await as('authenticated', 'artem@adervis.ru', `update public.prospects set unread = 0 where id = 'pt1'`);
+check('прочтение диалога — не правка: время и журнал не меняются',
+  (await as('authenticated', 'artem@adervis.ru', `select updated_at::text t from public.prospects where id='pt1'`)).rows[0].t === ptAt
+  && (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.activity where entity='prospects' and entity_id='pt1'`)).rows[0].c === 1);
+await as('authenticated', 'artem@adervis.ru', `update public.prospects set city = 'Пермь' where id = 'pt1'`);
+check('правка поля карточки двигает время правки',
+  (await as('authenticated', 'artem@adervis.ru', `select updated_at::text t from public.prospects where id='pt1'`)).rows[0].t !== ptAt);
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);
