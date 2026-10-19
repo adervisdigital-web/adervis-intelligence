@@ -2974,6 +2974,10 @@ function delProspect(id) {
 
 const CHANNEL_OF = p => p.tg_chat_id ? 'Telegram' : p.vk_peer_id ? 'ВКонтакте' : p.ig_user_id ? 'Instagram' : '';
 const CHANNEL_ICON = { Telegram: 'telegram', 'ВКонтакте': 'social', Instagram: 'photo' };
+const CHANNEL_CLASS = { Telegram: 'ch-tg', 'ВКонтакте': 'ch-vk', Instagram: 'ch-ig' };
+// Кружок с инициалами и значком канала в его фирменном цвете.
+const dlgAvatar = (p, big = false) => { const ch = CHANNEL_OF(p);
+  return `<span class="dlgava ${CHANNEL_CLASS[ch] || ''}${big ? ' big' : ''}" title="${E(ch)}">${E(String(p.name || '?').replace(/[«»"]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase())}<i>${icon(CHANNEL_ICON[ch], 10)}</i></span>`; };
 const SCRIPT_STAGES = ['Первое сообщение', 'Ответы на вопросы', 'Возражения и закрытие'];
 // Клиент написал последним, а бот в диалоге выключен — ответить должен человек.
 // Ушёл в личную переписку — разговор идёт там, здесь ничего не ждёт.
@@ -3025,7 +3029,7 @@ function msgHtml(m, p) {
 const dialogItem = p => {
   const ch = CHANNEL_OF(p), on = p.id === dialog.id;
   return `<button class="dlgitem${on ? ' on' : ''}${p.unread ? ' unread' : ''}" data-dlg="${E(p.id)}"${on ? ' aria-current="true"' : ''}>
-    <span class="dlgch" title="${E(ch)}">${icon(CHANNEL_ICON[ch], 16)}</span>
+    ${dlgAvatar(p)}
     <span class="dlgtext"><b>${E(p.name)}</b><small>${p.last_direction === 'out' ? '<i>Мы:</i> ' : ''}${E(p.last_text || '')}</small></span>
     <span class="dlgmeta"><small>${listTime(p.last_message_at)}</small>${p.unread
       ? `<b class="dlgun" aria-label="непрочитанных: ${p.unread}">${p.unread}</b>`
@@ -3048,7 +3052,7 @@ function chatHtml(p) {
   return `<section class="card dlgchat" aria-label="Переписка: ${E(p.name)}">
     <header class="dlghead">
       <button type="button" class="iconbtn dlgback" data-action="dlgback" aria-label="К списку диалогов">${icon('back', 18)}</button>
-      <div class="dlgwho"><b>${E(p.name)}</b><small class="muted">${icon(CHANNEL_ICON[ch], 13)} ${E(ch)}${p.category ? ' · ' + E(p.category.slice(0, 60)) : ''}</small></div>
+      ${dlgAvatar(p, true)}<div class="dlgwho"><b>${E(p.name)}</b><small class="muted">${icon(CHANNEL_ICON[ch], 13)} ${E(ch)}${p.category ? ' · ' + E(p.category.slice(0, 60)) : ''}</small></div>
       <div class="dlgtools">${tag(p.status)}
         <button type="button" class="chip${bot ? ' on' : ''}" data-action="dlgmode" aria-pressed="${bot}"
           title="${bot ? 'Бот отвечает сам. Нажмите, чтобы вести диалог самому' : 'Бот молчит, отвечаете вы. Нажмите, чтобы бот снова отвечал'}">${icon('ai', 14)} ${bot ? 'Бот отвечает' : 'Бот выключен'}</button>
