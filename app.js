@@ -5705,17 +5705,24 @@ function render() {
     const hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
     const first = memberName(me?.email).split(' ')[0];
     const when = new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long' });
-    s = `<div class="hero compact homehero">
-      <div><p class="herodate">${E(when)}</p>
-      <h1>${hello}${first && first !== 'ADERVIS' ? ', ' + E(first) : ''}</h1>
-      <p>${tl.length ? `Сегодня ${tl.length} ${plural(tl.length, 'дело', 'дела', 'дел')}${lateN ? `, из них ${lateN} ${plural(lateN, 'просрочено', 'просрочены', 'просрочены')}` : ''}. Начните со списка ниже.` : 'Срочного нет — хорошее время написать новым клиентам.'}</p></div>
-      <div class="heroactions"><button class="ghostbtn" data-page="dialogs">${icon('chat', 16)} Диалоги</button>
-        <button class="ghostbtn" data-page="prospects">${icon('clients', 16)} Найти клиентов</button></div></div>
-      <div class="quickacts" role="group" aria-label="Быстро создать">${QUICK.map(([act, label, ic, tone]) => `<button class="quickact tone-${tone}" data-action="${act}">
-        <i>${icon(ic, 18)}</i><span>${label}</span></button>`).join('')}</div>
-      <div class="grid metrics">${cards.map(([a, b, c, to, extra]) => `<button class="card metric click tone-${toneOf(to)}" data-page="${to}">
-        <div class="metrichead"><span class="mtile">${icon(to, 17)}</span><span class="mlabel">${a}</span>${icon('next', 15)}</div>
-        <div class="value">${b}</div><small>${c}</small>${extra}</button>`).join('')}</div>
+    const waitingN = db.prospects.filter(waitingReply).length;
+    const kinds = [['просрочено', lateN, 'red'], ['ждут ответа', waitingN, 'gold'],
+      ['брифов в работе', db.briefs.filter(b => !['Сделка', 'Отказ'].includes(b.stage)).length, 'violet']].filter(([, n]) => n);
+    s = `<section class="cmd homehero">
+      <div class="cmdmain">
+        <span class="cmddate">${icon('calendar', 15)}${E(when)}</span>
+        <h1>${hello}${first && first !== 'ADERVIS' ? ', ' + E(first) : ''}</h1>
+        <p>${tl.length ? `Сегодня ${tl.length} ${plural(tl.length, 'дело', 'дела', 'дел')}. Начните с просроченного — оно наверху списка.` : 'Срочного нет — хорошее время написать новым клиентам.'}</p>
+        ${kinds.length ? `<div class="cmdchips">${kinds.map(([t, n, tone]) => `<span class="cmdchip tone-${tone}"><b>${n}</b>${t}</span>`).join('')}</div>` : ''}
+      </div>
+      <div class="heroactions cmdacts"><button class="ghostbtn" data-page="dialogs">${icon('chat', 16)} Диалоги</button>
+        <button class="ghostbtn" data-page="prospects">${icon('clients', 16)} Найти клиентов</button></div>
+    </section>
+    <div class="quickacts" role="group" aria-label="Быстро создать">${QUICK.map(([act, label, ic, tone]) => `<button class="quickact tone-${tone}" data-action="${act}">
+      <i>${icon(ic, 18)}</i><span>${label}</span>${icon('plus', 14)}</button>`).join('')}</div>
+    <section class="card pulse" aria-label="Главные цифры">${cards.map(([a, b, c, to, extra]) => `<button class="metric click tone-${toneOf(to)}" data-page="${to}">
+      <div class="metrichead"><span class="mtile">${icon(to, 17)}</span><span class="mlabel">${a}</span>${icon('next', 15)}</div>
+      <div class="value">${b}</div><small>${c}</small>${extra}</button>`).join('')}</section>
       ${todayPanel()}
       ${(() => {
         const top = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
@@ -5978,6 +5985,8 @@ function render() {
 
   const keep = page === 'dialogs' ? dialogSnapshot() : null;
   $('#view').innerHTML = s;
+  // цвет группы раздела — для подсветки карточек и цифр внутри
+  $('#view').className = 'tone-' + toneOf(page);
   decorateSearch();
   if (keep) wireDialogs(keep);
   const bff = $('#bffile');
