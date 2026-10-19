@@ -4,6 +4,7 @@ import { chromium } from 'playwright-core';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 
 import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -112,6 +113,13 @@ const fake = (seedData) => {
     channel_stats: [],
     survey_answers: [],
     messages: [],
+    briefs: [],
+    studio_rates: [
+      { id: 'art', name: 'Арт-директор, концепция', rate: 2000, note: 'Ориентир — проверьте', sort: 10 },
+      { id: 'motion', name: 'Моушн-дизайнер', rate: 1700, note: 'Ориентир — проверьте', sort: 20 },
+      { id: '3d', name: '3D-художник', rate: 2000, note: 'Ориентир — проверьте', sort: 30 },
+      { id: 'sound', name: 'Звук и музыка', rate: 1500, note: 'Ориентир — проверьте', sort: 80 }
+    ],
     sales_scripts: [
       { id: 's1-price', stage: 1, sort: 30, title: '[Сколько стоит?] Перевод в звонок', body: 'Зависит от задачи.\n\nДавайте так: {call} — {call_link}.', note: '',
         _at: '2026-09-01T10:00:00Z', _by: 'artem@adervis.ru' },
@@ -357,6 +365,20 @@ const fake = (seedData) => {
             over: ['title2: 31 из 30'], banned: ['лицензи', 'официальн'] }
         ], gaps: [], model: 'yandexgpt/latest', left: 24 };
       }
+      if (payload.mode === 'brief') {
+        if (window.__briefFail) throw new Error(window.__briefFail);
+        return { summary: 'Пакет графики для корпоративного видеодайджеста', goal: 'Вовлечь сотрудников', audience: 'Сотрудники группы',
+          deliverables: [{ name: 'Заставка', details: '10–15 с' }, { name: 'Отбивки рубрик', details: '22 шт.' }],
+          items: [
+            { group: 'Заставка', name: 'Заставка 10–15 с', role: 'motion', min: 20, max: 30, base: true },
+            { group: 'Студия', name: '3D-студия, 3 плана', role: '3d', min: 40, max: 60, base: false },
+            { group: 'Рубрики', name: 'Мастер-отбивка и шаблон', role: 'motion', min: 10, max: 14, base: true }
+          ],
+          questions: [{ q: 'Какой срок запуска?', why: 'план' }, { q: 'Хромакей или LED?', why: 'студия' }, { q: 'Есть ли лицензия на шрифты?', why: 'шаблоны' }],
+          plan: [{ stage: 'Концепция', days: 5, result: 'стайлфреймы' }, { stage: 'Производство', days: 15, result: 'все элементы' }],
+          risks: ['Шрифты без лицензии'], options: [{ name: 'Звуковое оформление', why: 'целостность', role: 'sound', min: 8, max: 12 }],
+          unknowns: ['Бюджет'], gaps: [], model: 'claude-opus-5-5', left: 20 };
+      }
       if (payload.mode === 'pitch') {
         return { drafts: [{ title: 'Первое сообщение', body: 'Лично для ' + payload.company.name + ': можем записать разбор. Прислать?', sources: [] }],
           gaps: ['Нет описания с сайта'], model: 'gemini/тест', left: 26 };
@@ -427,7 +449,7 @@ check('с плитки можно уйти в её раздел',
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textContent));
 check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 21,
+check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 22,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
 check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
@@ -1845,6 +1867,130 @@ await page.click('.todayrow[data-id="dl:tg-ivan"]');
 await page.waitForSelector('.dlgchat');
 check('из «На сегодня» — сразу в переписку', (await page.textContent('#crumb')) === 'Диалоги' && (await page.textContent('.dlgwho b')) === 'Иван');
 
+// --- 5ц. брифы и КП: ТЗ → разбор → вопросы → смета → план → КП → диалог
+// .docx собираем здесь же: настоящий zip с document.xml, как у Word
+function makeDocx(bodyXml) {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${bodyXml}</w:body></w:document>`;
+  const files = [['[Content_Types].xml', '<Types/>'], ['word/document.xml', xml]];
+  const parts = [], central = [];
+  let offset = 0;
+  for (const [name, text] of files) {
+    const data = Buffer.from(text, 'utf8'), comp = zlib.deflateRawSync(data), nb = Buffer.from(name), crc = zlib.crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(8, 8); local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(comp.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(nb.length, 26);
+    parts.push(local, nb, comp);
+    const c = Buffer.alloc(46);
+    c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(8, 10); c.writeUInt32LE(crc, 16);
+    c.writeUInt32LE(comp.length, 20); c.writeUInt32LE(data.length, 24); c.writeUInt16LE(nb.length, 28); c.writeUInt32LE(offset, 42);
+    central.push(c, nb);
+    offset += 30 + nb.length + comp.length;
+  }
+  const cd = Buffer.concat(central), end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, cd, end]);
+}
+const P = t => `<w:p><w:r><w:t>${t}</w:t></w:r></w:p>`;
+const LI = t => `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/></w:numPr></w:pPr><w:r><w:t>${t}</w:t></w:r></w:p>`;
+const TZ_DOCX = makeDocx(P('ТЕХНИЧЕСКОЕ ЗАДАНИЕ НА ПАКЕТ МОУШН-ДИЗАЙНА') + P('Проект: видеодайджест для сотрудников. Нужна заставка, отбивки рубрик и плашки титров, всё — шаблонами для штатного дизайнера.')
+  + LI('Заставка 10–15 секунд') + LI('Отбивки рубрик 2–3 секунды')
+  + '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Формат</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Full HD, 25 fps</w:t></w:r></w:p></w:tc></w:tr></w:tbl>');
+const norm = t => String(t).replace(/\s+/g, ' ');
+
+await nav('briefs');
+check('брифы: цепочка шагов и пустой список', (await page.textContent('.bfchain')).includes('Переговоры') && await page.isVisible('[data-action=bfnew]'));
+await page.click('[data-action=bfnew]');
+await page.fill('#bft', 'Видеодайджест');
+await page.fill('#bfc', 'Уралхим');
+await page.selectOption('#bfsrc', 'ВКонтакте');
+await page.setInputFiles('#bfsrcf', { name: 'Brif_videodaydzhest.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: TZ_DOCX });
+await page.waitForFunction(() => document.querySelector('#bff textarea[name=source_text]').value.includes('ТЕХНИЧЕСКОЕ'));
+const tzText = await page.inputValue('#bff textarea[name=source_text]');
+check('.docx читается в браузере: абзацы, списки и таблицы', tzText.includes('• Заставка 10–15 секунд') && tzText.includes('Формат | Full HD, 25 fps'), tzText.slice(0, 200));
+await page.click('#bff button.primary');
+await page.waitForSelector('.bftabs');
+let stB = await state();
+const nb = stB.briefs[0], nlead = stB.leads.find(l => l.id === nb.lead_id);
+check('бриф создан и сразу завёл заявку в воронке', nb && nb.client === 'Уралхим' && nlead && nlead.source === 'ВКонтакте' && nlead.status === 'В работе' && nlead.next_on === localDay());
+check('рабочая область: вкладки цепочки', (await page.$$('.bftabs button')).length === 7 && (await page.textContent('h1')) === 'Видеодайджест');
+
+await page.click('[data-action=bfai]');
+await page.waitForSelector('.bftabs button.active:has-text("Разбор")');
+const briefAsk = await page.evaluate(() => window.__lastAiPayload);
+check('разбор ТЗ: в ИИ уходит ТЗ и роли, ставок там нет', briefAsk.mode === 'brief' && briefAsk.text.includes('ТЕХНИЧЕСКОЕ') && briefAsk.roles.some(r => r.id === '3d')
+  && !JSON.stringify(briefAsk).includes('1700') && !JSON.stringify(briefAsk).includes('rate'));
+check('разбор показан и подписан моделью', (await page.textContent('.bfbody')).includes('Пакет графики для корпоративного видеодайджеста') && (await page.textContent('.bfbody')).includes('claude-opus-5-5'));
+stB = await state();
+check('после разбора — шаг «Вопросы», следующий шаг на сегодня', stB.briefs[0].stage === 'Вопросы' && stB.briefs[0].next_on === localDay() && stB.briefs[0].questions.length === 3);
+
+await page.click('[data-action=bftab][data-id=questions]');
+await page.click('[data-action=bfqcopy]');
+const qmsg = await page.evaluate(() => navigator.clipboard.readText());
+check('вопросы — одним сообщением, пронумерованы', qmsg.includes('1. Какой срок запуска?') && qmsg.includes('3. Есть ли лицензия') && qmsg.includes('Видеодайджест'));
+await page.waitForFunction(() => window.__STATE__.briefs[0].questions.every(q => q.status === 'задан'));
+check('скопированные вопросы отмечены «задан»', true);
+await page.click('[data-action=bfqstatus][data-id="0"]');
+await page.fill('[data-bf="questions.0.answer"]', 'Запуск 1 декабря');
+await page.waitForFunction(() => window.__STATE__.briefs[0].questions[0].answer === 'Запуск 1 декабря');
+check('ответ клиента записан к вопросу', (await state()).briefs[0].questions[0].status === 'ответ');
+
+await page.click('[data-action=bftab][data-id=estimate]');
+const tot = norm(await page.textContent('#bftotals'));
+check('смета: полный = часы × ставки + 10% запаса, округлено до 5 000', tot.includes('145 000 ₽ – 215 000 ₽') && tot.includes('середина 180 000 ₽'), tot);
+await page.screenshot({ path: path.join(OUT, 'intel-brief-estimate.png'), fullPage: true });
+check('смета: базовый — без «только полного»', tot.includes('Базовый вариант') && tot.includes('60 000 ₽ – 85 000 ₽'), tot);
+await page.fill('[data-bf="estimate.items.0.max"]', '40');
+await page.waitForFunction(() => /235000/.test(document.querySelector('#bftotals').textContent.replace(/\s/g, '')));
+check('правка часов пересчитывает сумму на месте, без перерисовки', await page.evaluate(() => document.activeElement?.dataset.bf === 'estimate.items.0.max'));
+await page.waitForFunction(() => window.__STATE__.briefs[0].estimate.items[0].max === 40);
+check('правка сметы сохранилась сама', true);
+await page.click('.bfbody [data-action=bfrates]');
+await page.fill('#ratef input[name=rate1]', '2000');
+await page.click('#ratef button.primary');
+await page.waitForFunction(() => window.__STATE__.studio_rates.find(r => r.id === 'motion').rate === 2000);
+check('новая ставка сразу пересчитала смету', norm(await page.textContent('#bftotals')).includes('155 000 ₽'), norm(await page.textContent('#bftotals')));
+
+await page.click('[data-action=bftab][data-id=plan]');
+await page.fill('#bfstart', '2026-11-02');
+await page.fill('[data-bf="plan.1.days"]', '10');
+await page.waitForFunction(() => document.querySelector('#bfplantotal').textContent.includes('15 рабочих дней'));
+check('план: рабочие дни от старта без выходных', norm(await page.textContent('[data-plan="1"]')).includes('9 нояб.') && norm(await page.textContent('[data-plan="1"]')).includes('20 нояб.'), await page.textContent('[data-plan="1"]'));
+
+await page.click('[data-action=bftab][data-id=kp]');
+const kp = norm(await page.textContent('.kppreview'));
+check('КП: клиент, состав, цены вариантов, опции, этапы, условия', kp.includes('Уралхим') && kp.includes('Заставка') && kp.includes('Базовый вариант')
+  && kp.includes('Звуковое оформление') && kp.includes('Концепция') && kp.includes('Предоплата 50%') && kp.includes('2 круга правок'), kp.slice(0, 300));
+await page.screenshot({ path: path.join(OUT, 'intel-brief-kp.png'), fullPage: true });
+await page.fill('#kpfull', '210000');
+await page.waitForFunction(() => document.querySelector('.kppreview').textContent.replace(/\s/g, '').includes('210000₽'));
+check('цена в КП правится и сразу видна в документе', true);
+await page.evaluate(() => { window.print = () => { window.__printed = document.querySelector('#kpprint')?.textContent || ''; }; });
+await page.click('[data-action=kpprint]');
+check('«Сохранить PDF» печатает только документ КП', (await page.evaluate(() => window.__printed)).includes('Коммерческое предложение')
+  && await page.evaluate(() => document.body.classList.contains('printkp')));
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.click('[data-action=kpsent]');
+await page.waitForFunction(() => window.__STATE__.briefs[0].stage === 'Переговоры');
+stB = await state();
+const sentLead = stB.leads.find(l => l.id === stB.briefs[0].lead_id);
+check('КП отправлено: заявка в воронке «КП отправлено», напоминание через 2 дня', sentLead.status === 'КП отправлено' && sentLead.next_on === localDay(2) && stB.briefs[0].kp.sent_on === localDay());
+
+await page.click('[data-action=bftab][data-id=talk]');
+check('диалог: восемь шагов, текущий подсвечен, цена из КП в тексте', (await page.$$('.bfstep')).length === 8 && (await page.$$('.bfstep.now')).length === 3
+  && norm(await page.textContent('.bftalk')).includes('210 000 ₽'));
+await page.fill('#bfnexton', localDay());
+await page.waitForFunction(d => window.__STATE__.briefs[0].next_on === d, localDay());
+await nav('home');
+check('«На сегодня» зовёт к брифу', (await page.textContent('.todaycard')).includes('Видеодайджест'));
+await page.click('[data-action=todayopen][data-id^="br:"]');
+await page.waitForSelector('.bftabs');
+check('из «На сегодня» — сразу в бриф', (await page.textContent('h1')) === 'Видеодайджест');
+await page.screenshot({ path: path.join(OUT, 'intel-brief.png') });
+await nav('leads');
+await page.click(`[data-l="${stB.briefs[0].lead_id}"]`);
+check('в карточке заявки — ссылка на бриф и КП', (await page.textContent('#modal')).includes('Бриф и КП: Видеодайджест'));
+await page.click('#modal [data-action=close]');
+
 // --- 6. задачи
 await nav('tasks');
 await page.check('input[data-task=t1]');
@@ -2630,7 +2776,7 @@ await m.click('#tabbar button[data-page=home]');
 // --- 13. обход всех разделов на узком экране
 await m.evaluate(() => document.body.classList.remove('menu'));
 const sections = ['home', 'ads', 'leads', 'decisions', 'chain', 'knowledge', 'brand', 'products',
-  'cases', 'content', 'dialogs', 'prospects', 'magnets', 'keywords', 'survey', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
+  'cases', 'content', 'briefs', 'dialogs', 'prospects', 'magnets', 'keywords', 'survey', 'assistant', 'analytics', 'competitors', 'tasks', 'roadmap', 'settings'];
 const wide = [], small = [];
 for (const id of sections) {
   await m.evaluate(s => document.querySelector(`#nav button[data-page=${s}]`).click(), id);
