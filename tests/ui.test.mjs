@@ -1190,6 +1190,17 @@ check('отказ не стирает дальний шаг', (await state()).le
 const lostAfter = await page.$$eval('.funnelcard .fstep', s => (s[2].innerText.match(/потеряно: (\d+)/) || [0, 0])[1]);
 check('отказ после КП — потеря на шаге КП', Number(lostAfter) === Number(lostBefore) + 1, `${lostBefore} → ${lostAfter}`);
 check('отказ попал в колонку потерь', await page.$eval(`article[data-l="${fl.id}"]`, a => a.closest('.boardcol').classList.contains('lost')));
+// перетаскивание: вернули из потерь в работу, а потом снова в потери
+await page.dragAndDrop(`article[data-l="${fl.id}"]`, '.leadboard .boardcol[data-drop="В работе"]');
+await page.waitForFunction(id => window.__STATE__.leads.find(l => l.id === id).status === 'В работе', fl.id);
+check('карточку можно перетащить в другой столбец, причина потери сброшена', (await state()).leads.find(l => l.id === fl.id).lost_reason === ''
+  && await page.$eval(`article[data-l="${fl.id}"]`, a => a.closest('.boardcol').dataset.drop === 'В работе'));
+check('в шапке столбца — число и сумма', /\d/.test(await page.textContent('.leadboard .boardcol[data-drop="В работе"] .colcount')));
+await page.dragAndDrop(`article[data-l="${fl.id}"]`, '.leadboard .boardcol[data-drop="lost"]');
+await page.waitForSelector('#lf .lostfield:not([hidden])');
+check('перетащили в потери — сразу просят причину', (await state()).leads.find(l => l.id === fl.id).status === 'Отказ');
+await page.click('#modal [data-action=close]');
+await page.screenshot({ path: path.join(OUT, 'intel-leadboard.png'), fullPage: true });
 await page.click('[data-action=leadview][data-id=table]');
 await page.screenshot({ path: path.join(OUT, 'intel-funnel.png'), fullPage: true });
 

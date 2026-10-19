@@ -1791,3 +1791,31 @@ html[data-theme=dark] .todayrow.late .todaywhen{color:#ff7b7b}
 .grid.metrics > .card{border:0;border-radius:0;box-shadow:none;background:var(--panel)}
 .grid.metrics > .card.click:hover{transform:none;box-shadow:none;background:color-mix(in srgb,var(--acc,var(--gold)) 6%,var(--panel))}
 .grid.metrics .value{font-family:var(--font-display)}
+
+/* --- Доска заявок: цветные столбцы, перетаскивание ---------------------- */
+.leadboard .boardcol{background:color-mix(in srgb,var(--acc) 5%,var(--bg));border:1px solid var(--line);border-top:3px solid var(--acc);border-radius:16px;padding:10px;gap:10px;transition:background .15s,border-color .15s}
+.leadboard .boardcol header{gap:8px;justify-content:flex-start;flex-wrap:wrap}
+.leadboard .boardcol header b{font-size:14px}
+.leadboard .coldot{width:8px;height:8px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 20%,transparent)}
+.leadboard .colcount{font-size:12px;font-weight:700;padding:1px 8px;border-radius:99px;background:color-mix(in srgb,var(--acc) 18%,transparent);color:color-mix(in srgb,var(--acc) 75%,var(--ink))}
+html[data-theme=dark] .leadboard .colcount{color:var(--acc)}
+.leadboard .colsum{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+.leadboard .boardcol.over{background:color-mix(in srgb,var(--acc) 14%,var(--bg));border-color:var(--acc);border-style:dashed;border-top-style:solid}
+.leadboard .boardempty{border:1px dashed var(--line);border-radius:12px;padding:16px 8px;text-align:center;font-size:12px}
+.leadboard .lcard{position:relative;border-left:0;border-radius:14px;padding:12px 12px 10px;gap:8px;cursor:grab}
+.leadboard .lcard:active{cursor:grabbing}
+.leadboard .lcard.dragging{opacity:.4;transform:rotate(1.5deg)}
+.leadboard .lcard .cardx{top:8px;right:8px;width:30px;height:30px}
+.leadboard .lcard:hover .cardx,.leadboard .lcard:focus-within .cardx{opacity:1}
+.lhead{display:flex;gap:10px;align-items:center;padding-right:28px;min-width:0}
+.lhead > div{min-width:0;display:grid}
+.lhead h3{margin:0;font-size:14px;line-height:1.25;overflow-wrap:anywhere}
+.lavatar{width:34px;height:34px;flex:none;border-radius:11px;display:grid;place-items:center;font-size:12px;font-weight:700;
+  background:color-mix(in srgb,var(--acc) 18%,var(--panel));color:color-mix(in srgb,var(--acc) 80%,var(--ink))}
+html[data-theme=dark] .lavatar{color:var(--acc)}
+.lnext{display:inline-flex;gap:5px;align-items:center;justify-self:start;font-size:12px;padding:3px 9px;border-radius:99px;background:var(--bg);color:var(--muted)}
+.lnext.now{background:color-mix(in srgb,var(--gold) 16%,transparent);color:color-mix(in srgb,var(--gold) 70%,var(--ink))}
+.lnext.late{background:color-mix(in srgb,#ef4444 14%,transparent);color:#ef4444}
+.lamount{font-family:var(--font-display);font-size:14px}
+.leadboard .movebtn{width:30px;height:30px;padding:0;display:inline-grid;place-items:center}
+@media(hover:none){.leadboard .lcard .cardx{opacity:1}}
