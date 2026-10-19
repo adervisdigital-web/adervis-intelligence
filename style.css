@@ -1677,3 +1677,38 @@ button.danger{display:inline-flex;align-items:center;gap:7px}
 @media(max-width:720px){.rowacts{display:none}}
 @media(min-width:721px){#menu{display:none}
   body.rail .useracts .sbact{flex:none;width:100%;height:36px}}
+
+/* --- Главная 2.0: приветствие, быстрые действия, цветные карточки ------- */
+.eyebrow{text-transform:none;letter-spacing:0;font-size:12px;font-weight:600}
+.homehero .herodate{margin:0 0 6px;color:var(--gold);font-size:13px;font-weight:600}
+.homehero .herodate::first-letter{text-transform:uppercase}
+.homehero h1{margin-bottom:6px}
+.heroactions{display:flex;gap:8px;flex-wrap:wrap}
+.heroactions button{display:inline-flex;align-items:center;gap:7px}
+.ghostbtn{background:rgba(255,255,255,.06);color:#fdfdfd;border:1px solid rgba(255,255,255,.18)}
+.ghostbtn:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.3)}
+.quickacts{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:16px 0 4px}
+.quickact{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);color:var(--ink);text-align:left;font-weight:600;min-height:52px}
+.quickact i{width:32px;height:32px;flex:none;display:grid;place-items:center;border-radius:9px;background:color-mix(in srgb,var(--acc) 15%,transparent);color:color-mix(in srgb,var(--acc) 80%,var(--ink))}
+html[data-theme=dark] .quickact i{color:var(--acc)}
+.quickact:hover{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
+.quickact:hover i{background:var(--acc);color:#141414}
+.metric .metrichead{display:flex;align-items:center;gap:10px;color:var(--muted)}
+.metric .metrichead .mlabel{flex:1;font-size:13px;font-weight:600;color:var(--ink)}
+.metric .metrichead > svg{opacity:.45;transition:opacity .15s}
+.metric:hover .metrichead > svg{opacity:1}
+.metric .mtile{width:32px;height:32px;flex:none;display:grid;place-items:center;border-radius:9px;background:color-mix(in srgb,var(--acc) 15%,transparent);color:color-mix(in srgb,var(--acc) 80%,var(--ink))}
+html[data-theme=dark] .metric .mtile{color:var(--acc)}
+.metric.click:hover{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
+.todayli{display:flex;gap:6px;align-items:stretch}
+.todayli .todayrow{flex:1;min-width:0}
+.todayli .todayicon{background:color-mix(in srgb,var(--acc) 15%,transparent);color:color-mix(in srgb,var(--acc) 80%,var(--ink))}
+html[data-theme=dark] .todayli .todayicon{color:var(--acc)}
+.todaysnooze{width:44px;flex:none;padding:0;display:grid;place-items:center;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+.todaysnooze:hover{color:var(--ink);border-color:var(--gold)}
+@media(max-width:1180px){.quickacts{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:720px){.quickacts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.hero .heroactions .ghostbtn{background:rgba(255,255,255,.07);color:#fdfdfd;border:1px solid rgba(255,255,255,.2);box-shadow:none}
+.hero .heroactions .ghostbtn:hover{background:rgba(255,255,255,.14);border-color:var(--gold)}
+.metric .metrichead > svg{flex:none}
+.metric .metrichead .mlabel{min-width:0;line-height:1.3}

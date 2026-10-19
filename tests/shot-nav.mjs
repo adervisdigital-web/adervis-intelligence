@@ -31,11 +31,11 @@ await page.fill('#gate-email', 'artem@adervis.ru');
 await page.fill('#gate-pass', 'secret');
 await page.click('#gatebtn');
 await page.waitForSelector('#shell:not([hidden])');
-for (const [theme, pageId] of [['dark', 'leads'], ['light', 'content']]) {
+for (const [theme, pageId] of [['dark', 'leads'], ['light', 'content'], ['dark', 'home'], ['light', 'home']]) {
   await page.evaluate(t => { document.documentElement.dataset.theme = t; }, theme);
   await page.evaluate(id => document.querySelector(`#nav button[data-page=${id}]`).click(), pageId);
   await page.waitForTimeout(300);
-  await page.screenshot({ path: path.join(OUT, `nav-${theme}.png`) });
+  await page.screenshot({ path: path.join(OUT, `nav-${theme}-${pageId}.png`) });
 }
 await page.click('#rail');
 await page.waitForTimeout(300);
