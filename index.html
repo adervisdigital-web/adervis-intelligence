@@ -36,12 +36,17 @@
     <div class="brand">
       <div class="brandmark">A</div>
       <div><b>ADERVIS</b><small>INTELLIGENCE</small></div>
+      <button class="railbtn" id="rail" aria-label="Свернуть меню" title="Свернуть меню"></button>
     </div>
-    <div class="workspace"><div><strong>ADERVIS Digital</strong><span>Одна компания · единая база</span></div></div>
+    <button class="navsearch" id="navsearch" title="Поиск — Ctrl K"></button>
     <nav class="nav" id="nav"></nav>
     <div class="bottom">
-      <div class="user"><div class="avatar" id="avatar"></div><div><b id="myname"></b><br><small id="myemail"></small></div></div>
-      <p><button data-action="signout">Выйти</button></p>
+      <div class="user"><div class="avatar" id="avatar"></div><div class="who"><b id="myname"></b><small id="myemail"></small></div></div>
+      <div class="useracts">
+        <button class="sbact" id="sbtheme" aria-label="Сменить тему" title="Сменить тему"></button>
+        <button class="sbact" data-page="settings" aria-label="Настройки" title="Настройки" id="sbsettings"></button>
+        <button class="sbact out" data-action="signout" aria-label="Выйти" title="Выйти" id="sbout"></button>
+      </div>
     </div>
   </aside>
   <main class="main">
