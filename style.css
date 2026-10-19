@@ -1833,3 +1833,27 @@ html[data-theme=dark] .dlgava{color:color-mix(in srgb,var(--ch,var(--gold)) 70%,
 .dlgitem.unread .dlgtext b{color:var(--ink)}
 .dlgitem.unread .dlgtext small{font-weight:600}
 .dlglist .searchwrap{flex:none}
+
+/* --- Брифы и КП: карточки сделок --------------------------------------- */
+.bfpulse{margin:0 0 16px}
+.bfpulse .metric{cursor:default}
+.bfpulse .metric .mlabel{color:color-mix(in srgb,var(--acc) 70%,var(--ink))}
+html[data-theme=dark] .bfpulse .metric .mlabel{color:var(--acc)}
+.bfgrid{align-items:stretch}
+.bfcard{display:grid;gap:10px;align-content:start;border-top:3px solid var(--acc)}
+.bfcard .lhead h2{margin:2px 0 0;font-size:17px;line-height:1.25}
+.bfsteps{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+.bfsteps i{height:6px;border-radius:3px;background:var(--line)}
+.bfsteps i.done{background:color-mix(in srgb,var(--acc) 55%,var(--line))}
+.bfsteps i.now{background:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent)}
+.bfsteps i.off{background:color-mix(in srgb,#ef4444 35%,var(--line))}
+.bfstage{display:flex;gap:8px;align-items:baseline;margin:0}
+.bfstage b{color:color-mix(in srgb,var(--acc) 75%,var(--ink))}
+html[data-theme=dark] .bfstage b{color:var(--acc)}
+.bfprice{display:grid;gap:2px}
+.bfprice b{font-family:var(--font-display);font-size:22px;line-height:1.15}
+.bfmeta{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:10px;margin-top:2px}
+.bfmeta span{display:inline-flex;gap:5px;align-items:center}
+.pulse .metric{min-width:0}
+.pulse .metric .value{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.bfpulse .metric .value{font-size:clamp(22px,2.1vw,32px)}

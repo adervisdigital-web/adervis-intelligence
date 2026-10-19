@@ -3727,17 +3727,43 @@ function renderBriefs() {
   const chain = `<ol class="bfchain">${BRIEF_STAGES.map((s, i) => `<li><b>${i + 1}</b>${s}</li>`).join('')}</ol>`;
   const list = [...db.briefs].sort((a, c) => (a.stage === 'Сделка' || a.stage === 'Отказ') - (c.stage === 'Сделка' || c.stage === 'Отказ')
     || String(c._at || '').localeCompare(String(a._at || '')));
-  return head + chain + (list.length ? `<div class="grid three">${list.map(x => {
-    const t = briefTotals(x, 'full'), late = x.next_on && x.next_on < today() && !['Сделка', 'Отказ'].includes(x.stage);
-    return `<article class="card click bfcard" tabindex="0" role="button" data-brief="${E(x.id)}">
-      <button class="cardx" data-action="bfdel" data-id="${E(x.id)}" aria-label="Удалить бриф «${E(x.title)}»" title="Удалить">${icon('delete', 15)}</button>
-      <div class="eyebrow">${E(x.client || 'Клиент не указан')}</div><h2>${E(x.title)}</h2>
-      <div class="bfdots" aria-label="Шаг: ${E(x.stage)}">${BRIEF_STAGES.map(s => `<i class="${BRIEF_STAGES.indexOf(s) <= BRIEF_STAGES.indexOf(x.stage) ? 'on' : ''}"></i>`).join('')}</div>
-      <p>${tag(x.stage, x.stage === 'Сделка' ? 'good' : x.stage === 'Отказ' ? 'bad' : 'work')}${t.count ? ` <b>${rub(roundUp(t.min, 1000))} – ${rub(roundUp(t.max, 1000))}</b>` : ''}</p>
-      ${x.next_step ? `<small class="${late ? 'late' : 'muted'}">${E(x.next_step)}${x.next_on ? ` · ${late ? 'просрочено, ' : ''}${E(shortDate(x.next_on))}` : ''}</small>` : ''}
-    </article>`;
-  }).join('')}</div>`
-    : `<div class="card empty"><h2>Брифов пока нет</h2><p>Пришло ТЗ? Нажмите «+ Бриф», вставьте текст или загрузите .docx — ИИ разложит его на работы и вопросы, приложение посчитает вилку по вашим ставкам.</p></div>`);
+  const open = list.filter(x => !['Сделка', 'Отказ'].includes(x.stage));
+  const kpSum = open.reduce((n, x) => n + (Number(x.kp?.price_full) || suggested(x, 'full')), 0);
+  const lateN = open.filter(x => x.next_on && x.next_on < today()).length;
+  const pulse = list.length ? `<section class="card pulse bfpulse" aria-label="Брифы в цифрах">
+    ${[['В работе', open.length, 'брифов на шагах до сделки', 'gold'],
+       ['Сумма КП в работе', kpSum ? num(kpSum) + ' ₽' : '—', 'по ценам из КП или середине сметы', 'violet'],
+       ['Просрочено шагов', lateN, lateN ? 'начните с них' : 'всё в срок', lateN ? 'red' : 'green'],
+       ['Сделок', list.filter(x => x.stage === 'Сделка').length, `отказов: ${list.filter(x => x.stage === 'Отказ').length}`, 'green']]
+      .map(([a, b, c, tone]) => `<div class="metric tone-${tone}"><div class="metrichead"><span class="mlabel">${a}</span></div><div class="value">${b}</div><small>${c}</small></div>`).join('')}
+  </section>` : '';
+  return head + chain + pulse + (list.length ? `<div class="grid three bfgrid">${list.map(briefCard).join('')}</div>`
+    : `<div class="card empty"><h2>Брифов пока нет</h2><p>Пришло ТЗ? Нажмите «+ Бриф», вставьте текст или загрузите .docx — разбор разложит его на работы и вопросы, приложение посчитает вилку по вашим ставкам.</p></div>`);
+}
+
+// Карточка брифа: шаг цепочки полосой, сумма КП, срок шага и наполненность.
+const BRIEF_TONE = { 'Разбор': 'sky', 'Вопросы': 'sky', 'Расчёт': 'gold', 'КП': 'gold', 'Переговоры': 'violet', 'Сделка': 'green', 'Отказ': 'red' };
+function briefCard(x) {
+  const closed = ['Сделка', 'Отказ'].includes(x.stage);
+  const idx = BRIEF_STAGES.indexOf(x.stage);
+  const t = briefTotals(x, 'full'), r = x.estimate?.round || 1000;
+  const price = Number(x.kp?.price_full) || 0;
+  const qs = x.questions || [], answered = qs.filter(q => q.status === 'ответ').length;
+  const late = !closed && x.next_on && x.next_on < today(), now = !closed && x.next_on === today();
+  return `<article class="card click bfcard tone-${BRIEF_TONE[x.stage] || 'gold'}" tabindex="0" role="button" data-brief="${E(x.id)}">
+    <button class="cardx" data-action="bfdel" data-id="${E(x.id)}" aria-label="Удалить бриф «${E(x.title)}»" title="Удалить">${icon('delete', 15)}</button>
+    <div class="lhead"><span class="lavatar">${E(initials(x.client || x.title))}</span>
+      <div><small class="muted">${E(x.client || 'Клиент не указан')}</small><h2>${E(x.title)}</h2></div></div>
+    <div class="bfsteps" aria-label="Шаг ${idx + 1} из ${BRIEF_STAGES.length}: ${E(x.stage)}">${BRIEF_STAGES.map((st, i) =>
+      `<i class="${x.stage === 'Отказ' ? 'off' : i < idx ? 'done' : i === idx ? 'now' : ''}" title="${E(st)}"></i>`).join('')}</div>
+    <p class="bfstage"><b>${E(x.stage)}</b>${x.stage === 'Отказ' ? '' : `<small class="muted">шаг ${idx + 1} из ${BRIEF_STAGES.length}</small>`}</p>
+    <div class="bfprice">${price ? `<b>${rub(price)}</b><small class="muted">в КП${x.kp?.sent_on ? ` · отправлено ${E(shortDate(x.kp.sent_on))}` : ''}</small>`
+      : t.count ? `<b>${rub(roundUp(t.min, r))} – ${rub(roundUp(t.max, r))}</b><small class="muted">вилка по смете</small>` : '<small class="muted">смета ещё не посчитана</small>'}</div>
+    ${x.next_step && !closed ? `<span class="lnext ${late ? 'late' : now ? 'now' : ''}">${icon('time', 12)} ${late ? 'просрочено' : now ? 'сегодня' : x.next_on ? E(shortDate(x.next_on)) : 'без даты'} · ${E(x.next_step.slice(0, 60))}</span>` : ''}
+    <div class="bfmeta">${qs.length ? `<span title="Вопросы клиенту">${icon('chat', 14)} ${answered}/${qs.length}</span>` : ''}
+      ${t.count ? `<span title="Работ в смете">${icon('estimate', 14)} ${t.count}</span>` : ''}
+      ${planDays(x) ? `<span title="Рабочих дней по плану">${icon('calendar', 14)} ${planDays(x)} дн.</span>` : ''}</div>
+  </article>`;
 }
 
 function renderBrief(b) {
