@@ -1447,6 +1447,7 @@ check('ниша кофеен: написали 2, ответила 1', nicheRows
 const annaP = (await state()).prospects.find(x => x.name === 'Цветы у Анны');
 await page.click(`tr[data-pr="${annaP.id}"]`);
 await page.selectOption('#prf select[name=status]', 'Не интересно');
+await page.waitForSelector('#prf .lostfield:not([hidden])');
 await page.selectOption('#prf select[name=lost_reason]', 'Уже есть подрядчик');
 await page.click('#prf button.primary');
 await page.waitForFunction(id => window.__STATE__.prospects.find(x => x.id === id).lost_reason === 'Уже есть подрядчик', annaP.id);
