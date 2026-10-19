@@ -86,8 +86,8 @@ const msgs = (sb, dir) => sb.T.messages.filter(m => !dir || m.direction === dir)
   await step({ kind: 'button', data: 'm:brief' }, 12);
   check('кнопка «Оставить заявку» запускает анкету', sent.at(-1).text.includes('Короткая анкета') && sb.T.prospects[0].bot_state.mode === 'brief');
   await step({ kind: 'text', text: 'Кофейня на Ленина' }, 13);
-  await step({ kind: 'text', text: 'ролик' }, 14);
-  check('на шаге с кнопками текст не принимается', sb.T.prospects[0].bot_state.step === 1);
+  await step({ kind: 'text', text: 'р' }, 14);
+  check('на шаге с кнопками одна буква не принимается', sb.T.prospects[0].bot_state.step === 1);
   await step({ kind: 'button', data: 'bf:Клипы / Reels' }, 15);
   await step({ kind: 'text', text: 'Пермь' }, 16);
   await step({ kind: 'button', data: 'bb:до 30 000 ₽' }, 17);
@@ -129,6 +129,17 @@ const msgs = (sb, dir) => sb.T.messages.filter(m => !dir || m.direction === dir)
   check('голосовое не разобрали — просим написать текстом', msgs(sb).some(m => m.kind === 'voice') && sent.at(-1).text.includes('текстом'));
   await handleIncoming(deps, ch, cfg, { id: 7, kind: 'voice', transcribe: async () => '/brief', messageId: '4' });
   check('разобранное голосовое работает как текст', sent.at(-1).text.includes('Короткая анкета'));
+}
+
+// --- меню словами
+{
+  const { deps, ch, sent, cfg } = setup();
+  await handleIncoming(deps, ch, cfg, { id: 8, kind: 'text', text: 'Примеры работ', messageId: '1' });
+  check('«Примеры работ» словами — сразу примеры, без ИИ', sent.length === 1 && sent[0].text.includes('Наши работы'));
+  await handleIncoming(deps, ch, cfg, { id: 8, kind: 'text', text: 'А как оставить заявку?', messageId: '2' });
+  check('вопрос про заявку — ответ ИИ, а не анкета', sent.at(-1).text.startsWith('Ролики'));
+  await handleIncoming(deps, ch, cfg, { id: 8, kind: 'text', text: 'заявка', messageId: '3' });
+  check('«заявка» словами — анкета', sent.at(-1).text.includes('Короткая анкета'));
 }
 
 // --- разбор событий ВКонтакте

@@ -1717,7 +1717,8 @@ check('без бота — предложение подключить Telegram'
 await page.click('.dlgempty [data-action=dlgchannels]');
 await page.waitForSelector('#tgkeyf');
 check('каналы: Telegram не подключён', (await page.textContent('#chbody')).includes('Не подключён'));
-check('поле ключа скрывает символы', (await page.getAttribute('#tgkey', 'type')) === 'password');
+check('поле ключа скрывает символы, но не принимается браузером за пароль', (await page.getAttribute('#tgkey', 'type')) === 'text'
+  && await page.$eval('#tgkey', i => getComputedStyle(i).webkitTextSecurity === 'disc'));
 await page.fill('#tgkey', 'не ключ');
 await page.click('#tgkeyf button');
 check('неверный ключ не уходит на сервер', (await page.textContent('#tgerr')).includes('не похоже') && !(await page.evaluate(() => window.__SECRETS__)));
@@ -1743,7 +1744,7 @@ await page.click('#vkkeyf button');
 await page.waitForFunction(() => document.querySelector('#chbody')?.textContent.includes('ADERVIS Digital'));
 check('ВК: ключ записан, сообщество подключено одним действием', (await page.evaluate(() => window.__SECRETS__.vk_token)) === fakeVk
   && await page.evaluate(() => window.__CHANNELS__.some(c => c.action === 'vk-connect')) && (await page.inputValue('#vkkey')) === '');
-check('ВК: другие адреса для событий в сообществе показаны', (await page.textContent('#chbody')).includes('efepnuuxtzwzygwipgxt'));
+check('ВК: другие адреса для событий показаны с пояснением', (await page.textContent('#chbody')).includes('efepnuuxtzwzygwipgxt.supabase.co — старый OTR'));
 await page.click('#modal [data-action=close]');
 check('пустой раздел показывает подключённого бота', (await page.textContent('.dlgempty')).includes('@adervis_hello_bot'));
 
@@ -2598,6 +2599,16 @@ const hit = await m.evaluate(() => {
   return el && el.closest('.sidebar') ? 'sidebar' : 'other';
 });
 check('на телефоне меню поверх верхней панели', hit === 'sidebar');
+
+// ссылка из подсказки сразу открывает поле ключа ВКонтакте
+await m.goto(BASE + 'index.html?from=hint#channels-vk');
+await m.fill('#gate-email', 'alex@adervis.ru');
+await m.fill('#gate-pass', 'secret');
+await m.click('#gatebtn');
+await m.waitForSelector('#vkkey');
+check('ссылка #channels-vk после входа открывает поле ключа ВКонтакте', (await m.textContent('#crumb')) === 'Диалоги'
+  && await m.evaluate(() => document.activeElement?.id === 'vkkey' && !location.hash));
+await m.click('#modal [data-action=close]');
 
 // диалоги на телефоне: список и переписка — по очереди
 await m.evaluate(() => document.body.classList.remove('menu'));

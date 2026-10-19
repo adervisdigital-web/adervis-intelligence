@@ -98,8 +98,8 @@ async function vkConnect(sb: Sb) {
     { name: 'vk_confirmation', value: String(conf.response.code) }, { name: 'vk_secret', value: vkSecret }
   ]);
   await sb.from('outreach_settings').update({ vk_community_id: gid }).eq('id', 'main');
-  // сообщения сообщества и кнопки бота; кнопка «Начать» в новом диалоге
-  await vkApi(tok, 'groups.setSettings', { group_id: gid, messages: 1, bot_capabilities: 1, bot_start_button: 1 });
+  // Кнопки бота включаются только в настройках сообщества (ключом сообщества
+  // их не включить) — без них бот пишет варианты ответа текстом.
 
   const { items } = await vkServers(tok, gid);
   let serverId = items.find((x: any) => x.url === VK_URL)?.id;

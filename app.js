@@ -3304,10 +3304,13 @@ function abStats() {
 // он больше не возвращается, его читают только серверные функции.
 let channelInfo = null;
 
-async function channelsModal() {
+// focus — 'vk' или 'tg': поле ключа этого канала сразу в фокусе.
+async function channelsModal(focus = '') {
   modal(`<h2>Каналы</h2><div id="chbody"><p class="muted">Проверяю подключения…</p></div>`);
   try { channelInfo = await api.channels({ action: 'status' }); } catch (err) { channelInfo = { error: err.message || 'нет связи' }; }
   paintChannels();
+  const field = focus && $(`#${focus}key`);
+  if (field) { field.closest('.channelcard').scrollIntoView({ block: 'center' }); field.focus(); }
 }
 
 function paintChannels(code) {
@@ -3326,7 +3329,7 @@ function paintChannels(code) {
         : `<ol class="steps"><li>Откройте <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a>, отправьте <code>/newbot</code>, придумайте имя и адрес бота для клиентов. Это не тот бот, что публикует посты.</li>
             <li>BotFather пришлёт ключ вида <code>123456:ABC…</code> — вставьте его сюда.</li></ol>`}
       <form id="tgkeyf" class="inlinerow">
-        <input type="password" id="tgkey" autocomplete="off" spellcheck="false" maxlength="200" aria-label="Ключ Telegram-бота" placeholder="${tg.token ? 'Ключ сохранён — вставьте новый, чтобы заменить' : 'Ключ от @BotFather'}">
+        <input type="text" class="secretfield" id="tgkey" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" maxlength="200" aria-label="Ключ Telegram-бота" placeholder="${tg.token ? 'Ключ сохранён — вставьте новый, чтобы заменить' : 'Ключ от @BotFather'}">
         <button class="primary">${tg.token ? 'Заменить и подключить' : 'Подключить'}</button></form>
       ${tg.token && !tg.connected ? '<p><button class="chip" data-action="tgconnect">Подключить с сохранённым ключом</button></p>' : ''}
       <p class="muted" id="tgerr" role="alert"></p>
@@ -3344,9 +3347,10 @@ function paintChannels(code) {
             <li>Отметьте «Управление сообществом» и «Сообщения сообщества», подтвердите.</li>
             <li>Вставьте ключ сюда — сообщения, кнопки бота и адрес для событий приложение настроит само.</li></ol>`}
       ${vk.token && !vk.connected && vk.status && vk.status !== 'none' ? `<div class="notice">ВКонтакте ещё не подтвердил адрес (${E(VK_STATUS[vk.status] || vk.status)}). Нажмите «Подключить с сохранённым ключом» через минуту или подтвердите вручную: «Работа с API» → «Callback API» → «Подтвердить».</div>` : ''}
-      ${vk.others?.length ? `<p class="muted">В сообществе есть и другие адреса для событий: ${vk.others.map(E).join(', ')}. Если это старый OTR — его можно удалить в «Callback API».</p>` : ''}
+      ${vk.connected ? `<p class="muted">Чтобы под сообщениями бота были кнопки: в сообществе «Управление» → «Сообщения» → «Настройки для бота» — включите «Возможности ботов» и кнопку «Начать». Без этого бот пишет варианты ответа текстом.</p>` : ''}
+      ${vkOthers(vk.others)}
       <form id="vkkeyf" class="inlinerow">
-        <input type="password" id="vkkey" autocomplete="off" spellcheck="false" maxlength="400" aria-label="Ключ сообщества ВКонтакте" placeholder="${vk.token ? 'Ключ сохранён — вставьте новый, чтобы заменить' : 'Ключ сообщества: vk1.a…'}">
+        <input type="text" class="secretfield" id="vkkey" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" maxlength="400" aria-label="Ключ сообщества ВКонтакте" placeholder="${vk.token ? 'Ключ сохранён — вставьте новый, чтобы заменить' : 'Ключ сообщества: vk1.a…'}">
         <button class="primary">${vk.token ? 'Заменить и подключить' : 'Подключить'}</button></form>
       ${vk.token && !vk.connected ? '<p><button class="chip" data-action="vkconnect">Подключить с сохранённым ключом</button></p>' : ''}
       <p class="muted" id="vkerr" role="alert"></p></div>
@@ -3393,6 +3397,17 @@ async function tgConnect() {
   paintChannels();
   render();
   toast(`Бот @${r.username} подключён`);
+}
+
+// Другие адреса, куда ВКонтакте шлёт сообщения сообщества: что это и что делать.
+function vkOthers(list = []) {
+  if (!list.length) return '';
+  const what = h => /amocrm/.test(h) ? `${E(h)} — amoCRM: если там включён автоответ, клиент получит два ответа`
+    : /supabase\.co$/.test(h) ? `${E(h)} — старый OTR, сервер выключен: адрес можно удалить`
+    : /adblogger/.test(h) ? `${E(h)} — сервис ВКонтакте для блогеров, не мешает`
+    : E(h);
+  return `<p class="muted">Сообщения сообщества получают и другие адреса («Работа с API» → «Callback API»):</p>
+    <ul class="steps">${list.map(h => `<li>${what(h)}</li>`).join('')}</ul>`;
 }
 
 const VK_STATUS = { unconfigured: 'адрес не проверен', failed: 'проверка не прошла', wait: 'проверяется' };
@@ -6459,6 +6474,13 @@ async function enter() {
   $('#myemail').textContent = me.email;
   $('#avatar').textContent = (memberName(me.email)[0] || '?').toUpperCase();
   go('home');
+  // Ссылка …/#channels-vk или #channels-tg сразу открывает поле ключа канала.
+  const deep = /^#channels(?:-(vk|tg))?$/.exec(location.hash);
+  if (deep) {
+    history.replaceState(null, '', location.pathname + location.search);
+    go('dialogs');
+    channelsModal(deep[1] || '');
+  }
 }
 
 $('#gateform').onsubmit = async e => {

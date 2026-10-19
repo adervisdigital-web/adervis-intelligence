@@ -1477,3 +1477,8 @@ dialog label.checkrow input{width:18px;height:18px;flex:none;margin:2px 0 0;acce
   .bubble{max-width:88%}
   .dlghint{display:none}
 }
+
+/* Поле ключа: символы скрыты, но браузер не принимает его за пароль от
+   приложения и не подставляет туда сохранённый пароль. */
+.secretfield{-webkit-text-security:disc;text-security:disc;font-family:monospace}
+.secretfield::placeholder{font-family:var(--font-ui)}

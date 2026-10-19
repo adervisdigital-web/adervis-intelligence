@@ -5,7 +5,7 @@
 // тестами без настоящих серверов.
 
 import {
-  briefStep, briefQuestions, portfolioReply, managerNote, buildReplyPrompt, cleanReply, budgetAmount,
+  briefStep, briefQuestions, portfolioReply, managerNote, buildReplyPrompt, cleanReply, budgetAmount, menuWord,
   DEFAULT_WELCOME, MAIN_KB, ACTION_KB, type BotState, type Keyboard, type Fact
 } from './bot.ts';
 
@@ -143,6 +143,12 @@ async function onMessage(d: Deps, ch: Channel, cfg: Row, p: Row, ev: Incoming) {
     if (ev.attachment) return say(d, ch, p, 'Ответьте, пожалуйста, текстом — так анкета сохранится 🙏', undefined, 'system');
     return continueBrief(d, ch, cfg, p, state, { text });
   }
+
+  // Пункт меню словами — как кнопка.
+  const word = menuWord(text);
+  if (word === 'm:portfolio') { const r = portfolioReply(cfg.portfolio_text, cfg.portfolio_videos); return say(d, ch, p, r.text, r.keyboard, 'system'); }
+  if (word === 'm:brief') return startBrief(d, ch, cfg, p);
+  if (word === 'm:manager') return askManager(d, ch, p);
 
   // Первое сообщение нового человека — сначала приветствие и меню.
   if (!before) await say(d, ch, p, welcome(cfg, p), MAIN_KB, 'system');

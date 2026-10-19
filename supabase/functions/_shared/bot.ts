@@ -167,21 +167,43 @@ export function vkKeyboard(kb?: Keyboard): string {
         color: b.callback_data === 'm:brief' ? 'primary' : 'secondary' })) });
 }
 
-// Бриф: шаги 0, 2, 4, 5 — свободный ответ; 1 и 3 — кнопки.
+// Если кнопки не показать, их подписи уходят текстом, ссылки — ссылками.
+export function keyboardAsText(kb?: Keyboard): string {
+  if (!kb) return '';
+  const rows = kb.inline_keyboard.flat().map(b => b.url ? `${b.text}: ${b.url}` : `• ${b.text.replace(/^[^\p{L}\p{N}]+/u, '')}`);
+  return rows.length ? 'Можно ответить словами:\n' + rows.join('\n') : '';
+}
+
+// Пункт меню, написанный словами, — как нажатие кнопки. Только целиком:
+// «как оставить заявку?» — это вопрос, а не команда.
+const MENU_WORDS: Record<string, string> = {
+  'примеры': 'm:portfolio', 'примеры работ': 'm:portfolio', 'портфолио': 'm:portfolio', 'работы': 'm:portfolio',
+  'заявка': 'm:brief', 'оставить заявку': 'm:brief', 'анкета': 'm:brief', 'бриф': 'm:brief',
+  'менеджер': 'm:manager', 'написать менеджеру': 'm:manager', 'связаться с менеджером': 'm:manager'
+};
+export function menuWord(text: string): string {
+  const t = String(text ?? '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+  return MENU_WORDS[t] ?? '';
+}
+
+// Бриф: шаги 0, 2, 4, 5 — свободный ответ; 1 и 3 — кнопки или текст.
 export function briefStep(state: BotState, input: { text?: string; button?: string }, questions: string[]):
   { state: BotState; reply: Reply; done?: Record<string, string> } | null {
   if (state.mode !== 'brief' || state.step === undefined) return null;
   const brief = { ...(state.brief ?? {}) };
   const step = state.step;
   const btn = input.button ?? '';
+  // На шагах с кнопками ответ можно и написать: кнопки бывают выключены
+  // (во ВКонтакте — настройкой сообщества), да и люди часто просто пишут.
+  const typed = (input.text ?? '').trim().slice(0, 100);
   if (step === 1) {
-    if (!btn.startsWith('bf:')) return { state, reply: { text: 'Выберите формат кнопкой ниже 👇', keyboard: FORMAT_KB } };
-    brief.format = btn.slice(3);
+    if (!btn.startsWith('bf:') && typed.length < 2) return { state, reply: { text: 'Выберите формат кнопкой ниже или напишите словами 👇', keyboard: FORMAT_KB } };
+    brief.format = btn.startsWith('bf:') ? btn.slice(3) : typed;
     return { state: { ...state, brief, step: 2 }, reply: { text: questions[2] } };
   }
   if (step === 3) {
-    if (!btn.startsWith('bb:')) return { state, reply: { text: 'Выберите бюджет кнопкой ниже 👇', keyboard: BUDGET_KB } };
-    brief.budget = btn.slice(3);
+    if (!btn.startsWith('bb:') && typed.length < 2) return { state, reply: { text: 'Выберите бюджет кнопкой ниже или напишите словами 👇', keyboard: BUDGET_KB } };
+    brief.budget = btn.startsWith('bb:') ? btn.slice(3) : typed;
     return { state: { ...state, brief, step: 4 }, reply: { text: questions[4] } };
   }
   const text = (input.text ?? '').trim().slice(0, 500);

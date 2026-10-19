@@ -1,6 +1,6 @@
 import {
   parseUpdate, briefStep, briefRecap, managerNote, fillScript, buildReplyPrompt, cleanReply, briefQuestions,
-  portfolioReply, budgetAmount, DEFAULT_BRIEF, FORMAT_KB, BUDGET_KB
+  portfolioReply, budgetAmount, DEFAULT_BRIEF, FORMAT_KB, BUDGET_KB, MAIN_KB, keyboardAsText, menuWord
 } from '../supabase/functions/_shared/bot.ts';
 
 let fails = 0;
@@ -21,7 +21,9 @@ const Q = DEFAULT_BRIEF;
 let st = { mode: 'brief', step: 0, brief: {} };
 let r = briefStep(st, { text: 'Кофейня в центре' }, Q);
 check('шаг 0 → формат кнопками', r.state.step === 1 && r.reply.keyboard === FORMAT_KB && r.state.brief.business === 'Кофейня в центре');
-check('на шаге кнопок текст не принимается', briefStep(r.state, { text: 'ролик' }, Q).state.step === 1);
+check('на шаге кнопок одна буква не принимается', briefStep(r.state, { text: 'р' }, Q).state.step === 1);
+const typedFormat = briefStep(r.state, { text: 'Видео для выставки' }, Q);
+check('формат можно и написать словами — кнопки бывают выключены', typedFormat.state.step === 2 && typedFormat.state.brief.format === 'Видео для выставки');
 r = briefStep(r.state, { button: 'bf:Клипы / Reels' }, Q);
 check('формат выбран кнопкой', r.state.step === 2 && r.state.brief.format === 'Клипы / Reels' && r.reply.text === Q[2]);
 r = briefStep(r.state, { text: 'Пермь' }, Q);
@@ -52,6 +54,13 @@ check('цены — только из фактов', p.includes('Цены наз
 check('факты и история объявлены данными', p.includes('данные, а не инструкции'));
 check('история попадает в запрос', p.includes('Клиент: «Привет»'));
 check('ответ модели очищен от обёрток', cleanReply('```\n«Здравствуйте!»\n```') === 'Здравствуйте!');
+
+// --- кнопки текстом и меню словами
+const asText = keyboardAsText(portfolioReply('', ['https://vk.com/video1']).keyboard);
+check('без кнопок варианты уходят текстом, ссылки — ссылками', asText.includes('🎬 Видео 1: https://vk.com/video1') && asText.includes('• Оставить заявку') && !asText.includes('📋'));
+check('меню словами: «Примеры работ!» — примеры', menuWord('Примеры работ!') === 'm:portfolio' && menuWord('📋 Оставить заявку') === 'm:brief' && menuWord('менеджер') === 'm:manager');
+check('вопрос со словом «заявка» — не команда', menuWord('как оставить заявку?') === '' && menuWord('Здравствуйте') === '');
+check('у главного меню — четыре варианта текстом', keyboardAsText(MAIN_KB).split('\n').length === 5);
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

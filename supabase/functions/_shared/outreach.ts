@@ -2,7 +2,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { providerRequest, providerText, modelAttempts, RETRY_STATUS, TRUSTED_STATUS, type Provider } from '../ai-write/compose.ts';
-import { vkKeyboard, type Fact, type Keyboard } from './bot.ts';
+import { vkKeyboard, keyboardAsText, type Fact, type Keyboard } from './bot.ts';
 import { addMessage, history, type Channel, type Deps } from './flow.ts';
 
 export { addMessage, history };
@@ -183,7 +183,15 @@ export function vkChannel(tok: string): Channel {
       };
       const k = vkKeyboard(kb);
       if (k) params.keyboard = k;
-      const r = await vkApi(tok, 'messages.send', params);
+      let r = await vkApi(tok, 'messages.send', params);
+      // Кнопки бота выключены в настройках сообщества — то же сообщение без
+      // них, а варианты ответа текстом: письмо должно дойти в любом случае.
+      if (r?.error && k && [911, 912].includes(Number(r.error.error_code))) {
+        delete params.keyboard;
+        params.message = [text, keyboardAsText(kb)].filter(Boolean).join('\n\n').slice(0, 4096);
+        params.random_id = crypto.getRandomValues(new Uint32Array(1))[0] % 2147483647;
+        r = await vkApi(tok, 'messages.send', params);
+      }
       if (r?.error) { console.error('vk send:', r.error.error_code, r.error.error_msg); return null; }
       return String(r?.response ?? '');
     },
