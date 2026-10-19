@@ -4343,7 +4343,8 @@ function vkStatsCard() {
 // дописываешь уточнение.
 const SURVEYS = () => [
   { n: 1, title: 'Компания и приложение', blocks: window.ADERVIS_SURVEY || [] },
-  { n: 2, title: 'История и люди', blocks: window.ADERVIS_SURVEY_2 || [] }
+  { n: 2, title: 'История и люди', blocks: window.ADERVIS_SURVEY_2 || [] },
+  { n: 3, title: 'Цены, портфолио и продажи', blocks: window.ADERVIS_SURVEY_3 || [] }
 ].filter(x => x.blocks.length);
 const currentSurvey = () => SURVEYS().find(x => x.blocks.some(b => b.qs.some(q => !isAnswered(surveyAnswer(q.id)))))
   || SURVEYS()[SURVEYS().length - 1] || { n: 0, title: '', blocks: [] };
