@@ -179,6 +179,19 @@ check('служебная роль может пополнять базу зна
   (await fail('service_role', '', `insert into public.knowledge(id,title,body,category,source,access,status)
     values ('svc1','Через служебный ключ','Текст','Компания','Ручной ввод','Публичное','Подтверждено')`)) === null);
 
+// --- брифы и КП
+check('ставки студии заведены', (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.studio_rates`)).rows[0].c === 9);
+await as('authenticated', 'artem@adervis.ru', `insert into public.leads(id, name, source, direction, status) values ('lb1', 'Химпром', 'ВКонтакте', 'Студия', 'В работе')`);
+check('бриф привязывается к заявке', (await fail('authenticated', 'artem@adervis.ru',
+  `insert into public.briefs(id, lead_id, title, client, source_text) values ('b1', 'lb1', 'Видеодайджест', 'Химпром', 'ТЗ')`)) === null);
+check('неизвестный шаг брифа не проходит', (await fail('authenticated', 'artem@adervis.ru', `update public.briefs set stage = 'Готово' where id = 'b1'`)) !== null);
+check('посторонний не видит брифы и ставки', (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.briefs')).rows[0].c === 0
+  && (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.studio_rates')).rows[0].c === 0);
+check('аноним не видит ставки', (await fail('anon', '', 'select * from public.studio_rates')) !== null);
+await as('authenticated', 'artem@adervis.ru', `delete from public.leads where id = 'lb1'`);
+check('удалили заявку — бриф остаётся без привязки', (await as('authenticated', 'artem@adervis.ru', `select lead_id from public.briefs where id = 'b1'`)).rows[0].lead_id === null);
+check('правка брифа — в журнале', (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.activity where entity = 'briefs'`)).rows[0].c >= 1);
+
 // --- анкеты владельцев: номера первой («1.1») и второй («2-1.1»)
 check('ответ первой анкеты сохраняется', (await fail('authenticated', 'artem@adervis.ru',
   `insert into public.survey_answers(id, answer) values ('1.1', '{"picks":[0]}')`)) === null);

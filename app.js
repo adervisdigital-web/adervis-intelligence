@@ -26,7 +26,7 @@ function toast(text, ms = 3500) {
 // каждый на своей сетке и со своей толщиной линии.
 const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
 // Старые имена из кода приложения, чтобы не переписывать все вызовы.
-const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat' };
+const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat', briefs: 'proposal' };
 const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
 const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
@@ -74,7 +74,9 @@ const FIELDS = {
     'comments', 'subs', 'subs_in', 'subs_out', 'visitors', 'site_clicks', 'new_dialogs'],
   survey_answers: ['id', 'answer'],
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch'],
-  sales_scripts: ['id', 'stage', 'title', 'body', 'note', 'sort']
+  sales_scripts: ['id', 'stage', 'title', 'body', 'note', 'sort'],
+  briefs: ['id', 'lead_id', 'title', 'client', 'stage', 'source_text', 'analysis', 'questions', 'estimate', 'plan', 'kp', 'next_step', 'next_on'],
+  studio_rates: ['id', 'name', 'rate', 'note', 'sort']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 // Эти поля ведёт сервер — бот и переписка. Приложение их показывает, но не
@@ -143,7 +145,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats, survey, scripts, outreach] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats, survey, scripts, outreach, briefs, rates] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -166,7 +168,9 @@ function createApi(cfg) {
         selectAll('channel_stats', 'month'),
         selectAll('survey_answers', 'id'),
         selectAll('sales_scripts', 'sort'),
-        sb.from('outreach_settings').select('*').eq('id', 'main').maybeSingle().then(must)
+        sb.from('outreach_settings').select('*').eq('id', 'main').maybeSingle().then(must),
+        selectAll('briefs', 'created_at'),
+        selectAll('studio_rates', 'sort')
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -187,6 +191,8 @@ function createApi(cfg) {
         survey_answers: survey.map(r => fromRow('survey_answers', r)),
         sales_scripts: scripts.map(r => fromRow('sales_scripts', r)),
         outreach: outreach || {},
+        briefs: briefs.map(r => fromRow('briefs', r)),
+        studio_rates: rates.map(r => fromRow('studio_rates', r)),
         publications, ai, members, activity, accounts
       };
     },
@@ -275,7 +281,7 @@ const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
   prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: [], channel_stats: [], survey_answers: [],
-  sales_scripts: [], outreach: {}
+  sales_scripts: [], outreach: {}, briefs: [], studio_rates: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -296,7 +302,7 @@ let ai = {
 // выпустить контент, посчитать, вспомнить про компанию. Внутри группы — по
 // частоте обращения. Редкое («Система») свёрнуто, пока его не открыли.
 const SECTION_TITLE = {
-  home: 'Обзор', survey: 'Анкета', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', dialogs: 'Диалоги', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
+  home: 'Обзор', survey: 'Анкета', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', briefs: 'Брифы и КП', dialogs: 'Диалоги', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
   cases: 'Кейсы', competitors: 'Конкуренты',
   content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
@@ -305,7 +311,7 @@ const SECTION_TITLE = {
 
 const NAV = [
   ['', ['home', 'survey']],
-  ['Продажи', ['leads', 'dialogs', 'prospects', 'magnets']],
+  ['Продажи', ['leads', 'briefs', 'dialogs', 'prospects', 'magnets']],
   ['Реклама', ['ads', 'keywords']],
   ['Контент', ['content', 'assistant']],
   ['Аналитика', ['analytics', 'decisions']],
@@ -453,7 +459,7 @@ function filters(categories) {
 
 const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук',
   leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', ad_texts: 'объявление', channel_stats: 'статистику', decisions: 'решение',
-  sales_scripts: 'скрипт продаж', outreach_settings: 'тексты бота' };
+  sales_scripts: 'скрипт продаж', outreach_settings: 'тексты бота', briefs: 'бриф', studio_rates: 'ставки студии' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -2207,6 +2213,9 @@ function todayList() {
     const hours = (Date.now() - Date.parse(p.last_message_at)) / 36e5;
     push('dl:' + p.id, 'chat', p.name, `Ждёт ответа в ${CHANNEL_OF(p)}: «${String(p.last_text || '').slice(0, 60)}»`, localDate(p.last_message_at), hours > 3);
   }
+  for (const b of db.briefs.filter(b => b.next_on && b.next_on <= t && !['Сделка', 'Отказ'].includes(b.stage))) {
+    push('br:' + b.id, 'proposal', b.title, b.next_step || `Бриф: ${b.stage}`, b.next_on, b.next_on < t);
+  }
   for (const c of db.campaigns.filter(c => c.status === 'Идёт' && c.ends_on)) {
     const left = -daysAgo(c.ends_on);
     if (left < 0) push('cp:' + c.id, 'ads', c.name, 'Срок кампании вышел — обновите статус и расход', String(c.ends_on), true);
@@ -2240,6 +2249,7 @@ function todayOpen(ref) {
   else if (kind === 'cp') { go('ads'); editCampaign(id); }
   else if (kind === 'p') { go('content'); editP(id); }
   else if (kind === 'dl') openDialog(id);
+  else if (kind === 'br') openBrief(id);
 }
 
 // ------------------------------------------------------------ лид-магниты
@@ -3427,6 +3437,686 @@ async function tgLink() {
   } catch (err) {
     toast('Код не получен: ' + (err.message || 'ошибка сервера'), 6000);
   }
+}
+
+// ------------------------------------------------------------- брифы и КП
+//
+// Заявка с ТЗ проходит цепочку: разбор → вопросы клиенту → расчёт → КП →
+// переговоры → сделка. ИИ раскладывает ТЗ на работы с часами по ролям, а
+// деньги считает приложение: часы × ставки студии. Ставки задают владельцы
+// и в ИИ они не уходят. Шаги брифа двигают заявку в воронке и попадают в
+// «На сегодня».
+
+const BRIEF_STAGES = ['Разбор', 'Вопросы', 'Расчёт', 'КП', 'Переговоры', 'Сделка'];
+const BRIEF_TABS = [['tz', 'ТЗ'], ['analysis', 'Разбор'], ['questions', 'Вопросы'], ['estimate', 'Смета'], ['plan', 'План'], ['kp', 'КП'], ['talk', 'Диалог']];
+const VARIANTS = [['both', 'В обоих'], ['full', 'Только полный'], ['base', 'Только базовый']];
+const Q_STATUS = ['новый', 'задан', 'ответ'];
+let briefView = { id: '', tab: 'tz', busy: false, error: '' };
+let briefSave = { timer: 0, id: '', busy: false, again: false };
+
+const rub = n => num(Math.round(n)) + ' ₽';
+const roundUp = (n, step) => Math.ceil(n / (step || 1000)) * (step || 1000);
+const rateOf = role => Number(db.studio_rates.find(r => r.id === role)?.rate) || 0;
+const roleName = role => db.studio_rates.find(r => r.id === role)?.name || role;
+const inVariant = (it, v) => (it.variant || 'both') === 'both' || it.variant === v;
+
+// Сумма варианта: часы × ставки, плюс запас на правки и ведение.
+function briefTotals(b, variant) {
+  const e = b.estimate || {}, k = 1 + (Number(e.reserve) || 0) / 100;
+  const items = (e.items || []).filter(it => inVariant(it, variant));
+  const sum = f => items.reduce((n, it) => n + (Number(it[f]) || 0) * rateOf(it.role), 0) * k;
+  const hours = f => items.reduce((n, it) => n + (Number(it[f]) || 0), 0);
+  return { min: sum('min'), max: sum('max'), hmin: hours('min'), hmax: hours('max'), count: items.length };
+}
+const optionPrice = (b, o) => roundUp(((Number(o.min) + Number(o.max)) / 2) * rateOf(o.role) * (1 + (Number(b.estimate?.reserve) || 0) / 100), b.estimate?.round || 1000);
+const suggested = (b, v) => { const t = briefTotals(b, v); return t.count ? roundUp((t.min + t.max) / 2, b.estimate?.round || 1000) : 0; };
+const hasBase = b => (b.estimate?.items || []).some(it => it.variant === 'base' || it.variant === 'full');
+const briefLead = b => b.lead_id && db.leads.find(l => l.id === b.lead_id);
+const briefChat = b => b.lead_id && db.prospects.find(p => p.lead_id === b.lead_id && CHANNEL_OF(p));
+
+// Рабочие дни этапов от даты старта — без суббот и воскресений.
+function planDates(b, start) {
+  let d = new Date((start || today()) + 'T00:00:00');
+  const step = () => { do d = new Date(d.getTime() + 864e5); while ([0, 6].includes(d.getDay())); };
+  while ([0, 6].includes(d.getDay())) step();
+  return (b.plan || []).map(s => {
+    const from = localDate(d);
+    for (let i = 1; i < Math.max(1, Number(s.days) || 1); i++) step();
+    const to = localDate(d);
+    step();
+    return { ...s, from, to };
+  });
+}
+const planDays = b => (b.plan || []).reduce((n, s) => n + (Number(s.days) || 0), 0);
+
+// ---- текст из .docx прямо в браузере: zip без сторонних библиотек
+async function docxText(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const dv = new DataView(buf.buffer);
+  let end = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { end = i; break; }
+  if (end < 0) throw new Error('файл не похож на .docx');
+  const dec = new TextDecoder();
+  let p = dv.getUint32(end + 16, true);
+  for (let n = dv.getUint16(end + 10, true); n > 0 && dv.getUint32(p, true) === 0x02014b50; n--) {
+    const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true), extra = dv.getUint16(p + 30, true), comment = dv.getUint16(p + 32, true);
+    const name = dec.decode(buf.subarray(p + 46, p + 46 + nameLen));
+    if (name === 'word/document.xml') {
+      const local = dv.getUint32(p + 42, true);
+      const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+      const raw = buf.subarray(start, start + size);
+      const xml = method === 0 ? dec.decode(raw)
+        : await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+      return wordXmlText(xml);
+    }
+    p += 46 + nameLen + extra + comment;
+  }
+  throw new Error('в файле нет текста документа Word');
+}
+
+function wordXmlText(xml) {
+  const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const body = doc.getElementsByTagNameNS(W, 'body')[0];
+  if (!body) return '';
+  const para = el => [...el.getElementsByTagNameNS(W, 't')].map(t => t.textContent).join('');
+  const out = [];
+  for (const el of body.children) {
+    if (el.localName === 'p') out.push((el.getElementsByTagNameNS(W, 'numPr').length ? '• ' : '') + para(el));
+    if (el.localName === 'tbl') {
+      for (const tr of el.getElementsByTagNameNS(W, 'tr')) {
+        out.push([...tr.getElementsByTagNameNS(W, 'tc')].map(tc => [...tc.getElementsByTagNameNS(W, 'p')].map(para).filter(Boolean).join(' / ')).join(' | '));
+      }
+    }
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function fileText(file) {
+  if (/\.docx$/i.test(file.name)) return docxText(file);
+  if (/\.(txt|md)$/i.test(file.name) || file.type.startsWith('text/')) return file.text();
+  throw new Error('подходят .docx и .txt; из PDF скопируйте текст и вставьте');
+}
+
+// ---- сохранение: правки копятся и уходят одним запросом через мгновение
+function queueBriefSave(b) {
+  clearTimeout(briefSave.timer);
+  briefSave.id = b.id;
+  const st = $('#bfsaved');
+  if (st) st.textContent = 'сохраняю…';
+  briefSave.timer = setTimeout(() => flushBrief(b.id), 700);
+}
+
+async function flushBrief(id) {
+  clearTimeout(briefSave.timer);
+  briefSave.timer = 0;
+  if (briefSave.busy) { briefSave.again = true; return; }
+  const b = db.briefs.find(x => x.id === id);
+  if (!b) return;
+  briefSave.busy = true;
+  try {
+    const saved = await api.update('briefs', b);
+    b._at = saved._at; b._by = saved._by;
+    const st = $('#bfsaved');
+    if (st) st.textContent = 'сохранено';
+  } catch (err) {
+    const st = $('#bfsaved');
+    if (st) st.textContent = 'не сохранилось';
+    handleError(err);
+  } finally {
+    briefSave.busy = false;
+    if (briefSave.again) { briefSave.again = false; flushBrief(id); }
+  }
+}
+function flushPendingBrief() { if (briefSave.timer) flushBrief(briefSave.id); }
+
+async function saveBriefNow(b, text) {
+  try {
+    const saved = await api.update('briefs', b);
+    upsertLocal('briefs', saved);
+    noteLocal('update', 'briefs', saved);
+    if (text) toast(text);
+  } catch (err) { handleError(err); }
+  render();
+}
+
+// Заявка в воронке идёт за брифом: КП отправлено, сделка, отказ.
+async function syncLead(b, patch) {
+  const l = briefLead(b);
+  if (!l) return;
+  try {
+    const saved = await api.update('leads', { ...l, ...patch, reached: reachedOf(patch.status || l.status, l.reached) });
+    upsertLocal('leads', saved);
+  } catch (err) { handleError(err); }
+}
+
+// ---- список
+function renderBriefs() {
+  const b = db.briefs.find(x => x.id === briefView.id);
+  if (b) return renderBrief(b);
+  const head = heading('Брифы и КП', 'Заявка с ТЗ — от разбора до подписанного КП: вопросы клиенту, смета, план, коммерческое предложение и что писать на каждом шаге.',
+    `<div class="headactions"><button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button>
+      <button class="primary" data-action="bfnew">+ Бриф</button></div>`);
+  const chain = `<ol class="bfchain">${BRIEF_STAGES.map((s, i) => `<li><b>${i + 1}</b>${s}</li>`).join('')}</ol>`;
+  const list = [...db.briefs].sort((a, c) => (a.stage === 'Сделка' || a.stage === 'Отказ') - (c.stage === 'Сделка' || c.stage === 'Отказ')
+    || String(c._at || '').localeCompare(String(a._at || '')));
+  return head + chain + (list.length ? `<div class="grid three">${list.map(x => {
+    const t = briefTotals(x, 'full'), late = x.next_on && x.next_on < today() && !['Сделка', 'Отказ'].includes(x.stage);
+    return `<article class="card click bfcard" tabindex="0" role="button" data-brief="${E(x.id)}">
+      <div class="eyebrow">${E(x.client || 'Клиент не указан')}</div><h2>${E(x.title)}</h2>
+      <div class="bfdots" aria-label="Шаг: ${E(x.stage)}">${BRIEF_STAGES.map(s => `<i class="${BRIEF_STAGES.indexOf(s) <= BRIEF_STAGES.indexOf(x.stage) ? 'on' : ''}"></i>`).join('')}</div>
+      <p>${tag(x.stage, x.stage === 'Сделка' ? 'good' : x.stage === 'Отказ' ? 'bad' : 'work')}${t.count ? ` <b>${rub(roundUp(t.min, 1000))} – ${rub(roundUp(t.max, 1000))}</b>` : ''}</p>
+      ${x.next_step ? `<small class="${late ? 'late' : 'muted'}">${E(x.next_step)}${x.next_on ? ` · ${late ? 'просрочено, ' : ''}${E(shortDate(x.next_on))}` : ''}</small>` : ''}
+    </article>`;
+  }).join('')}</div>`
+    : `<div class="card empty"><h2>Брифов пока нет</h2><p>Пришло ТЗ? Нажмите «+ Бриф», вставьте текст или загрузите .docx — ИИ разложит его на работы и вопросы, приложение посчитает вилку по вашим ставкам.</p></div>`);
+}
+
+function renderBrief(b) {
+  const tab = BRIEF_TABS.some(([k]) => k === briefView.tab) ? briefView.tab : 'tz';
+  const lead = briefLead(b), chat = briefChat(b);
+  const head = `<div class="bfhead">
+    <button class="linkbtn" data-action="bfback">${icon('back', 15)} Все брифы</button>
+    <div class="head" style="margin:8px 0 12px"><div><div class="eyebrow">${E(b.client || 'Клиент не указан')}</div><h1>${E(b.title)}</h1>
+      <p class="muted">${lead ? `Заявка: <button class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button>` : 'Без заявки в воронке'}
+      ${chat ? ` · <button class="linkbtn" data-action="bfchat">${icon('chat', 14)} переписка</button>` : ''}
+      · <small id="bfsaved" class="muted" aria-live="polite"></small></p></div>
+      <div class="headactions"><button data-action="bfedit">Изменить</button></div></div>
+    <div class="bfstages" role="group" aria-label="Шаг работы с заявкой">${BRIEF_STAGES.map(s =>
+      `<button class="chip${b.stage === s ? ' on' : ''}" data-action="bfstage" data-id="${E(s)}" aria-pressed="${b.stage === s}">${s}</button>`).join('')}
+      <button class="chip${b.stage === 'Отказ' ? ' on' : ''}" data-action="bfstage" data-id="Отказ" aria-pressed="${b.stage === 'Отказ'}">Отказ</button></div>
+    <div class="formgrid nextstep bfnext">
+      <div><label for="bfnextstep">Следующий шаг</label><input class="input" id="bfnextstep" data-bf="next_step" maxlength="300" value="${E(b.next_step)}" placeholder="Отправить вопросы по ТЗ"></div>
+      <div><label for="bfnexton">Когда</label><input class="input" id="bfnexton" type="date" data-bf="next_on" value="${E(b.next_on || '')}"></div>
+    </div>
+    <div class="subnav bftabs" role="tablist">${BRIEF_TABS.map(([k, t]) => `<button role="tab" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}" data-action="bftab" data-id="${k}">${t}${tabBadge(b, k)}</button>`).join('')}</div>
+  </div>`;
+  const body = { tz: bfTz, analysis: bfAnalysis, questions: bfQuestions, estimate: bfEstimate, plan: bfPlan, kp: bfKp, talk: bfTalk }[tab](b);
+  return head + `<div class="bfbody">${body}</div>`;
+}
+
+function tabBadge(b, k) {
+  if (k === 'questions') { const n = (b.questions || []).filter(q => q.status !== 'ответ').length; return n ? ` <b class="navbadge">${n}</b>` : ''; }
+  if (k === 'estimate') { const n = (b.estimate?.items || []).length; return n ? ` <small>${n}</small>` : ''; }
+  return '';
+}
+
+function bfTz(b) {
+  return `<div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">ТЗ клиента</h2>
+      <span><button data-action="bffile">${icon('upload', 15)} Загрузить .docx</button><input type="file" id="bffile" accept=".docx,.txt,.md" hidden></span></div>
+    <textarea class="input bftext" data-bf="source_text" maxlength="60000" aria-label="Текст ТЗ" placeholder="Вставьте текст ТЗ или брифа клиента">${E(b.source_text)}</textarea>
+    <p class="muted">${(b.source_text || '').length} знаков. Для разбора текст ТЗ уходит в ИИ; ставки и суммы студии — нет.</p>
+    <div class="formactions"><button class="primary" data-action="bfai" ${briefView.busy ? 'disabled' : ''}>${icon('ai', 15)} ${briefView.busy ? 'Разбираю ТЗ… до минуты' : b.analysis?.summary ? 'Разобрать заново' : 'Разобрать ТЗ с ИИ'}</button></div>
+    ${briefView.error ? `<div class="notice error">${E(briefView.error)}</div>` : ''}</div>`;
+}
+
+function bfAnalysis(b) {
+  const a = b.analysis || {};
+  if (!a.summary) return `<div class="card empty"><h2>Разбора пока нет</h2><p>Вставьте ТЗ и нажмите «Разобрать ТЗ с ИИ» — или заполните смету и вопросы сами.</p>
+    <button class="primary" data-action="bftab" data-id="tz">К ТЗ</button></div>`;
+  const list = (t, xs) => xs?.length ? `<div class="card"><h2>${t}</h2><ul class="bflist">${xs.map(x => `<li>${E(x)}</li>`).join('')}</ul></div>` : '';
+  return `<div class="grid layout-2">
+    <div class="card"><h2>Суть</h2><p>${E(a.summary)}</p>
+      ${a.goal ? `<p><b>Цель клиента.</b> ${E(a.goal)}</p>` : ''}${a.audience ? `<p><b>Для кого.</b> ${E(a.audience)}</p>` : ''}
+      ${a.brand ? `<p><b>Бренд и прошлое оформление.</b> ${E(a.brand)}</p>` : ''}
+      ${a.model ? `<p class="muted">Разбор: ${E(a.model)}${a.at ? `, ${E(shortDate(a.at))}` : ''}. Проверьте — модель может ошибаться.</p>` : ''}</div>
+    ${(a.deliverables || []).length ? `<div class="card"><h2>Что сдаём</h2><ul class="bflist">${a.deliverables.map(d => `<li><b>${E(d.name)}</b>${d.details ? ` — ${E(d.details)}` : ''}</li>`).join('')}</ul></div>` : ''}
+    ${list('Риски', a.risks)}${list('Чего нет в ТЗ', a.unknowns)}
+  </div>`;
+}
+
+function questionsMessage(b, onlyNew) {
+  const lead = briefLead(b);
+  const qs = (b.questions || []).filter(q => q.q && (!onlyNew || q.status === 'новый'));
+  const who = (lead?.name || '').split(/[—,]/)[0].trim();
+  return [`Здравствуйте${who && !/\s/.test(who) ? ', ' + who : ''}! Спасибо за ТЗ «${b.title}» — изучили его и материалы по ссылкам.`,
+    'Чтобы точно посчитать стоимость и сроки, уточните, пожалуйста:', '',
+    ...qs.map((q, i) => `${i + 1}. ${q.q}`), '',
+    'После ответов пришлём КП с расчётом, этапами и сроками в течение рабочего дня.'].join('\n');
+}
+
+function bfQuestions(b) {
+  const qs = b.questions || [];
+  const fresh = qs.filter(q => q.status === 'новый').length;
+  return `<div class="card"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Вопросы клиенту</h2>
+      <div class="headactions"><button data-action="bfqcopy">${icon('copy', 15)} ${fresh ? `Скопировать новые (${fresh}) одним сообщением` : 'Скопировать сообщением'}</button>
+      ${briefChat(b) ? `<button data-action="bfqchat">${icon('chat', 15)} В переписку</button>` : ''}</div></div>
+    <p class="muted">Без этих ответов стоимость — только вилка. Отмечайте: новый → задан → ответ; ответ запишите — он пригодится для сметы и КП.</p>
+    ${qs.length ? `<ol class="bfqs">${qs.map((q, i) => `<li class="bfq ${q.status === 'ответ' ? 'done' : ''}">
+      <div class="bfqrow"><input class="input" data-bf="questions.${i}.q" maxlength="400" value="${E(q.q)}" aria-label="Вопрос ${i + 1}">
+        <button class="chip ${q.status === 'ответ' ? 'on' : ''}" data-action="bfqstatus" data-id="${i}">${E(q.status || 'новый')}</button>
+        <button class="del" data-action="bfqdel" data-id="${i}" aria-label="Удалить вопрос">${icon('close', 15)}</button></div>
+      ${q.why ? `<small class="muted">Зачем: ${E(q.why)}</small>` : ''}
+      ${q.status !== 'новый' ? `<textarea class="input" data-bf="questions.${i}.answer" maxlength="1500" rows="2" placeholder="Что ответил клиент" aria-label="Ответ на вопрос ${i + 1}">${E(q.answer || '')}</textarea>` : ''}
+    </li>`).join('')}</ol>` : '<p class="muted">Вопросов нет — разберите ТЗ с ИИ или добавьте свои.</p>'}
+    <button data-action="bfqadd">+ Вопрос</button></div>`;
+}
+
+function bfEstimate(b) {
+  const e = b.estimate || {}, items = e.items || [], options = e.options || [];
+  const roles = db.studio_rates;
+  const roleSel = (path, v) => `<select class="input" data-bf="${path}" aria-label="Роль">${roles.map(r => `<option value="${E(r.id)}" ${r.id === v ? 'selected' : ''}>${E(r.name)}</option>`).join('')}</select>`;
+  const groups = [...new Set(items.map(it => it.group || 'Работы'))];
+  const rows = groups.map(g => `<tr class="bfgroup"><th colspan="7">${E(g)}</th></tr>` + items.map((it, i) => (it.group || 'Работы') !== g ? '' : `<tr>
+    <td><input class="input" data-bf="estimate.items.${i}.name" maxlength="200" value="${E(it.name)}" aria-label="Работа"></td>
+    <td>${roleSel(`estimate.items.${i}.role`, it.role)}</td>
+    <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.min" value="${E(it.min)}" aria-label="Часов от"></td>
+    <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.max" value="${E(it.max)}" aria-label="Часов до"></td>
+    <td class="bfsum" data-sum="${i}">${rub(it.min * rateOf(it.role))} – ${rub(it.max * rateOf(it.role))}</td>
+    <td><select class="input" data-bf="estimate.items.${i}.variant" aria-label="Вариант">${VARIANTS.map(([k, t]) => `<option value="${k}" ${(it.variant || 'both') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+    <td><button class="del" data-action="bfitemdel" data-id="${i}" aria-label="Удалить работу">${icon('close', 15)}</button></td></tr>`).join('')).join('');
+  return `<div class="card"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Смета</h2>
+      <div class="headactions"><button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button></div></div>
+    <p class="muted">Часы — вилкой: от и до. Сумма = часы × ставка роли + запас. «Только полный» — работа, которой нет в облегчённом варианте; «Только базовый» — её замена подешевле.</p>
+    ${items.length ? `<div class="tablewrap"><table class="table bftable"><thead><tr><th>Работа</th><th>Роль</th><th>Часов от</th><th>до</th><th>Сумма</th><th>Вариант</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` : '<p class="muted">Работ пока нет — разберите ТЗ с ИИ или добавьте вручную.</p>'}
+    <div class="formactions"><button data-action="bfitemadd">+ Работа</button></div>
+    <div class="formgrid bfset">
+      <div><label for="bfreserve">Запас на правки и ведение, %</label><input class="input" id="bfreserve" type="number" min="0" max="100" data-bf="estimate.reserve" value="${E(e.reserve ?? 10)}"></div>
+      <div><label for="bfround">Округлять цену до, ₽</label><select class="input" id="bfround" data-bf="estimate.round">${[1000, 5000, 10000].map(n => `<option value="${n}" ${Number(e.round || 1000) === n ? 'selected' : ''}>${num(n)}</option>`).join('')}</select></div>
+    </div>
+    <div id="bftotals">${totalsHtml(b)}</div></div>
+    <div class="card" style="margin-top:16px"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Дополнительно — опции для КП</h2></div>
+      ${options.length ? `<div class="tablewrap"><table class="table bftable"><thead><tr><th>Опция</th><th>Роль</th><th>Часов от</th><th>до</th><th>Цена</th><th></th></tr></thead><tbody>
+      ${options.map((o, i) => `<tr><td><input class="input" data-bf="estimate.options.${i}.name" maxlength="200" value="${E(o.name)}" aria-label="Опция">${o.why ? `<small class="muted">${E(o.why)}</small>` : ''}</td>
+        <td>${roleSel(`estimate.options.${i}.role`, o.role)}</td>
+        <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.options.${i}.min" value="${E(o.min)}" aria-label="Часов от"></td>
+        <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.options.${i}.max" value="${E(o.max)}" aria-label="Часов до"></td>
+        <td class="bfsum" data-opt="${i}">${rub(optionPrice(b, o))}</td>
+        <td><button class="del" data-action="bfoptdel" data-id="${i}" aria-label="Удалить опцию">${icon('close', 15)}</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Опций нет.</p>'}
+      <button data-action="bfoptadd">+ Опция</button></div>`;
+}
+
+function totalsHtml(b) {
+  const f = briefTotals(b, 'full'), base = briefTotals(b, 'base'), r = b.estimate?.round || 1000;
+  const line = (name, t, v) => `<div class="bftotal"><span>${name}</span><b>${rub(roundUp(t.min, r))} – ${rub(roundUp(t.max, r))}</b>
+    <small class="muted">${t.hmin}–${t.hmax} ч · середина ${rub(suggested(b, v))}</small></div>`;
+  return f.count ? line('Полный вариант', f, 'full') + (hasBase(b) ? line('Базовый вариант', base, 'base') : '') : '';
+}
+
+function bfPlan(b) {
+  const start = b.kp?.start || '';
+  const dates = planDates(b, start || dayShift(3));
+  const days = planDays(b);
+  return `<div class="card"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">План работ</h2>
+      <div><label for="bfstart" class="muted">Старт</label> <input class="input" id="bfstart" type="date" data-bf="kp.start" value="${E(start)}"></div></div>
+    <p class="muted">Дни — рабочие. Даты считаются от старта без выходных и попадают в КП.</p>
+    ${(b.plan || []).length ? `<ol class="bfplan">${b.plan.map((s, i) => `<li>
+      <div class="bfplanrow"><input class="input" data-bf="plan.${i}.stage" maxlength="150" value="${E(s.stage)}" aria-label="Этап">
+        <input class="input bfdays" type="number" min="1" max="60" data-bf="plan.${i}.days" value="${E(s.days)}" aria-label="Рабочих дней">
+        <small class="muted bfdates" data-plan="${i}">${E(shortDate(dates[i].from))} – ${E(shortDate(dates[i].to))}</small>
+        <button class="del" data-action="bfplandel" data-id="${i}" aria-label="Удалить этап">${icon('close', 15)}</button></div>
+      <input class="input" data-bf="plan.${i}.result" maxlength="300" value="${E(s.result)}" placeholder="Что клиент получит" aria-label="Результат этапа">
+    </li>`).join('')}</ol>
+    <p><b id="bfplantotal">${days} ${plural(days, 'рабочий день', 'рабочих дня', 'рабочих дней')} · ≈ ${Math.ceil(days / 5)} ${plural(Math.ceil(days / 5), 'неделя', 'недели', 'недель')}</b></p>`
+    : '<p class="muted">Этапов нет.</p>'}
+    <button data-action="bfplanadd">+ Этап</button></div>`;
+}
+
+// ---- КП: те же данные, собранные в документ для клиента
+const KP_DEFAULT_TERMS = 'Работаем по этапам: каждый этап вы утверждаете, прежде чем мы идём дальше. Исходники и шаблоны передаём после оплаты. Сроки отсчитываются от предоплаты и получения материалов.';
+
+function kpData(b) {
+  const kp = b.kp || {};
+  return {
+    intro: kp.intro ?? (b.analysis?.summary || ''),
+    full: Number(kp.price_full ?? suggested(b, 'full')) || 0,
+    base: Number(kp.price_base ?? (hasBase(b) ? suggested(b, 'base') : 0)) || 0,
+    prepay: Number(kp.prepay ?? 50), revisions: Number(kp.revisions ?? 2), valid: Number(kp.valid_days ?? 14),
+    terms: kp.terms ?? KP_DEFAULT_TERMS, contact: kp.contact ?? '', phone: kp.phone ?? '+7 922 301-88-80 · +7 995 926-54-20', date: kp.date || today()
+  };
+}
+
+function bfKp(b) {
+  const k = kpData(b);
+  return `<div class="grid layout-2 bfkp">
+    <div class="card"><h2>Данные КП</h2>
+      <label for="kpintro">Вступление — задача клиента своими словами</label>
+      <textarea class="input" id="kpintro" data-bf="kp.intro" maxlength="2000" rows="4">${E(k.intro)}</textarea>
+      <div class="formgrid">
+        <div><label for="kpfull">Цена полного варианта, ₽</label><input class="input" id="kpfull" type="number" min="0" step="1000" data-bf="kp.price_full" value="${E(k.full)}"></div>
+        <div><label for="kpbase">Цена базового, ₽ (0 — не показывать)</label><input class="input" id="kpbase" type="number" min="0" step="1000" data-bf="kp.price_base" value="${E(k.base)}"></div>
+        <div><label for="kpprepay">Предоплата, %</label><input class="input" id="kpprepay" type="number" min="0" max="100" data-bf="kp.prepay" value="${E(k.prepay)}"></div>
+        <div><label for="kprev">Кругов правок</label><input class="input" id="kprev" type="number" min="0" max="10" data-bf="kp.revisions" value="${E(k.revisions)}"></div>
+        <div><label for="kpvalid">КП действует, дней</label><input class="input" id="kpvalid" type="number" min="1" max="90" data-bf="kp.valid_days" value="${E(k.valid)}"></div>
+        <div><label for="kpcontact">Контактное лицо</label><input class="input" id="kpcontact" data-bf="kp.contact" maxlength="80" value="${E(k.contact)}" placeholder="Имя и фамилия"></div>
+        <div><label for="kpphone">Телефоны в КП</label><input class="input" id="kpphone" data-bf="kp.phone" maxlength="120" value="${E(k.phone)}"></div>
+      </div>
+      <label for="kpterms">Условия</label><textarea class="input" id="kpterms" data-bf="kp.terms" maxlength="2000" rows="3">${E(k.terms)}</textarea>
+      <p class="muted">Подсказка из сметы: полный — ${rub(suggested(b, 'full'))}${hasBase(b) ? `, базовый — ${rub(suggested(b, 'base'))}` : ''} (середина вилки с запасом).</p>
+      <div class="formactions"><button class="primary" data-action="kpprint">${icon('download', 15)} Сохранить PDF</button>
+        <button data-action="kpsent" ${b.kp?.sent_on ? 'disabled' : ''}>${b.kp?.sent_on ? `КП отправлено ${E(shortDate(b.kp.sent_on))}` : 'Отметить: КП отправлено'}</button></div></div>
+    <div class="card kppreview"><div class="kpdoc">${kpHtml(b)}</div></div>
+  </div>`;
+}
+
+function kpHtml(b) {
+  const k = kpData(b), a = b.analysis || {}, e = b.estimate || {};
+
+  const groups = [...new Set((e.items || []).map(it => it.group || 'Работы'))];
+  const deliver = (a.deliverables || []).length ? a.deliverables
+    : groups.map(g => ({ name: g, details: (e.items || []).filter(it => (it.group || 'Работы') === g && inVariant(it, 'full')).map(it => it.name).join('; ') }));
+  const onlyFull = (e.items || []).filter(it => it.variant === 'full').map(it => it.name);
+  const onlyBase = (e.items || []).filter(it => it.variant === 'base').map(it => it.name);
+  const dates = planDates(b, b.kp?.start || dayShift(3));
+  const valid = new Date(Date.parse(k.date) + k.valid * 864e5);
+  return `<header class="kptop"><img src="brand/logoB.svg" alt="ADERVIS"><div><b>Коммерческое предложение</b><span>${E(new Date(k.date + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' }))}</span></div></header>
+    <h1 class="kptitle">${E(b.title)}</h1>
+    <p class="kpfor">Для: <b>${E(b.client || '—')}</b></p>
+    ${k.intro ? `<section><h2>Задача</h2><p>${E(k.intro)}</p></section>` : ''}
+    ${deliver.length ? `<section><h2>Что сделаем</h2><ul>${deliver.map(d => `<li><b>${E(d.name)}</b>${d.details ? ` — ${E(d.details)}` : ''}</li>`).join('')}</ul></section>` : ''}
+    <section><h2>Стоимость</h2><table class="kptable"><tbody>
+      <tr><td><b>Полный вариант — всё по ТЗ</b></td><td class="kpprice">${rub(k.full)}</td></tr>
+      ${k.base ? `<tr><td><b>Базовый вариант</b>${onlyFull.length ? `<br><small>Без: ${E(onlyFull.join('; '))}${onlyBase.length ? `. Вместо этого: ${E(onlyBase.join('; '))}` : ''}</small>` : ''}</td><td class="kpprice">${rub(k.base)}</td></tr>` : ''}
+      ${(e.options || []).filter(o => o.name).map(o => `<tr><td>Дополнительно: ${E(o.name)}${o.why ? `<br><small>${E(o.why)}</small>` : ''}</td><td class="kpprice">+ ${rub(optionPrice(b, o))}</td></tr>`).join('')}
+    </tbody></table></section>
+    ${dates.length ? `<section><h2>Этапы и сроки</h2><table class="kptable"><tbody>${dates.map((s, i) => `<tr><td><b>${i + 1}. ${E(s.stage)}</b>${s.result ? `<br><small>${E(s.result)}</small>` : ''}</td>
+      <td class="kpprice">${E(shortDate(s.from))} – ${E(shortDate(s.to))}</td></tr>`).join('')}</tbody></table>
+      <p>Всего около ${planDays(b)} рабочих дней.</p></section>` : ''}
+    <section><h2>Условия</h2><ul>
+      <li>Предоплата ${k.prepay}%, остаток — после сдачи.</li>
+      <li>${k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок по каждому блоку входят в стоимость.` : 'Правки — по договорённости.'}</li>
+      ${k.terms ? `<li>${E(k.terms)}</li>` : ''}</ul></section>
+    <section><h2>Почему ADERVIS</h2><ul>
+      <li>Проект ведут руководители студии сами — без стажёров.</li>
+      <li>Моушн, 3D, видео и дизайн в одной команде: не нужно собирать подрядчиков.</li>
+      <li>Отдаём материалы так, чтобы ваша команда работала с ними без нас.</li></ul></section>
+    <footer class="kpfoot"><b>${k.contact ? `${E(k.contact)}, ` : ''}ADERVIS</b><span>adervis.ru${k.phone ? ` · ${E(k.phone)}` : ''}</span>
+      <small>Предложение действует до ${E(valid.toLocaleDateString('ru', { day: 'numeric', month: 'long' }))}.</small></footer>`;
+}
+
+function kpPrint(b) {
+  let box = $('#kpprint');
+  if (!box) { box = document.createElement('div'); box.id = 'kpprint'; document.body.append(box); }
+  box.innerHTML = `<div class="kpdoc">${kpHtml(b)}</div>`;
+  document.body.classList.add('printkp');
+  const done = () => { document.body.classList.remove('printkp'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
+}
+
+// ---- как вести диалог: сообщение на каждый шаг, с данными брифа
+function talkSteps(b) {
+  const k = kpData(b), lead = briefLead(b);
+  const who = (lead?.name || '').split(/[—,]/)[0].trim();
+  const hi = `Здравствуйте${who && !/\s/.test(who) ? ', ' + who : ''}!`;
+  const days = planDays(b);
+  return [
+    ['Разбор', 'Первый ответ — в течение двух часов', 'Подтвердите, что ТЗ получено, и назовите срок КП. Человек выбирает того, кто ответил первым и по делу.',
+      `${hi} Получили ТЗ «${b.title}», спасибо. Изучаем ТЗ и материалы по ссылкам — сегодня пришлём несколько уточняющих вопросов, а после ответов — КП с расчётом и сроками.`],
+    ['Вопросы', 'Вопросы по ТЗ', 'Одним сообщением, пронумерованными. Не больше 10 — остальное спросите на созвоне.', questionsMessage(b, false)],
+    ['Расчёт', 'Если ответы затянулись', 'Через день без ответа — мягко напомнить и предложить созвон на 15 минут вместо переписки.',
+      `${hi} Подскажите, удалось посмотреть вопросы по «${b.title}»? Если удобнее голосом — давайте созвонимся на 15 минут, пройдёмся по ТЗ и сразу назову вилку по бюджету.`],
+    ['КП', 'Отправка КП', 'PDF и короткое сообщение: главное — цена, срок и следующий шаг. Предложите созвон, чтобы показать концепцию.',
+      `${hi} Направляем КП по «${b.title}»: ${k.base ? `два варианта — полный за ${rub(k.full)} и базовый за ${rub(k.base)}` : `стоимость ${rub(k.full)}`}${days ? `, срок — около ${days} рабочих дней` : ''}. Предлагаю созвониться на 15 минут — расскажу, как видим концепцию, и ответим на вопросы. Когда удобно?`],
+    ['Переговоры', 'Молчат 2 дня после КП', 'Не «ну что там?», а польза: пример, идея или вопрос о сроке решения.',
+      `${hi} Возвращаюсь по КП «${b.title}». Подскажите, когда планируете принять решение и кто ещё участвует в согласовании? Можем подготовить пример стиля на одном элементе, чтобы было проще выбрать.`],
+    ['Переговоры', '«Дорого»', 'Не снижайте цену просто так: уберите объём (базовый вариант), разбейте на этапы или перенесите часть работ.',
+      `Понимаю. Есть два пути без потери качества: базовый вариант${k.base ? ` за ${rub(k.base)}` : ''} — главное по ТЗ без самого трудоёмкого, или разбить проект на два этапа: сначала то, что нужно к первому выпуску, остальное — следующим. Какой вариант ближе?`],
+    ['Переговоры', '«Согласовываем внутри» / закупка', 'Уточните процедуру: кто решает, нужны ли тендер, НДС, аккредитация, какие документы приложить.',
+      `Конечно. Чтобы ускорить согласование: подскажите, какая процедура закупки — прямой договор или конкурс? Какие документы нужны от нас? Подготовим всё заранее.`],
+    ['Сделка', 'Закрытие и старт', 'Зафиксируйте договорённость: дата старта, предоплата, первая встреча по концепции, кто со стороны клиента согласует.',
+      `${hi} Отлично, договорились! Предлагаем стартовать${b.kp?.start ? ` ${new Date(b.kp.start + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long' })}` : ' в ближайший понедельник'}: высылаем договор и счёт на предоплату ${k.prepay}%. Первым шагом — созвон по концепции. Кто с вашей стороны будет согласовывать работы?`]
+  ];
+}
+
+function bfTalk(b) {
+  const steps = talkSteps(b), now = BRIEF_STAGES.indexOf(b.stage);
+  return `<p class="muted">Что писать клиенту на каждом шаге. Текст подставляется из брифа — поправьте под разговор и отправьте.${briefChat(b) ? ' Кнопка «В переписку» вставит его в ответ в «Диалогах».' : ''}</p>
+    <div class="bftalk">${steps.map(([stage, title, tip, text], i) => `<article class="card bfstep${stage === b.stage ? ' now' : ''}${BRIEF_STAGES.indexOf(stage) < now ? ' past' : ''}">
+      <div class="eyebrow">${E(stage)}</div><h3>${E(title)}</h3><p class="muted">${E(tip)}</p>
+      <pre class="bfmsg">${E(text)}</pre>
+      <div class="formactions"><button data-action="bftalkcopy" data-id="${i}">${icon('copy', 15)} Скопировать</button>
+        ${briefChat(b) ? `<button data-action="bftalkchat" data-id="${i}">${icon('chat', 15)} В переписку</button>` : ''}</div></article>`).join('')}</div>`;
+}
+
+// ---- правки полей рабочей области: без перерисовки, чтобы не сбивать набор
+function setPath(o, path, v) {
+  const keys = path.split('.');
+  let cur = o;
+  keys.slice(0, -1).forEach((k, i) => {
+    if (cur[k] == null) cur[k] = /^\d+$/.test(keys[i + 1]) ? [] : {};
+    cur = cur[k];
+  });
+  cur[keys[keys.length - 1]] = v;
+}
+
+function onBriefInput(e) {
+  const el = e.target.closest('[data-bf]');
+  const b = db.briefs.find(x => x.id === briefView.id);
+  if (!el || !b) return;
+  const v = el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.type === 'date' ? (el.value || null)
+    : el.dataset.bf === 'estimate.round' ? Number(el.value) : el.value;
+  setPath(b, el.dataset.bf, v);
+  if (el.dataset.bf.startsWith('estimate.')) b.estimate.edited = true;
+  // суммы, даты и цифры пересчитываются на месте
+  const totals = $('#bftotals');
+  if (totals) totals.innerHTML = totalsHtml(b);
+  document.querySelectorAll('[data-sum]').forEach(td => {
+    const it = b.estimate.items[Number(td.dataset.sum)];
+    if (it) td.textContent = `${rub(it.min * rateOf(it.role))} – ${rub(it.max * rateOf(it.role))}`;
+  });
+  document.querySelectorAll('[data-opt]').forEach(td => { const o = b.estimate.options[Number(td.dataset.opt)]; if (o) td.textContent = rub(optionPrice(b, o)); });
+  if (el.dataset.bf.startsWith('plan.') || el.dataset.bf === 'kp.start') {
+    const dates = planDates(b, b.kp?.start || dayShift(3));
+    document.querySelectorAll('[data-plan]').forEach(s => { const d = dates[Number(s.dataset.plan)]; if (d) s.textContent = `${shortDate(d.from)} – ${shortDate(d.to)}`; });
+    const days = planDays(b), t = $('#bfplantotal');
+    if (t) t.textContent = `${days} ${plural(days, 'рабочий день', 'рабочих дня', 'рабочих дней')} · ≈ ${Math.ceil(days / 5)} ${plural(Math.ceil(days / 5), 'неделя', 'недели', 'недель')}`;
+  }
+  const doc = $('.kppreview .kpdoc');
+  if (doc && el.dataset.bf.startsWith('kp.')) doc.innerHTML = kpHtml(b);
+  queueBriefSave(b);
+}
+
+// ---- ИИ-разбор
+async function briefAi(b) {
+  if ((b.source_text || '').trim().length < 80) { briefView.error = 'Вставьте текст ТЗ — хотя бы пару абзацев.'; render(); return; }
+  const touched = (b.questions || []).some(q => q.status !== 'новый') || b.estimate?.edited;
+  if (touched && !confirm('Разобрать заново? Вопросы и смета будут заменены новым разбором.')) return;
+  briefView.busy = true; briefView.error = '';
+  render();
+  try {
+    flushPendingBrief();
+    const r = await api.generate({ mode: 'brief', text: b.source_text, client: b.client, roles: db.studio_rates.map(x => ({ id: x.id, name: x.name })) });
+    b.analysis = { summary: r.summary, goal: r.goal, audience: r.audience, deliverables: r.deliverables, risks: r.risks, unknowns: r.unknowns, model: r.model, at: today() };
+    b.questions = (r.questions || []).map(q => ({ q: q.q, why: q.why, status: 'новый', answer: '' }));
+    b.estimate = { reserve: b.estimate?.reserve ?? 10, round: b.estimate?.round || 5000,
+      items: (r.items || []).map(it => ({ group: it.group, name: it.name, role: it.role, min: it.min, max: it.max, variant: it.base === false ? 'full' : 'both' })),
+      options: (r.options || []).map(o => ({ name: o.name, why: o.why, role: o.role, min: o.min, max: o.max })) };
+    b.plan = r.plan || [];
+    if (b.stage === 'Разбор') { b.stage = 'Вопросы'; b.next_step = 'Отправить клиенту вопросы по ТЗ'; b.next_on = today(); }
+    briefView.tab = 'analysis';
+    await saveBriefNow(b, `Разбор готов: работ ${b.estimate.items.length}, вопросов ${b.questions.length}`);
+  } catch (err) {
+    briefView.error = 'Разбор не получился: ' + (err.message || 'ошибка сервера');
+  } finally {
+    briefView.busy = false;
+    render();
+  }
+}
+
+// ---- новый бриф и правка шапки
+function editBrief(id, preset = {}) {
+  const exists = db.briefs.some(x => x.id === id);
+  const b = db.briefs.find(x => x.id === id) || { id: uid(), title: '', client: '', stage: 'Разбор', source_text: '', analysis: {}, questions: [],
+    estimate: { reserve: 10, round: 5000, items: [], options: [] }, plan: [], kp: {}, next_step: 'Разобрать ТЗ', next_on: today(), lead_id: null, ...preset };
+  const leads = [...db.leads].filter(l => !LOST.includes(l.status) || l.id === b.lead_id).sort((x, y) => String(y.came_on).localeCompare(String(x.came_on)));
+  modal(`<h2>${exists ? 'Бриф' : 'Новый бриф'}</h2><form id="bff">
+    <label for="bft">Проект</label><input id="bft" name="title" required maxlength="200" value="${E(b.title)}" placeholder="Оформление видеодайджеста">
+    <label for="bfc">Клиент</label><input id="bfc" name="client" maxlength="200" value="${E(b.client)}" placeholder="Компания">
+    <label for="bfl">Заявка в воронке</label>
+    <select id="bfl" name="lead_id"><option value="">${exists ? 'Без заявки' : 'Создать новую заявку'}</option>
+      ${leads.map(l => `<option value="${E(l.id)}" ${l.id === b.lead_id ? 'selected' : ''}>${E(l.name)} · ${E(l.status)}</option>`).join('')}</select>
+    ${exists ? '' : `<div class="bfnewlead"><label for="bfsrc">Откуда пришла заявка</label><select id="bfsrc" name="source">${opts(LEAD_SOURCES, preset.source || 'Не знаем')}</select></div>
+    <label for="bfsrcf">ТЗ клиента</label>
+    <p class="fileadd"><button type="button" id="bfsrcbtn">${icon('upload', 15)} Загрузить .docx или .txt</button><input type="file" id="bfsrcf" accept=".docx,.txt,.md" hidden>
+      <small class="muted" id="bfsrcst"></small></p>
+    <textarea name="source_text" maxlength="60000" style="min-height:140px" placeholder="Или вставьте текст ТЗ">${E(b.source_text)}</textarea>`}
+    <div class="formactions"><button class="primary">${exists ? 'Сохранить' : 'Создать'}</button>
+      ${exists ? `<button type="button" class="danger" data-action="bfdel" data-id="${E(b.id)}">Удалить бриф</button>` : ''}</div></form>`);
+  const f = $('#bff');
+  const leadSel = f.elements.lead_id, srcBox = f.querySelector('.bfnewlead');
+  if (srcBox) leadSel.onchange = () => { srcBox.hidden = !!leadSel.value; };
+  const upBtn = $('#bfsrcbtn');
+  if (upBtn) {
+    upBtn.onclick = () => $('#bfsrcf').click();
+    $('#bfsrcf').onchange = async e => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        f.elements.source_text.value = (await fileText(file)).slice(0, 60000);
+        $('#bfsrcst').textContent = `${file.name}: ${f.elements.source_text.value.length} знаков`;
+        if (!f.elements.title.value) f.elements.title.value = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 200);
+      } catch (err) { $('#bfsrcst').textContent = 'Не прочитался: ' + err.message; }
+    };
+  }
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const btn = f.querySelector('button.primary');
+    btn.disabled = true;
+    const o = { ...b, title: f.elements.title.value.trim(), client: f.elements.client.value.trim(), lead_id: leadSel.value || null };
+    if (!exists) o.source_text = f.elements.source_text.value.trim();
+    try {
+      // Нет заявки — заводим: бриф без воронки потеряется из «На сегодня».
+      if (!exists && !o.lead_id) {
+        const lead = await api.insert('leads', { id: uid(), came_on: today(), name: o.client ? `${o.client} — ${o.title}`.slice(0, 200) : o.title, source: f.elements.source.value,
+          direction: 'Студия', request: o.title.slice(0, 1000), amount: 0, status: 'В работе', note: 'Заявка с ТЗ — бриф в «Брифах и КП».', campaign_id: null,
+          reached: reachedOf('В работе', 0), magnet_id: null, next_step: 'Разобрать ТЗ и задать вопросы', next_on: today(), lost_reason: '' });
+        upsertLocal('leads', lead);
+        noteLocal('insert', 'leads', { ...lead, title: lead.name });
+        o.lead_id = lead.id;
+      }
+      const saved = exists ? await api.update('briefs', o) : await api.insert('briefs', o);
+      upsertLocal('briefs', saved);
+      noteLocal(exists ? 'update' : 'insert', 'briefs', saved);
+      $('#modal').close();
+      openBrief(saved.id, exists ? briefView.tab : 'tz');
+      toast(exists ? 'Бриф сохранён' : 'Бриф создан — можно разбирать ТЗ');
+    } catch (err) {
+      btn.disabled = false;
+      handleError(err);
+    }
+  };
+}
+
+function openBrief(id, tab = 'tz') {
+  if (page !== 'briefs') go('briefs');
+  briefView = { id, tab, busy: false, error: '' };
+  render();
+  window.scrollTo(0, 0);
+}
+
+function delBrief(id) {
+  const b = db.briefs.find(x => x.id === id);
+  if (!b) return;
+  askDelete('Удалить бриф?', `«${E(b.title)}» — ТЗ, вопросы, смета и КП исчезнут. Заявка в воронке останется.`, async () => {
+    await api.remove('briefs', id);
+    db.briefs = db.briefs.filter(x => x.id !== id);
+    noteLocal('delete', 'briefs', b);
+    briefView.id = '';
+  });
+}
+
+async function setBriefStage(b, stage) {
+  if (b.stage === stage) return;
+  b.stage = stage;
+  const next = { 'Вопросы': ['Получить ответы на вопросы по ТЗ', 1], 'Расчёт': ['Посчитать смету и план', 1], 'КП': ['Отправить КП', 0],
+    'Переговоры': ['Узнать решение по КП', 2], 'Сделка': ['Договор и предоплата', 1] }[stage];
+  if (next) { b.next_step = next[0]; b.next_on = dayShift(next[1]); }
+  if (['Сделка', 'Отказ'].includes(stage)) { b.next_step = stage === 'Сделка' ? 'Договор и предоплата' : ''; b.next_on = stage === 'Сделка' ? dayShift(1) : null; }
+  flushPendingBrief();
+  await saveBriefNow(b, `Шаг: ${stage}`);
+  if (stage === 'Сделка') syncLead(b, { status: 'Сделка', amount: kpData(b).full, next_step: 'Договор и предоплата', next_on: dayShift(1) });
+  if (stage === 'Отказ') syncLead(b, { status: 'Отказ', next_step: '', next_on: null });
+  if (stage === 'Переговоры') syncLead(b, { status: 'КП отправлено', next_step: 'Узнать решение по КП', next_on: dayShift(2) });
+}
+
+async function kpSent(b) {
+  b.kp = { ...(b.kp || {}), sent_on: today(), date: b.kp?.date || today() };
+  await setBriefStage(b, 'Переговоры');
+  toast('КП отмечено отправленным — заявка в воронке: «КП отправлено», напоминание через 2 дня');
+}
+
+async function copyText(text, ok = 'Скопировано') {
+  try { await navigator.clipboard.writeText(text); toast(ok); }
+  catch (err) { toast('Не удалось скопировать — выделите текст вручную'); }
+}
+
+// Текст — в поле ответа нужной переписки: отправит человек, прочитав.
+function toChat(b, text) {
+  const p = briefChat(b);
+  if (!p) return;
+  dialog.drafts[p.id] = text;
+  openDialog(p.id);
+}
+
+// Кнопки рабочей области брифа.
+async function briefAction(btn) {
+  const b = db.briefs.find(x => x.id === briefView.id);
+  const a = btn.dataset.action, i = Number(btn.dataset.id);
+  if (a === 'bfdel') { delBrief(btn.dataset.id); return; }
+  if (!b) return;
+  const redraw = () => { queueBriefSave(b); render(); };
+  switch (a) {
+    case 'bftab': flushPendingBrief(); briefView.tab = btn.dataset.id; render(); break;
+    case 'bfedit': editBrief(b.id); break;
+    case 'bfstage': await setBriefStage(b, btn.dataset.id); break;
+    case 'bffile': $('#bffile').click(); break;
+    case 'bfai': await briefAi(b); break;
+    case 'bfchat': { const p = briefChat(b); if (p) openDialog(p.id); break; }
+    case 'bfqcopy': {
+      const fresh = (b.questions || []).some(q => q.status === 'новый');
+      await copyText(questionsMessage(b, fresh), 'Вопросы скопированы — отправьте клиенту');
+      (b.questions || []).forEach(q => { if (q.status === 'новый') q.status = 'задан'; });
+      if (b.stage === 'Разбор' || b.stage === 'Вопросы') { b.stage = 'Вопросы'; b.next_step = 'Получить ответы на вопросы по ТЗ'; b.next_on = dayShift(1); }
+      redraw();
+      break;
+    }
+    case 'bfqchat': toChat(b, questionsMessage(b, (b.questions || []).some(q => q.status === 'новый'))); break;
+    case 'bfqstatus': { const q = b.questions[i]; q.status = Q_STATUS[(Q_STATUS.indexOf(q.status) + 1) % Q_STATUS.length]; redraw(); break; }
+    case 'bfqdel': b.questions.splice(i, 1); redraw(); break;
+    case 'bfqadd': (b.questions ||= []).push({ q: '', why: '', status: 'новый', answer: '' }); redraw(); break;
+    case 'bfitemadd': {
+      const items = ((b.estimate ||= {}).items ||= []);
+      items.push({ group: items[items.length - 1]?.group || 'Работы', name: 'Новая работа', role: db.studio_rates[0]?.id || 'motion', min: 1, max: 2, variant: 'both' });
+      b.estimate.edited = true; redraw(); break;
+    }
+    case 'bfitemdel': b.estimate.items.splice(i, 1); b.estimate.edited = true; redraw(); break;
+    case 'bfoptadd': ((b.estimate ||= {}).options ||= []).push({ name: 'Дополнительная работа', why: '', role: db.studio_rates[0]?.id || 'motion', min: 1, max: 2 }); redraw(); break;
+    case 'bfoptdel': b.estimate.options.splice(i, 1); redraw(); break;
+    case 'bfplanadd': (b.plan ||= []).push({ stage: 'Новый этап', days: 1, result: '' }); redraw(); break;
+    case 'bfplandel': b.plan.splice(i, 1); redraw(); break;
+    case 'kpprint': flushPendingBrief(); kpPrint(b); break;
+    case 'kpsent': await kpSent(b); break;
+    case 'bftalkcopy': await copyText(talkSteps(b)[i][3]); break;
+    case 'bftalkchat': toChat(b, talkSteps(b)[i][3]); break;
+  }
+}
+
+// ---- ставки студии
+function ratesModal() {
+  modal(`<h2>Ставки студии</h2>
+    <p class="muted">Цена часа по ролям — из неё считаются сметы. В ИИ ставки не уходят. Где ставка из каталога Adervis CRM — так и написано; остальное — ориентир, поправьте под себя.</p>
+    <form id="ratef"><table class="table bftable"><thead><tr><th>Роль</th><th>₽ за час</th><th>Откуда</th></tr></thead><tbody>
+    ${db.studio_rates.map((r, i) => `<tr><td><input class="input" name="name${i}" maxlength="60" value="${E(r.name)}" aria-label="Роль"></td>
+      <td class="bfnum"><input class="input" type="number" min="0" max="100000" name="rate${i}" value="${E(r.rate)}" aria-label="Ставка ${E(r.name)}"></td>
+      <td><input class="input" name="note${i}" maxlength="200" value="${E(r.note)}" aria-label="Пометка"></td></tr>`).join('')}
+    </tbody></table>
+    <div class="formactions"><button class="primary">Сохранить ставки</button></div></form>`);
+  $('#ratef').onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target.elements;
+    const list = db.studio_rates.map((r, i) => ({ ...r, name: f['name' + i].value.trim() || r.name, rate: Math.max(0, Number(f['rate' + i].value) || 0), note: f['note' + i].value.trim() }));
+    try {
+      await api.upsertAll('studio_rates', list);
+      list.forEach(r => upsertLocal('studio_rates', r));
+      $('#modal').close();
+      render();
+      toast('Ставки сохранены — сметы пересчитаны');
+    } catch (err) { handleError(err); }
+  };
 }
 
 // ------------------------------------------------------------------ метрики
@@ -4904,6 +5594,7 @@ function render() {
   if (page === 'survey') s = renderSurvey();
   if (page === 'leads') s = renderLeads();
   if (page === 'dialogs') s = renderDialogs();
+  if (page === 'briefs') s = renderBriefs();
   if (page === 'prospects') s = renderProspects();
   if (page === 'magnets') s = renderMagnets();
   if (page === 'decisions') s = renderDecisions();
@@ -5081,6 +5772,7 @@ function render() {
       ['Готово', 'Контент и ИИ', 'Контент-план по площадкам, публикация в Telegram, парсер вышедших постов. ИИ: посты, идеи, план на месяц, ключевые фразы, объявления, первое сообщение компании.'],
       ['Готово', 'Аналитика', 'Метрики с целями, статистика ВКонтакте по месяцам, итоги недели, анкета владельцев.'],
       ['Ждёт ключей', 'ВКонтакте и Яндекс', 'Сервисный ключ VK — парсер прочитает посты и просмотры группы. Ключ Яндекса — поиск организаций прямо из приложения.'],
+      ['Готово', 'Брифы и КП', 'ТЗ клиента → разбор (Claude) → вопросы → смета по ставкам студии → план → КП в PDF → что писать клиенту на каждом шаге. Шаги двигают заявку в воронке.'],
       ['Готово', 'ВКонтакте в «Диалогах»', 'Сообщения сообщества — в той же переписке, с тем же ботом и анкетой. Подключается одним ключом сообщества.'],
       ['Дальше', 'Instagram в «Диалогах»', 'Директ — в той же переписке, с тем же ботом и анкетой.'],
       ['Дальше', 'Напоминания в Telegram', 'Бот каждое утро присылает «На сегодня»: заявки без ответа, наступившие шаги, публикации дня.'],
@@ -5122,6 +5814,14 @@ function render() {
   const keep = page === 'dialogs' ? dialogSnapshot() : null;
   $('#view').innerHTML = s;
   if (keep) wireDialogs(keep);
+  const bff = $('#bffile');
+  if (bff) bff.onchange = async e => {
+    const file = e.target.files[0], b = db.briefs.find(x => x.id === briefView.id);
+    e.target.value = '';
+    if (!file || !b) return;
+    try { b.source_text = (await fileText(file)).slice(0, 60000); await saveBriefNow(b, `ТЗ загружено: ${file.name}`); }
+    catch (err) { toast('Файл не прочитался: ' + err.message, 6000); }
+  };
   if (page === 'brand' && deck.on) bindDeckSwipe();
   if (page === 'chain') bindGraph();
   const bar = $('.topbar');
@@ -5207,8 +5907,8 @@ try { const saved = JSON.parse(localStorage.getItem('intel.nav.closed')); if (Ar
 // Красный — если среди них есть просроченное.
 function navCounts() {
   const list = typeof todayList === 'function' && db ? todayList() : [];
-  const by = { home: list, leads: [], dialogs: [], prospects: [], ads: [], content: [] };
-  const kind = { l: 'leads', dl: 'dialogs', pr: 'prospects', cp: 'ads', p: 'content' };
+  const by = { home: list, leads: [], briefs: [], dialogs: [], prospects: [], ads: [], content: [] };
+  const kind = { l: 'leads', br: 'briefs', dl: 'dialogs', pr: 'prospects', cp: 'ads', p: 'content' };
   for (const x of list) by[kind[x.ref.slice(0, x.ref.indexOf(':'))]]?.push(x);
   const out = Object.fromEntries(Object.entries(by).map(([k, v]) => [k, { n: v.length, late: v.some(x => x.late) }]));
   // у анкеты счётчик — сколько главных вопросов (★) ещё без ответа
@@ -5247,6 +5947,8 @@ function go(p) {
   if (p === 'calendar') { contentView = 'calendar'; p = 'content'; }
   page = sections.some(s => s[0] === p) ? p : 'home';
   query = ''; category = 'Все'; surveyHidden = null;
+  flushPendingBrief();
+  briefView = { id: '', tab: 'tz', busy: false, error: '' };
   document.body.classList.remove('menu');
   $('#crumb').textContent = sections.find(s => s[0] === page)[2];
   render();
@@ -5658,6 +6360,9 @@ function editLead(id) {
     <label>Заметка</label><textarea name="note" maxlength="1000">${E(l.note)}</textarea>
     ${reasonField(l.lost_reason || '', LOST.includes(l.status), 'Почему не вышло')}
     <input type="number" name="reached" value="${Number(l.reached) || 0}" hidden>
+    ${exists ? (() => { const br = db.briefs.find(x => x.lead_id === l.id);
+      return br ? `<div class="notice">Бриф и КП: <button type="button" class="linkbtn" data-action="openbrief" data-id="${E(br.id)}">${E(br.title)} · ${E(br.stage)}</button></div>`
+        : `<p><button type="button" data-action="newbrieffor" data-id="${E(l.id)}">${icon('proposal', 15)} Есть ТЗ — разобрать и посчитать</button></p>`; })() : ''}
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(l._by))}, ${ago(l._at)}</p>` : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists ? `<button type="button" class="danger" data-action="dellead" data-id="${E(l.id)}">Удалить</button>` : ''}</div></form>`);
@@ -6096,7 +6801,7 @@ function exportJson() {
     files: strip(db.files), publications: strip(db.publications),
     prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), channel_stats: strip(db.channel_stats), survey_answers: strip(db.survey_answers), kpi_targets: strip(db.kpi_targets),
     // тексты бота и скрипты; ключей ботов в браузере нет, поэтому и в копии их нет
-    sales_scripts: strip(db.sales_scripts), outreach_settings: db.outreach
+    sales_scripts: strip(db.sales_scripts), outreach_settings: db.outreach, briefs: strip(db.briefs), studio_rates: strip(db.studio_rates)
   }, null, 2), 'adervis-backup-' + today() + '.json');
 }
 
@@ -6193,7 +6898,7 @@ document.addEventListener('click', async e => {
     document.body.classList.remove('menu');
     return;
   }
-  const b = e.target.closest('button,article[data-ks],article[data-mg],article[data-k],article[data-p],article[data-d],article[data-cp],article[data-l],tr[data-l],tr[data-pr],g[data-node]');
+  const b = e.target.closest('button,article[data-brief],article[data-ks],article[data-mg],article[data-k],article[data-p],article[data-d],article[data-cp],article[data-l],tr[data-l],tr[data-pr],g[data-node]');
   if (!b) return;
   if (b.dataset.node) { graphOpen(b.dataset.node); return; }
   if (b.dataset.page) { go(b.dataset.page); return; }
@@ -6204,6 +6909,7 @@ document.addEventListener('click', async e => {
   if (b.dataset.cp) { editCampaign(b.dataset.cp); return; }
   if (b.dataset.pr) { editProspect(b.dataset.pr); return; }
   if (b.dataset.dlg) { openDialog(b.dataset.dlg); return; }
+  if (b.dataset.brief) { openBrief(b.dataset.brief); return; }
   if (b.dataset.mg) { editMagnet(b.dataset.mg); return; }
   if (b.dataset.ks) { editKeywordSet(b.dataset.ks); return; }
   if (b.dataset.result) {
@@ -6257,6 +6963,17 @@ document.addEventListener('click', async e => {
     case 'delprospect': delProspect(b.dataset.id); break;
     case 'prstatus': prospectFilter.status = b.dataset.id; render(); break;
     case 'dlgfilter': dialog.filter = b.dataset.id; render(); break;
+    case 'bfnew': editBrief(); break;
+    case 'bfrates': ratesModal(); break;
+    case 'bfback': flushPendingBrief(); briefView.id = ''; render(); break;
+    case 'openbrief': $('#modal').close(); openBrief(b.dataset.id); break;
+    case 'newbrieffor': {
+      const l = db.leads.find(x => x.id === b.dataset.id);
+      $('#modal').close();
+      editBrief(undefined, { lead_id: l?.id || null, title: l?.request?.slice(0, 200) || '', client: l?.name || '', source: l?.source });
+      break;
+    }
+    default: if (/^(bf|kp)/.test(b.dataset.action || '')) await briefAction(b); break;
     case 'dlgback': dialog.id = ''; render(); break;
     case 'dlgmode': dialogMode(); break;
     case 'dlgquick': dialogInsert((db.outreach.quick_replies || [])[Number(b.dataset.id)] || ''); break;
@@ -6384,6 +7101,9 @@ document.addEventListener('click', async e => {
     case 'password': changePassword(); break;
   }
 });
+
+// Поля рабочей области брифа сохраняются сами, без кнопки (см. onBriefInput).
+document.addEventListener('input', e => { if (page === 'briefs' && e.target.closest?.('#view [data-bf]')) onBriefInput(e); });
 
 document.addEventListener('change', async e => {
   const id = e.target.dataset.task;
@@ -6544,6 +7264,7 @@ $('#search').onclick = search;
 // относится к открытому разделу: чаще всего создают именно его.
 const CREATE_ITEMS = [
   ['newlead', 'Заявку', 'кто обратился и откуда узнал', 'leads'],
+  ['bfnew', 'Бриф и КП', 'ТЗ клиента → вопросы, смета, план, КП', 'briefs'],
   ['newdecision', 'Решение', 'что решили, почему и как проверим', 'decisions'],
   ['newcampaign', 'Кампанию', 'канал, цель, бюджет и ссылка с метками', 'ads'],
   ['newk', 'Запись базы знаний', 'факт о компании с источником', 'knowledge'],

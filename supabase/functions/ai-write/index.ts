@@ -12,6 +12,7 @@ import {
   buildPrompt, buildRewritePrompt, buildPitchPrompt, parseReply, sanitizeOptions, sanitizeRewrite, sanitizePitch, usableFacts,
   sanitizeAdTask, buildKeywordPrompt, buildAdPrompt, parseKeywords, parseAds,
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost,
+  sanitizeBriefTask, buildBriefPrompt, parseBrief,
   providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
 } from './compose.ts';
 
@@ -32,6 +33,13 @@ const FALLBACK_MODEL = Deno.env.get('AI_FALLBACK_MODEL') ?? DEFAULT_FALLBACK[PRO
 const YANDEX_FOLDER = Deno.env.get('YANDEX_FOLDER_ID') || '';
 const AI_KEY = Deno.env.get('AI_API_KEY') || Deno.env.get('GEMINI_API_KEY');
 const AI_BASE_URL = Deno.env.get('AI_BASE_URL') || '';
+// ТЗ клиентов разбирает Claude — так решили владельцы. Свой ключ и модель:
+// ANTHROPIC_API_KEY напрямую или BRIEF_AI_* (например, через шлюз с
+// OpenAI-совместимым API). Нет ключа — разбор делает основная модель.
+const BRIEF_KEY = Deno.env.get('BRIEF_AI_KEY') || Deno.env.get('ANTHROPIC_API_KEY') || '';
+const BRIEF_PROVIDER = (Deno.env.get('BRIEF_AI_PROVIDER') || 'anthropic') as Provider;
+const BRIEF_MODEL = Deno.env.get('BRIEF_AI_MODEL') || 'claude-opus-5-5';
+const BRIEF_BASE_URL = Deno.env.get('BRIEF_AI_BASE_URL') || '';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -80,7 +88,7 @@ Deno.serve(async (req) => {
     }
 
     const input = await req.json();
-    const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post'].includes(input?.mode) ? input.mode : 'write';
+    const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post', 'brief'].includes(input?.mode) ? input.mode : 'write';
 
     // Публичные и проверенные записи. Политики доступа базы действуют и здесь:
     // запрос идёт от имени вошедшего человека.
@@ -105,7 +113,10 @@ Deno.serve(async (req) => {
     const adTask = ['keywords', 'ads'].includes(mode) ? sanitizeAdTask(input) : null;
     const contentTask = ['ideas', 'plan'].includes(mode) ? sanitizeContentTask(input) : null;
     const postTask = mode === 'post' ? sanitizePostTask(input) : null;
-    const prompt = mode === 'ideas' ? buildIdeasPrompt(contentTask!, facts)
+    // Разбор ТЗ клиента: текст ТЗ уходит в модель, ставки студии — нет.
+    const briefTask = mode === 'brief' ? sanitizeBriefTask(input) : null;
+    const prompt = mode === 'brief' ? buildBriefPrompt(briefTask!, facts)
+      : mode === 'ideas' ? buildIdeasPrompt(contentTask!, facts)
       : mode === 'plan' ? buildPlanPrompt(contentTask!, facts)
       : mode === 'post' ? buildPostPrompt(postTask!, facts)
       : mode === 'pitch'
@@ -119,9 +130,12 @@ Deno.serve(async (req) => {
     let payload = null;
     let usedModel = '';
     let lastStatus = 0;
+    const claude = mode === 'brief' && !!BRIEF_KEY;
+    const provider = claude ? BRIEF_PROVIDER : PROVIDER;
 
-    for (const [i, model] of modelAttempts(MODEL, FALLBACK_MODEL).entries()) {
-      const request = providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt, YANDEX_FOLDER);
+    for (const [i, model] of (claude ? modelAttempts(BRIEF_MODEL, '') : modelAttempts(MODEL, FALLBACK_MODEL)).entries()) {
+      const request = claude ? providerRequest(BRIEF_PROVIDER, model, BRIEF_KEY, BRIEF_BASE_URL, prompt)
+        : providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt, YANDEX_FOLDER);
       const resp = await fetch(request.url, {
         method: 'POST',
         headers: request.headers,
@@ -130,7 +144,7 @@ Deno.serve(async (req) => {
       if (resp.ok) { payload = await resp.json(); usedModel = model; break; }
 
       lastStatus = resp.status;
-      console.error('ai-write:', PROVIDER, model, resp.status, (await resp.text()).slice(0, 400));
+      console.error('ai-write:', provider, model, resp.status, (await resp.text()).slice(0, 400));
       if (!RETRY_STATUS.includes(resp.status)) break;
       if (i === 0) await new Promise(r => setTimeout(r, 1500));
     }
@@ -143,20 +157,21 @@ Deno.serve(async (req) => {
       }, 502);
     }
 
-    const text = providerText(PROVIDER, payload);
+    const text = providerText(provider, payload);
     if (!text) {
       console.error('ai-write: пустой ответ', JSON.stringify(payload).slice(0, 500));
       return json({ error: 'AI-сервис вернул пустой ответ. Попробуйте ещё раз.' }, 502);
     }
 
     // Фразы и объявления — свой ответ: у них нет «черновиков со ссылками».
-    if (adTask || contentTask || postTask) {
-      const parsed = mode === 'keywords' ? parseKeywords(text, adTask!)
+    if (adTask || contentTask || postTask || briefTask) {
+      const parsed = mode === 'brief' ? parseBrief(text, briefTask!)
+        : mode === 'keywords' ? parseKeywords(text, adTask!)
         : mode === 'ads' ? parseAds(text, adTask!)
         : mode === 'ideas' ? parseIdeas(text, contentTask!)
         : mode === 'plan' ? parsePlan(text, contentTask!)
         : parsePost(text, postTask!.network);
-      await admin.from('ai_usage').insert({ actor: user.email, model: `${PROVIDER}/${usedModel}`, drafts: 0, chars: text.length });
+      await admin.from('ai_usage').insert({ actor: user.email, model: `${provider}/${usedModel}`, drafts: 0, chars: text.length });
       return json({ ...parsed, model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
     }
     const { drafts, gaps } = parseReply(text, mode === 'pitch' ? [] : facts.map(f => f.id));
