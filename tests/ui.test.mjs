@@ -267,6 +267,33 @@ const fake = (seedData) => {
       }
       throw new Error('Неизвестное действие');
     },
+    async crm(payload) {
+      (window.__CRM__ ||= []).push(clone(payload));
+      const o = state.outreach, url = t => `https://app.adervis.ru/?brief=${o.crm_agency_id}&type=${t}`;
+      const status = () => o.crm_agency_id ? { ok: true, connected: true, login: o.crm_login, agency: o.crm_agency_id, lastSync: o.crm_last_sync, error: '',
+        counts: { total: 3, fresh: 1 }, links: ['video', 'general', ...(window.__CRMTPL__ ? ['own_adv_motion'] : [])].map(id => ({ id, label: { video: 'Видео', general: 'Общий', own_adv_motion: 'Моушн и графика' }[id], url: url(id) })),
+        adervisTemplates: [{ id: 'own_adv_motion', label: 'Моушн и графика', installed: !!window.__CRMTPL__ }, { id: 'own_adv_site', label: 'Сайт', installed: !!window.__CRMTPL__ }] } : { ok: true, connected: false };
+      if (payload.action === 'status') return status();
+      if (payload.action === 'connect') {
+        if (payload.password !== 'crm-secret') throw new Error('CRM не приняла вход: проверьте почту и пароль');
+        Object.assign(o, { crm_agency_id: 'ag-1', crm_login: 'ad***@gmail.com', crm_last_sync: now() });
+        return { ...status(), imported: 0 };
+      }
+      if (payload.action === 'sync') {
+        if (window.__CRMSUB__) {
+          state.leads.push({ id: 'crm-lead-s1', came_on: '2026-10-20', name: 'Пекарня «Колос» — Мария', source: 'Бриф CRM', direction: 'Студия', request: 'Моушн и графика: ролик',
+            amount: 0, status: 'Новое', note: 'Из брифа ADERVIS CRM.', reached: 0, next_step: 'Разобрать бриф и ответить клиенту', next_on: '2026-10-20', lost_reason: '', _at: now(), _by: 'crm' });
+          state.briefs.push({ id: 'crm-s1', crm_id: 's1', lead_id: 'crm-lead-s1', title: 'Моушн и графика: Пекарня «Колос»', client: 'Пекарня «Колос»', stage: 'Разбор',
+            source_text: 'Бриф из ADERVIS CRM', next_step: 'Разобрать бриф и задать вопросы', next_on: '2026-10-20', _at: now(), _by: 'crm' });
+          window.__CRMSUB__ = false;
+          return { ok: true, imported: 1, total: 1 };
+        }
+        return { ok: true, imported: 0, total: 0 };
+      }
+      if (payload.action === 'templates') { window.__CRMTPL__ = true; return { ok: true, installed: ['Моушн и графика', 'Сайт'] }; }
+      if (payload.action === 'disconnect') { Object.assign(o, { crm_agency_id: '', crm_login: '' }); return { ok: true }; }
+      throw new Error('Неизвестное действие');
+    },
     async user() { return session ? { email: session } : null; },
     async signIn(email, password) {
       if (password !== 'secret') { const e = new Error('Invalid login credentials'); throw e; }
@@ -2082,6 +2109,40 @@ await nav('leads');
 await page.click(`[data-l="${stB.briefs[0].lead_id}"]`);
 check('в карточке заявки — ссылка на бриф и КП', (await page.textContent('#modal')).includes('Бриф и КП: Видеодайджест'));
 await page.click('#modal [data-action=close]');
+
+// --- 5ц. ADERVIS CRM: вход студии, ссылки на брифы, перенос брифа, шаблоны
+await nav('briefs');
+await page.click('.headactions [data-action=crm]');
+await page.waitForSelector('#crmf');
+check('CRM: без подключения — форма входа, пароль не обычным полем пароля', await page.isVisible('#crmpass.secretfield')
+  && (await page.textContent('#crmbody')).includes('в браузер не возвращается'));
+await page.fill('#crmemail', 'adervis@example.com');
+await page.fill('#crmpass', 'wrong-pass');
+await page.click('#crmf button.primary');
+await page.waitForFunction(() => document.querySelector('#crmerr').textContent.includes('CRM не приняла вход'));
+check('CRM: неверный пароль — понятная ошибка, форма на месте', await page.isEnabled('#crmf button.primary'));
+await page.fill('#crmpass', 'crm-secret');
+await page.click('#crmf button.primary');
+await page.waitForSelector('.crmlinks');
+check('CRM: подключена — вход скрыт, ссылки на брифы для клиентов', (await page.textContent('.crmstat')).includes('ad***@gmail.com')
+  && (await page.$$('.crmlinks li')).length === 2 && !(await page.textContent('#crmbody')).includes('crm-secret'));
+await page.click('.crmlinks li:first-child [data-action=crmcopy]');
+check('CRM: ссылка на бриф копируется', (await page.evaluate(() => navigator.clipboard.readText())) === 'https://app.adervis.ru/?brief=ag-1&type=video');
+await page.screenshot({ path: path.join(OUT, 'intel-crm.png') });
+await page.evaluate(() => { window.__CRMSUB__ = true; });
+await page.click('[data-action=crmsync]');
+await page.waitForFunction(() => document.querySelector('#crmbody .notice')?.textContent.includes('Перенесено новых брифов: 1'));
+check('CRM: «подтянуть» переносит бриф', true);
+await page.click('[data-action=crmtemplates]');
+await page.waitForFunction(() => document.querySelector('#crmbody .notice')?.textContent.includes('Записано в CRM'));
+check('CRM: брифы ADERVIS записаны и отмечены', (await page.textContent('#crmbody')).includes('Моушн и графика ✓') && (await page.$$('.crmlinks li')).length === 3);
+await page.click('#modal [data-action=close]');
+check('CRM: бриф из CRM — в списке с меткой, кнопка CRM отмечена', (await page.textContent('[data-brief="crm-s1"]')).includes('Пекарня') && await page.isVisible('[data-brief="crm-s1"] .crmtag')
+  && await page.isVisible('.headactions [data-action=crm] .okdot'));
+await page.click('[data-brief="crm-s1"]');
+check('CRM: в брифе — метка «из CRM»', await page.isVisible('.crmtag'));
+await nav('home');
+check('CRM: бриф из CRM — в «На сегодня»', (await page.textContent('.todaycard')).includes('Пекарня'));
 
 // --- 5ч. утренняя сводка в Telegram
 await nav('settings');

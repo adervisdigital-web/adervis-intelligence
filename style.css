@@ -1857,3 +1857,16 @@ html[data-theme=dark] .bfstage b{color:var(--acc)}
 .pulse .metric{min-width:0}
 .pulse .metric .value{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .bfpulse .metric .value{font-size:clamp(22px,2.1vw,32px)}
+
+/* --- ADERVIS CRM -------------------------------------------------------- */
+.okdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--tone-green);margin-left:4px}
+.crmtag{display:inline-block;padding:0 7px;border-radius:99px;font-size:11px;font-weight:600;background:color-mix(in srgb,var(--tone-sky) 18%,transparent);color:color-mix(in srgb,var(--tone-sky) 70%,var(--ink))}
+.crmstat{display:grid;gap:4px;padding:12px 14px;border-radius:12px;background:var(--bg);border:1px solid var(--line)}
+.crmstat svg{color:var(--tone-green);vertical-align:-2px}
+.crmlinks{list-style:none;margin:8px 0 14px;padding:0;display:grid;gap:6px}
+.crmlinks li{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.crmlinks li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.crmlinks .chip{display:inline-flex;gap:5px;align-items:center}
+@media(max-width:720px){.crmlinks li{grid-template-columns:1fr auto}.crmlinks li span{display:none}}
+#crmbody h3{margin:20px 0 4px}
+#crmbody .formactions{margin-top:12px}

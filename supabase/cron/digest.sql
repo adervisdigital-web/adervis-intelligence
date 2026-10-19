@@ -18,3 +18,14 @@ select cron.schedule('intel-digest', '5 * * * *', $job$
     body := '{}'::jsonb
   )
 $job$);
+
+-- Брифы из ADERVIS CRM: каждые 30 минут функция crm подтягивает новые.
+select cron.unschedule(jobid) from cron.job where jobname = 'intel-crm-sync';
+select cron.schedule('intel-crm-sync', '*/30 * * * *', $job$
+  select net.http_post(
+    url := 'https://mlsmybtspqqpsvbukbcj.supabase.co/functions/v1/crm',
+    headers := jsonb_build_object('Content-Type', 'application/json',
+      'x-digest-secret', (select value from public.channel_secrets where name = 'digest_secret')),
+    body := '{"action":"sync"}'::jsonb
+  )
+$job$);
