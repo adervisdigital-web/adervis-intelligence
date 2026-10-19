@@ -2238,20 +2238,45 @@ function todayList() {
   return out.sort((a, b) => (b.late - a.late) || String(a.when).localeCompare(String(b.when)));
 }
 
+const TODAY_TONE = { l: 'gold', br: 'gold', dl: 'gold', pr: 'gold', cp: 'red', p: 'violet' };
+
 function todayPanel() {
   const list = todayList();
   const shown = list.slice(0, 8);
   return `<div class="card todaycard">
     <div class="head" style="margin:0 0 8px"><h2 style="margin:0">На сегодня</h2>
       <small class="muted">${list.length ? `${list.length} ${plural(list.length, 'дело', 'дела', 'дел')}${list.some(x => x.late) ? ` · просрочено ${list.filter(x => x.late).length}` : ''}` : 'собирается из заявок, компаний, кампаний и плана'}</small></div>
-    ${shown.length ? `<ul class="todaylist">${shown.map(x => `<li><button class="todayrow${x.late ? ' late' : ''}" data-action="todayopen" data-id="${E(x.ref)}">
+    ${shown.length ? `<ul class="todaylist">${shown.map(x => `<li class="todayli tone-${TODAY_TONE[x.ref.slice(0, x.ref.indexOf(':'))] || 'gold'}">
+        <button class="todayrow${x.late ? ' late' : ''}" data-action="todayopen" data-id="${E(x.ref)}">
         <span class="todayicon">${icon(x.ic, 16)}</span>
         <span class="todaytext"><b>${E(x.title)}</b><small>${E(x.what)}</small></span>
-        <span class="todaywhen">${x.late ? 'просрочено' : x.when === today() ? 'сегодня' : x.when === dayShift(1) ? 'завтра' : E(shortDate(x.when))}</span></button></li>`).join('')}</ul>
+        <span class="todaywhen">${x.late ? 'просрочено' : x.when === today() ? 'сегодня' : x.when === dayShift(1) ? 'завтра' : E(shortDate(x.when))}</span></button>
+        ${/^(l|pr|br):/.test(x.ref) ? `<button class="todaysnooze" data-action="snooze" data-id="${E(x.ref)}" title="Перенести на завтра" aria-label="Перенести «${E(x.title)}» на завтра">${icon('time', 16)}</button>` : ''}</li>`).join('')}</ul>
       ${list.length > shown.length ? `<p class="muted">И ещё ${list.length - shown.length} — откройте заявки и поиск клиентов.</p>` : ''}
       <p><button class="linkbtn" data-action="digest">${icon('telegram', 14)} Получать это в Telegram каждое утро</button></p>`
       : '<p class="muted todayempty">Срочного нет. Хорошее время написать новым компаниям из поиска клиентов.</p>'}
   </div>`;
+}
+
+// Быстро создать — то, что заводят чаще всего; цвет — группы раздела.
+const QUICK = [
+  ['newlead', 'Заявка', 'leads', 'gold'], ['bfnew', 'Бриф и КП', 'briefs', 'gold'], ['newp', 'Публикация', 'content', 'violet'],
+  ['newcampaign', 'Кампания', 'ads', 'red'], ['newk', 'Запись в базу', 'knowledge', 'sky'], ['newmetric', 'Замер', 'analytics', 'green']
+];
+
+// Перенести дело на завтра — у заявки, компании и брифа есть дата шага.
+async function snooze(ref) {
+  const [kind, id] = [ref.slice(0, ref.indexOf(':')), ref.slice(ref.indexOf(':') + 1)];
+  const table = { l: 'leads', pr: 'prospects', br: 'briefs' }[kind];
+  const row = table && db[table].find(x => x.id === id);
+  if (!row) return;
+  try {
+    if (table === 'briefs') flushPendingBrief();
+    const saved = await api.update(table, { ...row, next_on: dayShift(1) });
+    upsertLocal(table, saved);
+    render();
+    toast(`«${row.name || row.title}» — перенесено на завтра`);
+  } catch (err) { handleError(err); }
 }
 
 function todayOpen(ref) {
@@ -5675,13 +5700,22 @@ function render() {
         'analytics', sparkline(chartData().spark)]
     ];
 
-    s = `<div class="hero compact">
-      <div><div class="eyebrow">ADERVIS DIGITAL</div>
-      <h1>Обзор</h1>
-      <p>Студия, CRM и Stock в одном месте. Ниже — то, что требует внимания сегодня.</p></div>
-      <div class="heroactions"><button data-action="newlead">+ Заявка</button><button data-page="prospects">Поиск клиентов →</button></div></div>
-      <div class="grid metrics">${cards.map(([a, b, c, to, extra]) => `<button class="card metric click" data-page="${to}">
-        <div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small>${extra}</button>`).join('')}</div>
+    const tl = todayList(), lateN = tl.filter(x => x.late).length;
+    const hour = new Date().getHours();
+    const hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+    const first = memberName(me?.email).split(' ')[0];
+    const when = new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long' });
+    s = `<div class="hero compact homehero">
+      <div><p class="herodate">${E(when)}</p>
+      <h1>${hello}${first && first !== 'ADERVIS' ? ', ' + E(first) : ''}</h1>
+      <p>${tl.length ? `Сегодня ${tl.length} ${plural(tl.length, 'дело', 'дела', 'дел')}${lateN ? `, из них ${lateN} ${plural(lateN, 'просрочено', 'просрочены', 'просрочены')}` : ''}. Начните со списка ниже.` : 'Срочного нет — хорошее время написать новым клиентам.'}</p></div>
+      <div class="heroactions"><button class="ghostbtn" data-page="dialogs">${icon('chat', 16)} Диалоги</button>
+        <button class="ghostbtn" data-page="prospects">${icon('clients', 16)} Найти клиентов</button></div></div>
+      <div class="quickacts" role="group" aria-label="Быстро создать">${QUICK.map(([act, label, ic, tone]) => `<button class="quickact tone-${tone}" data-action="${act}">
+        <i>${icon(ic, 18)}</i><span>${label}</span></button>`).join('')}</div>
+      <div class="grid metrics">${cards.map(([a, b, c, to, extra]) => `<button class="card metric click tone-${toneOf(to)}" data-page="${to}">
+        <div class="metrichead"><span class="mtile">${icon(to, 17)}</span><span class="mlabel">${a}</span>${icon('next', 15)}</div>
+        <div class="value">${b}</div><small>${c}</small>${extra}</button>`).join('')}</div>
       ${todayPanel()}
       ${(() => {
         const top = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
@@ -7116,6 +7150,7 @@ document.addEventListener('click', async e => {
     case 'kpitarget': editTarget(b.dataset.id); break;
     case 'newprospect': editProspect(); break;
     case 'todayopen': todayOpen(b.dataset.id); break;
+    case 'snooze': await snooze(b.dataset.id); break;
     case 'newmagnet': editMagnet(); break;
     case 'delmagnet': delMagnet(b.dataset.id); break;
     case 'delprospect': delProspect(b.dataset.id); break;

@@ -2034,6 +2034,15 @@ check('«На сегодня» зовёт к брифу', (await page.textConten
 await page.click('[data-action=todayopen][data-id^="br:"]');
 await page.waitForSelector('.bftabs');
 check('из «На сегодня» — сразу в бриф', (await page.textContent('h1')) === 'Видеодайджест');
+await nav('home');
+check('главная: приветствие и быстрые действия', /Доброе утро|Добрый день|Добрый вечер|Доброй ночи/.test(await page.textContent('.homehero h1'))
+  && (await page.$$('.quickacts .quickact')).length === 6);
+await page.click('[data-action=snooze][data-id^="br:"]');
+await page.waitForFunction(d => window.__STATE__.briefs[0].next_on === d, localDay(1));
+check('«перенести на завтра» убирает дело из сегодняшних', !(await page.textContent('.todaycard')).includes('Видеодайджест'));
+await page.click('.quickacts [data-action=bfnew]');
+check('быстрое действие открывает форму брифа', await page.isVisible('#bff'));
+await page.click('#modal [data-action=close]');
 await page.screenshot({ path: path.join(OUT, 'intel-brief.png') });
 // переписку связываем с заявкой — и вопросы по ТЗ уходят прямо в неё
 await nav('prospects');
