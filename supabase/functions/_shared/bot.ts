@@ -186,6 +186,15 @@ export function menuWord(text: string): string {
   return MENU_WORDS[t] ?? '';
 }
 
+// Просто «привет» — хватит приветствия с меню, второй ответ ИИ не нужен.
+export const isGreeting = (text: string) =>
+  /^(привет\S*|здравствуй\S*|добр\S+ (день|вечер|утро|утра)|доброго времени суток|хай|hello|hi|салют|начать|старт)[\s!.,)]*$/i.test(String(text ?? '').trim());
+
+// Разговор о проекте, который уже обсуждают: предложение, ТЗ, договор,
+// оплата. Тут нужен человек, а не общие вопросы бота.
+export const isDealTalk = (text: string) =>
+  /(предложени|коммерческ|(^|[^а-яё])кп([^а-яё]|$)|(^|[^а-яё])тз([^а-яё]|$)|техническ\S* задани|смет|договор|сч[её]т([^а-яё]|$)|сч[её]т[ау]|оплат|предоплат|согласова|тендер|закупк)/i.test(String(text ?? ''));
+
 // Бриф: шаги 0, 2, 4, 5 — свободный ответ; 1 и 3 — кнопки или текст.
 export function briefStep(state: BotState, input: { text?: string; button?: string }, questions: string[]):
   { state: BotState; reply: Reply; done?: Record<string, string> } | null {

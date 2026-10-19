@@ -2792,6 +2792,10 @@ function editProspect(id, preset = {}) {
     ${reasonField(p.lost_reason || '', p.status === 'Не интересно', 'Почему не интересно')}
     ${pitchBlock(p)}
     <input type="hidden" name="magnet_id" value="${E(p.magnet_id || '')}">
+    <label for="prlead">Заявка в воронке — если это клиент по уже открытой заявке</label>
+    <select id="prlead" name="lead_id"><option value="">Не связана</option>
+      ${[...db.leads].filter(l => !LOST.includes(l.status) || l.id === p.lead_id).sort((a, b) => String(b.came_on).localeCompare(String(a.came_on)))
+        .map(l => `<option value="${E(l.id)}" ${l.id === p.lead_id ? 'selected' : ''}>${E(l.name)} · ${E(l.status)}</option>`).join('')}</select>
     ${lead ? `<div class="notice">Стала заявкой: <button type="button" class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button></div>` : ''}
     ${exists ? `<p class="muted">Источник: ${E(p.source)} · последняя правка: ${E(memberName(p._by))}, ${ago(p._at)}</p>` : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
@@ -3755,7 +3759,14 @@ function bfPlan(b) {
 }
 
 // ---- КП: те же данные, собранные в документ для клиента
-const KP_DEFAULT_TERMS = 'Работаем по этапам: каждый этап вы утверждаете, прежде чем мы идём дальше. Исходники и шаблоны передаём после оплаты. Сроки отсчитываются от предоплаты и получения материалов.';
+const KP_DEFAULT_TERMS = 'Работаем по этапам: каждый этап вы утверждаете, прежде чем мы идём дальше. Исходники и шаблоны передаём после оплаты. Сроки отсчитываются от предоплаты и получения материалов. Работаем как самозанятые: договор и чек «Мой налог», цены без НДС.';
+// Что студия обещает всегда — из анкеты владельцев, а не из головы.
+const KP_WHY = [
+  'Проект ведут руководители студии — без стажёров, руководитель на связи весь проект.',
+  'Сроки фиксируем в договоре, смета — без скрытых платежей.',
+  'Не попали в задачу — переделаем.',
+  'Моушн, 3D, видео и дизайн в одной команде. С 2017 года делаем видео и графику «Битвы роботов», которая выросла в международный проект.'
+];
 
 function kpData(b) {
   const kp = b.kp || {};
@@ -3764,7 +3775,8 @@ function kpData(b) {
     full: Number(kp.price_full ?? suggested(b, 'full')) || 0,
     base: Number(kp.price_base ?? (hasBase(b) ? suggested(b, 'base') : 0)) || 0,
     prepay: Number(kp.prepay ?? 50), revisions: Number(kp.revisions ?? 2), valid: Number(kp.valid_days ?? 14),
-    terms: kp.terms ?? KP_DEFAULT_TERMS, contact: kp.contact ?? '', phone: kp.phone ?? '+7 922 301-88-80 · +7 995 926-54-20', date: kp.date || today()
+    terms: kp.terms ?? KP_DEFAULT_TERMS, contact: kp.contact ?? '', phone: kp.phone ?? '+7 922 301-88-80 · +7 995 926-54-20', date: kp.date || today(),
+    style: kp.style ?? '', refs: kp.refs ?? 'Портфолио — https://www.behance.net/adervisdigital'
   };
 }
 
@@ -3783,6 +3795,10 @@ function bfKp(b) {
         <div><label for="kpcontact">Контактное лицо</label><input class="input" id="kpcontact" data-bf="kp.contact" maxlength="80" value="${E(k.contact)}" placeholder="Имя и фамилия"></div>
         <div><label for="kpphone">Телефоны в КП</label><input class="input" id="kpphone" data-bf="kp.phone" maxlength="120" value="${E(k.phone)}"></div>
       </div>
+      <label for="kpstyle">Как видим оформление — направления стиля словами</label>
+      <textarea class="input" id="kpstyle" data-bf="kp.style" maxlength="3000" rows="4" placeholder="Направление 1: … Направление 2: …">${E(k.style)}</textarea>
+      <label for="kprefs">Наши работы и референсы — по одной в строке: «название — ссылка»</label>
+      <textarea class="input" id="kprefs" data-bf="kp.refs" maxlength="3000" rows="4">${E(k.refs)}</textarea>
       <label for="kpterms">Условия</label><textarea class="input" id="kpterms" data-bf="kp.terms" maxlength="2000" rows="3">${E(k.terms)}</textarea>
       <p class="muted">Подсказка из сметы: полный — ${rub(suggested(b, 'full'))}${hasBase(b) ? `, базовый — ${rub(suggested(b, 'base'))}` : ''} (середина вилки с запасом).</p>
       <div class="formactions"><button class="primary" data-action="kpprint">${icon('download', 15)} Сохранить PDF</button>
@@ -3805,6 +3821,7 @@ function kpHtml(b) {
     <h1 class="kptitle">${E(b.title)}</h1>
     <p class="kpfor">Для: <b>${E(b.client || '—')}</b></p>
     ${k.intro ? `<section><h2>Задача</h2><p>${E(k.intro)}</p></section>` : ''}
+    ${k.style ? `<section><h2>Как видим оформление</h2>${k.style.split(/\n+/).filter(Boolean).map(x => `<p>${E(x)}</p>`).join('')}</section>` : ''}
     ${deliver.length ? `<section><h2>Что сделаем</h2><ul>${deliver.map(d => `<li><b>${E(d.name)}</b>${d.details ? ` — ${E(d.details)}` : ''}</li>`).join('')}</ul></section>` : ''}
     <section><h2>Стоимость</h2><table class="kptable"><tbody>
       <tr><td><b>Полный вариант — всё по ТЗ</b></td><td class="kpprice">${rub(k.full)}</td></tr>
@@ -3818,12 +3835,20 @@ function kpHtml(b) {
       <li>Предоплата ${k.prepay}%, остаток — после сдачи.</li>
       <li>${k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок по каждому блоку входят в стоимость.` : 'Правки — по договорённости.'}</li>
       ${k.terms ? `<li>${E(k.terms)}</li>` : ''}</ul></section>
-    <section><h2>Почему ADERVIS</h2><ul>
-      <li>Проект ведут руководители студии сами — без стажёров.</li>
-      <li>Моушн, 3D, видео и дизайн в одной команде: не нужно собирать подрядчиков.</li>
-      <li>Отдаём материалы так, чтобы ваша команда работала с ними без нас.</li></ul></section>
+    ${refLines(k.refs).length ? `<section><h2>Наши работы и референсы</h2><ul>${refLines(k.refs).map(r => `<li>${r.name ? `${E(r.name)} — ` : ''}${r.url
+      ? `<a href="${E(r.url)}" target="_blank" rel="noopener noreferrer">${E(r.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a>` : ''}</li>`).join('')}</ul></section>` : ''}
+    <section><h2>Почему ADERVIS</h2><ul>${KP_WHY.map(x => `<li>${E(x)}</li>`).join('')}</ul></section>
     <footer class="kpfoot"><b>${k.contact ? `${E(k.contact)}, ` : ''}ADERVIS</b><span>adervis.ru${k.phone ? ` · ${E(k.phone)}` : ''}</span>
       <small>Предложение действует до ${E(valid.toLocaleDateString('ru', { day: 'numeric', month: 'long' }))}.</small></footer>`;
+}
+
+// «Название — ссылка» по строке; ссылка — только https, остальное — текстом.
+function refLines(text) {
+  return String(text || '').split('\n').map(l => l.trim()).filter(Boolean).slice(0, 12).map(l => {
+    const m = l.match(/https?:\/\/\S+/);
+    const url = m && /^https:\/\//.test(m[0]) ? m[0] : '';
+    return { name: l.replace(m ? m[0] : '', '').replace(/[\s—–:-]+$/, '').trim(), url };
+  });
 }
 
 function kpPrint(b) {

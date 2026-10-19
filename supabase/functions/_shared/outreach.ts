@@ -195,6 +195,13 @@ export function vkChannel(tok: string): Channel {
       if (r?.error) { console.error('vk send:', r.error.error_code, r.error.error_msg); return null; }
       return String(r?.response ?? '');
     },
+    past: async id => {
+      const r = await vkApi(tok, 'messages.getHistory', { peer_id: Number(id), count: 21 });
+      return (r?.response?.items ?? []).map((m: any) => ({
+        in: Number(m.from_id) > 0, text: String(m.text ?? '').slice(0, 4000),
+        at: new Date(Number(m.date) * 1000).toISOString(), id: String(m.id ?? '')
+      }));
+    },
     profile: async id => {
       const r = await vkApi(tok, 'users.get', { user_ids: Number(id) });
       const u = r?.response?.[0];
