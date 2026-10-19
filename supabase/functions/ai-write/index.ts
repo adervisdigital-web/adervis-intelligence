@@ -33,7 +33,8 @@ const FALLBACK_MODEL = Deno.env.get('AI_FALLBACK_MODEL') ?? DEFAULT_FALLBACK[PRO
 const YANDEX_FOLDER = Deno.env.get('YANDEX_FOLDER_ID') || '';
 const AI_KEY = Deno.env.get('AI_API_KEY') || Deno.env.get('GEMINI_API_KEY');
 const AI_BASE_URL = Deno.env.get('AI_BASE_URL') || '';
-// ТЗ клиентов разбирает Claude — так решили владельцы. Свой ключ и модель:
+// ТЗ клиентов разбирает Claude — так решили владельцы; он же пишет посты и
+// контент-план, когда ключ подключён. Свой ключ и модель:
 // ANTHROPIC_API_KEY напрямую или BRIEF_AI_* (например, через шлюз с
 // OpenAI-совместимым API). Нет ключа — разбор делает основная модель.
 const BRIEF_KEY = Deno.env.get('BRIEF_AI_KEY') || Deno.env.get('ANTHROPIC_API_KEY') || '';
@@ -130,7 +131,7 @@ Deno.serve(async (req) => {
     let payload = null;
     let usedModel = '';
     let lastStatus = 0;
-    const claude = mode === 'brief' && !!BRIEF_KEY;
+    const claude = ['brief', 'post', 'plan', 'ideas'].includes(mode) && !!BRIEF_KEY;
     const provider = claude ? BRIEF_PROVIDER : PROVIDER;
 
     for (const [i, model] of (claude ? modelAttempts(BRIEF_MODEL, '') : modelAttempts(MODEL, FALLBACK_MODEL)).entries()) {

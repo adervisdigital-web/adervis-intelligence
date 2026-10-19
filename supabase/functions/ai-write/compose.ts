@@ -508,18 +508,22 @@ export function buildPlanPrompt(t: ContentTask, facts: Fact[]): string {
   return [...contentRules, '',
     `Составь контент-план на ${t.weeks} нед. начиная с ${t.start}: ${t.perWeek} публикаций в неделю на все площадки вместе.`,
     `Чередуй рубрики (${RUBRICS.join(', ')}), не ставь две одинаковые подряд. Даты — рабочие дни, в формате ГГГГ-ММ-ДД.`,
-    'Для каждой: date, network, rubric, title — рабочее название, brief — о чём пост в одной-двух фразах.',
-    'Верни строго JSON: {"items":[{"date":"","network":"","rubric":"","title":"","brief":""}],"gaps":["чего не хватило"]}',
+    'Для каждой: date, time — время выхода ЧЧ:ММ, network, format — пост, клип, карусель, статья или видео, rubric, title — рабочее название, brief — о чём пост в одной-двух фразах.',
+    'Верни строго JSON: {"items":[{"date":"","time":"","network":"","format":"","rubric":"","title":"","brief":""}],"gaps":["чего не хватило"]}',
     '', contextBlock(t, facts)].join('\n');
 }
 
-export function buildPostPrompt(p: { network: string; direction: string; title: string; brief: string }, facts: Fact[]): string {
+export type PostTask = { network: string; direction: string; title: string; brief: string; rubric: string; format: string };
+
+export function buildPostPrompt(p: PostTask, facts: Fact[]): string {
   const lim = POST_LIMIT[p.network];
   return [...contentRules, '',
     `Напиши один пост для площадки ${p.network}: ${NETWORKS[p.network] || 'без ограничений'}.${lim ? ` Жёсткий предел — ${lim} знаков.` : ''}`,
     `Тема: ${p.title}.`, p.brief ? `О чём (от автора): ${p.brief}` : '', p.direction ? `Направление: ${p.direction}.` : '',
+    p.rubric ? `Рубрика: ${p.rubric}.` : '', p.format ? `Формат: ${p.format}.` : '',
     'В конце — один понятный следующий шаг для читателя.',
-    'Верни строго JSON: {"title":"рабочее название","body":"текст поста","gaps":["чего не хватило"]}',
+    'visual — ТЗ на визуал для оператора или дизайнера: что снять или нарисовать, в одну-три фразы. cta — следующий шаг читателя одной фразой.',
+    'Верни строго JSON: {"title":"рабочее название","body":"текст поста","visual":"","cta":"","gaps":["чего не хватило"]}',
     '', facts.length ? 'ФАКТЫ:\n' + facts.map(f => `[${f.id}] ${f.title}\n${f.body}`).join('\n\n') : 'ФАКТЫ: нет.'
   ].filter(x => x !== '').join('\n');
 }
@@ -532,7 +536,9 @@ export function sanitizePostTask(raw: unknown) {
     network: String(o.network) in NETWORKS ? String(o.network) : 'ВКонтакте',
     direction: DIRS.includes(String(o.direction)) ? String(o.direction) : '',
     title,
-    brief: String(o.brief ?? '').trim().slice(0, 3000)
+    brief: String(o.brief ?? '').trim().slice(0, 3000),
+    rubric: RUBRICS.find(r => r === String(o.rubric ?? '')) || '',
+    format: String(o.format ?? '').replace(/\s+/g, ' ').trim().slice(0, 30)
   };
 }
 
@@ -563,6 +569,8 @@ export function parsePlan(text: string, t: ContentTask) {
     date: String(i?.date ?? '').slice(0, 10),
     network: t.networks.includes(String(i?.network)) ? String(i.network) : t.networks[0],
     rubric: pickRubric(i?.rubric),
+    format: String(i?.format ?? 'пост').trim().slice(0, 30),
+    time: /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(String(i?.time ?? '').trim()) ? String(i.time).trim() : '',
     title: String(i?.title ?? '').trim().slice(0, 200),
     brief: String(i?.brief ?? '').trim().slice(0, 600)
   }))
@@ -579,7 +587,8 @@ export function parsePost(text: string, network: string) {
   const body = String(d?.body ?? '').trim().slice(0, 20000);
   if (body.length < 20) throw new Error('Модель не написала текст. Повторите запрос.');
   const lim = POST_LIMIT[network];
-  return { title: String(d?.title ?? '').trim().slice(0, 300), body, over: lim && body.length > lim ? body.length - lim : 0, gaps: gapsOf(d) };
+  return { title: String(d?.title ?? '').trim().slice(0, 300), body, over: lim && body.length > lim ? body.length - lim : 0,
+    visual: String(d?.visual ?? '').trim().slice(0, 2000), cta: String(d?.cta ?? '').trim().slice(0, 300), gaps: gapsOf(d) };
 }
 
 // ---------------------------------------------------------------- разбор ТЗ

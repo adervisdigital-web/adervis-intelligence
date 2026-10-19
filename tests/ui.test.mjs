@@ -392,7 +392,8 @@ const fake = (seedData) => {
         ], gaps: ['нет свежих кейсов CRM'], model: 'yandexgpt/latest', left: 22 };
       }
       if (payload.mode === 'post') {
-        return { title: payload.title, body: 'Готовый текст про ' + payload.title + '. Напишите нам в сообщения.', over: 0, gaps: [], model: 'yandexgpt/latest', left: 21 };
+        return { title: payload.title, body: 'Готовый текст про ' + payload.title + '. Напишите нам в сообщения.', visual: 'Вертикальный клип: ' + payload.title,
+          cta: 'Напишите «смета» в сообщения', over: 0, gaps: [], model: 'yandexgpt/latest', left: 21 };
       }
       if (payload.mode === 'keywords') {
         return { phrases: ['envato elements подписка цена', 'скачать шаблон envato'], minus: ['кряк'],
@@ -1098,6 +1099,9 @@ await nav('content');
 check('календарь больше не отдельный пункт меню', (await page.$$('#nav button[data-page=calendar]')).length === 0);
 const netTabs = await page.$$eval('.nettab span', t => t.map(x => x.textContent));
 check('вкладки площадок: все и шесть сетей', netTabs.join(',') === 'Все,ВКонтакте,Telegram,YouTube,Дзен,Threads,Сайт', netTabs.join(','));
+check('контент-план открывается таблицей по неделям', !!(await page.$('.ptable .ptweek')) && !!(await page.$('.planpulse .rgrid')));
+check('ритм: 28 дней, сегодня отмечено', (await page.$$('.rgrid .rday')).length === 28 && (await page.$$('.rgrid .rday.today')).length === 1);
+await page.click('[data-action=contentview][data-id="board"]');
 check('доска разбита по пяти статусам', (await page.$$('.board .boardcol')).length === 5);
 const colOf = id => page.$eval(`article[data-p="${id}"]`, a => a.closest('.boardcol').getAttribute('aria-label'));
 check('черновик стоит в своей колонке', (await colOf('p0')) === 'Черновик', await colOf('p0'));
@@ -1731,7 +1735,20 @@ await page.click('#aicadd');
 await page.waitForFunction(() => window.__STATE__.content.some(p => p.title === 'Кейс BRAIT'));
 const planItem = (await state()).content.find(p => p.title === 'Кейс BRAIT');
 check('план ставит публикации на даты', /^\d{4}-\d{2}-\d{2}$/.test(planItem.date) && planItem.status === 'Идея', JSON.stringify(planItem));
-check('после плана открыт календарь', !!(await page.$('.calendar')));
+check('план: рубрика, цель по рубрике и время площадки', planItem.rubric === 'Кейс' && planItem.goal === 'Доверие' && planItem.post_time === '10:00', JSON.stringify(planItem));
+check('после плана открыта таблица ближайших недель', !!(await page.$(`.ptrow[data-p="${planItem.id}"]`)) && (await page.textContent(`.ptrow[data-p="${planItem.id}"]`)).includes('Текста ещё нет'));
+check('кнопка «Написать посты» считает публикации без текста на площадке', /Написать посты · 3/.test(await page.textContent('[data-action=aiwriteall]')));
+await page.click('[data-action=aiwriteall]');
+await page.waitForFunction(() => document.querySelectorAll('.writelist .w-ok').length === 3);
+const written = (await state()).content.filter(p => ['Кейс BRAIT', 'Как выбрать формат ролика', 'Как мы снимали BRAIT в трёх локациях'].includes(p.title));
+check('Claude написал все три: текст, ТЗ на визуал, призыв, статус «Черновик»', written.length === 3 && written.every(p => p.body.startsWith('Готовый текст')
+  && p.visual.startsWith('Вертикальный клип') && p.cta && p.status === 'Черновик'), JSON.stringify(written.map(p => [p.status, p.visual])));
+check('пост пишется по рубрике и формату', (await page.evaluate(() => window.__lastAiPayload)).rubric !== undefined);
+await page.screenshot({ path: path.join(OUT, 'intel-content-write.png') });
+await page.click('#modal [data-action=close]');
+check('после написания кнопка исчезла, в строке — начало текста', !(await page.$('[data-action=aiwriteall]'))
+  && (await page.textContent(`.ptrow[data-p="${planItem.id}"] .ptmain p`)).startsWith('Готовый текст'));
+await page.screenshot({ path: path.join(OUT, 'intel-content-table.png'), fullPage: true });
 await page.click('[data-action=contentview][data-id="board"]');
 await page.click('[data-action=newp]');
 await page.fill('#pf input[name=title]', 'Смета без сюрпризов');
@@ -1742,6 +1759,16 @@ const postAsk = await page.evaluate(() => window.__lastAiPayload);
 check('текст поста пишется под площадку и тему, заметка — как пожелание',
   postAsk.mode === 'post' && postAsk.network === 'Telegram' && postAsk.title === 'Смета без сюрпризов' && postAsk.brief === 'что обычно забывают посчитать');
 check('счётчик знаков обновился под новый текст', /из 4\s?096/.test(await page.textContent('#pcount')));
+check('ИИ заполнил ТЗ на визуал и призыв', (await page.inputValue('#pfvisual')).startsWith('Вертикальный клип') && (await page.inputValue('#pfcta')).includes('смета'));
+await page.selectOption('#pfrubric', 'Польза');
+check('рубрика подставляет цель', (await page.inputValue('#pfgoal')) === 'Охват');
+await page.fill('#pf input[name=date]', '2026-11-03');
+await page.dispatchEvent('#pf input[name=date]', 'change');
+check('дата подставляет время площадки', (await page.inputValue('#pftime')) === '10:00');
+const pv = (await page.textContent('#ppv')).replace(/\s+/g, ' ');
+check('превью: канал, дата и время, рубрика, текст и призыв', pv.includes('Telegram') && pv.includes('в 10:00') && pv.includes('Польза') && pv.includes('Готовый текст') && pv.includes('смета'), pv);
+check('у Telegram форматы свои', (await page.$$eval('#pfformat option', o => o.map(x => x.textContent))).includes('Опрос'));
+await page.screenshot({ path: path.join(OUT, 'intel-content-editor.png') });
 await page.keyboard.press('Escape');
 await page.click('[data-action=contentnet][data-id="Все"]');
 

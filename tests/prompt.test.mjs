@@ -204,6 +204,14 @@ check('пост: предел площадки в запросе', buildPostProm
 const long = parsePost(JSON.stringify({ title: 'Т', body: 'я'.repeat(520) }), 'Threads');
 check('пост: превышение предела посчитано', long.over === 20);
 check('пост: без текста — ошибка', /не написала/.test(throws(() => parsePost('{"body":""}', 'Threads')) || ''));
+const pt2 = sanitizePostTask({ network: 'ВКонтакте', title: 'Кейс SHABANI', rubric: 'Кейс', format: 'клип\n  вертикальный' });
+check('пост: рубрика и формат уходят в запрос, чужая рубрика — нет', buildPostPrompt(pt2, []).includes('Рубрика: Кейс.') && buildPostPrompt(pt2, []).includes('Формат: клип вертикальный.')
+  && sanitizePostTask({ title: 'Тема', rubric: 'Политика' }).rubric === '');
+const pv = parsePost(JSON.stringify({ title: 'Т', body: 'Текст поста длиннее двадцати знаков', visual: 'Снять банку на чёрном фоне', cta: 'Напишите в сообщения' }), 'ВКонтакте');
+check('пост: ТЗ на визуал и призыв возвращаются', pv.visual === 'Снять банку на чёрном фоне' && pv.cta === 'Напишите в сообщения');
+const pr2 = parsePlan(JSON.stringify({ items: [{ date: '2026-10-06', time: '12:00', format: 'клип', network: 'ВКонтакте', rubric: 'Кейс', title: 'А' },
+  { date: '2026-10-07', time: '25:99', network: 'ВКонтакте', rubric: 'Кейс', title: 'Б' }] }), ct);
+check('план: время и формат, кривое время отброшено', pr2.items[0].time === '12:00' && pr2.items[0].format === 'клип' && pr2.items[1].time === '');
 
 // --- Claude: им разбираются ТЗ
 const cr = providerRequest('anthropic', 'claude-opus-5-5', 'sk-test', '', 'Разбери ТЗ');

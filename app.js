@@ -58,7 +58,7 @@ function ago(iso) {
 // Поля, как их видит интерфейс. В базе две колонки названы иначе: даты.
 const FIELDS = {
   knowledge: ['id', 'title', 'body', 'category', 'source', 'access', 'status'],
-  content: ['id', 'title', 'body', 'product', 'author', 'channel', 'status', 'date', 'url'],
+  content: ['id', 'title', 'body', 'product', 'author', 'channel', 'status', 'date', 'url', 'format', 'rubric', 'post_time', 'goal', 'visual', 'cta'],
   tasks: ['id', 'title', 'done'],
   metrics: ['id', 'post', 'date', 'views', 'replies', 'leads'],
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
@@ -97,7 +97,10 @@ function fromRow(table, r) {
   const o = { _at: r.updated_at, _by: r.updated_by };
   for (const f of SERVER_FIELDS[table] || []) o[f] = r[f];
   for (const f of FIELDS[table]) o[f] = r[f === 'date' ? DATE_COLUMN[table] : f];
-  if (table === 'content') { o.date = r.publish_on || ''; o.url = r.url || ''; }
+  if (table === 'content') {
+    o.date = r.publish_on || ''; o.url = r.url || '';
+    for (const f of ['format', 'rubric', 'post_time', 'goal', 'visual', 'cta']) o[f] = r[f] || '';
+  }
   return o;
 }
 
@@ -1693,7 +1696,7 @@ function renderAds() {
 // связи между разделами по названию не сходятся. Лимиты — только точно
 // известные; где жёсткого нет, так и написано.
 const NETWORKS = [
-  { name: 'ВКонтакте', icon: 'social', parser: true, formats: ['Пост', 'Клип', 'Статья', 'Видео'], limits: [],
+  { name: 'ВКонтакте', icon: 'social', parser: true, formats: ['Пост', 'Карусель', 'Клип', 'Видео', 'Опрос', 'Статья'], limits: [],
     tip: 'В ленте видно только начало поста — главное в первые две строки.',
     how: 'Читает стену сообщества. Нужен сервисный ключ VK в секретах проекта (VK_SERVICE_TOKEN).',
     placeholder: 'adervis_digital или ссылка vk.com/…' },
@@ -1727,7 +1730,30 @@ function postLength(net, title, body) {
   return (title && title.trim() !== first ? title.trim().length + 2 : 0) + body.length;
 }
 
-let contentNet = 'Все', contentView = 'board';
+let contentNet = 'Все', contentView = 'table', contentRange = 'next';
+
+// Рубрики — те же, что знает модель. Цвет рубрики проходит через таблицу,
+// ритм и превью: по цвету видно, не перекосило ли план в одну сторону.
+const RUBRICS = [
+  { id: 'Кейс', tone: 'gold', goal: 'Доверие', hint: 'Работа для клиента: задача, как сделали, что получилось' },
+  { id: 'Польза', tone: 'sky', goal: 'Охват', hint: 'Совет бизнесу: как подготовиться к съёмке, что заказать, сколько стоит' },
+  { id: 'Закулисье', tone: 'violet', goal: 'Доверие', hint: 'Как снимаем и делаем: техника, свет, ИИ, площадка' },
+  { id: 'Продукт', tone: 'green', goal: 'Заявки', hint: 'ADERVIS CRM и ADERVIS Stock' },
+  { id: 'Лид-магнит', tone: 'red', goal: 'Заявки', hint: 'Полезная вещь в обмен на сообщение: калькулятор, бриф, подборка' },
+  { id: 'Вопрос аудитории', tone: 'gray', goal: 'Охват', hint: 'Опрос или вопрос — разговор в комментариях' }
+];
+const rubricOf = id => RUBRICS.find(r => r.id === id);
+const GOALS = ['Охват', 'Доверие', 'Заявки'];
+// Время выхода по умолчанию: ВКонтакте — обед, Telegram — утро.
+const NET_TIME = { 'ВКонтакте': '12:00', 'Telegram': '10:00', 'YouTube': '18:00', 'Дзен': '09:00', 'Threads': '19:00', 'Сайт': '11:00' };
+// Пост ещё не написан, пока он идея: в тексте — заметка, о чём писать.
+const needsText = p => p.status === 'Идея';
+// Кому ещё нужен текст — на выбранной площадке, без вышедших и прошедших.
+const waitingText = () => db.content.filter(p => (contentNet === 'Все' || p.channel === contentNet) && p.status !== 'Опубликовано' && needsText(p) && (!p.date || p.date >= today()))
+  .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return localDate(x); };
+const mondayOf = d => { const x = new Date(d + 'T00:00:00'); return addDays(d, -((x.getDay() + 6) % 7)); };
+const weekday = d => new Date(d + 'T00:00:00').toLocaleDateString('ru', { weekday: 'short' });
 let feedState = { network: '', posts: [], busy: false, error: '', at: '' };
 
 const shortDate = d => d ? new Date(d.slice(0, 10) + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'short' }) : '';
@@ -1758,9 +1784,11 @@ function renderContentPlan() {
     && (!q || `${p.title} ${p.body}`.toLowerCase().includes(q)));
   const net = network(contentNet);
 
-  const head = heading('Контент-план', 'Что, где и когда выходит. Площадка сверху — у каждой свои форматы и лимиты; парсер проверяет, что реально вышло.',
+  const waiting = waitingText();
+  const head = heading('Контент-план', 'Что, где, когда и как выходит. Идеи и тексты пишет Claude на фактах из базы знаний — вы проверяете и утверждаете.',
     `<div class="headactions"><button class="aichip" data-action="aiideas">${icon('ai', 15)} Идеи</button>
       <button class="aichip" data-action="aiplan">${icon('ai', 15)} План на месяц</button>
+      ${waiting.length ? `<button class="aichip strong" data-action="aiwriteall">${icon('edit', 15)} Написать посты · ${waiting.length}</button>` : ''}
       <button class="primary" data-action="newp">+ Публикация</button></div>`);
 
   const tabs = `<div class="nettabs" role="group" aria-label="Площадка">${['Все', ...NETWORK_NAMES].map(n => {
@@ -1787,12 +1815,15 @@ function renderContentPlan() {
       ${feedState.network === net.name ? feedPanel() : ''}
     </div>` : '';
 
-  const views = `<div class="seg" role="group" aria-label="Вид">${[['board', 'Доска'], ['calendar', 'Календарь']].map(([id, t]) =>
-    `<button class="chip${contentView === id ? ' on' : ''}" data-action="contentview" data-id="${id}" aria-pressed="${contentView === id}">${t}</button>`).join('')}</div>`;
-  const toolbar = `<div class="toolbar plantools"><input class="input" id="filter" aria-label="Поиск по публикациям" placeholder="Найти в плане…" value="${E(query)}">${views}</div>`;
+  const views = `<div class="seg" role="group" aria-label="Вид">${[['table', 'Таблица', 'tasks'], ['board', 'Доска', 'menu'], ['calendar', 'Календарь', 'calendar']].map(([id, t, ic]) =>
+    `<button class="chip${contentView === id ? ' on' : ''}" data-action="contentview" data-id="${id}" aria-pressed="${contentView === id}">${icon(ic, 14)} ${t}</button>`).join('')}</div>`;
+  const ranges = contentView === 'table' ? `<div class="seg" role="group" aria-label="Период">${[['next', 'Ближайшие'], ['past', 'Прошедшие'], ['all', 'Все']].map(([id, t]) =>
+    `<button class="chip${contentRange === id ? ' on' : ''}" data-action="contentrange" data-id="${id}" aria-pressed="${contentRange === id}">${t}</button>`).join('')}</div>` : '';
+  const toolbar = `<div class="toolbar plantools"><input class="input" id="filter" aria-label="Поиск по публикациям" placeholder="Найти в плане…" value="${E(query)}">${views}${ranges}</div>`;
 
   let body;
-  if (contentView === 'calendar') {
+  if (contentView === 'table') body = planTable(items);
+  else if (contentView === 'calendar') {
     const start = (new Date(year, month, 1).getDay() + 6) % 7;
     const days = new Date(year, month + 1, 0).getDate();
     const undated = items.filter(p => !p.date && p.status !== 'Опубликовано');
@@ -1819,9 +1850,128 @@ function renderContentPlan() {
   }
 
   const empty = !db.content.length
-    ? `<div class="card empty"><h2>План пуст</h2><p>Добавьте публикацию или подтяните то, что уже вышло: выберите Telegram или YouTube сверху.</p></div>`
+    ? `<div class="card empty"><h2>План пуст</h2><p>Нажмите «План на месяц» — Claude разложит публикации по дням, рубрикам и площадкам. Или подтяните то, что уже вышло: выберите Telegram или YouTube сверху.</p></div>`
     : '';
-  return head + tabs + panel + toolbar + (empty || body);
+  return head + (db.content.length ? planPulse(items) : '') + tabs + panel + toolbar + (empty || body);
+}
+
+// Ритм на четыре недели: клетка — день, точка — публикация цветом рубрики.
+// Пустой день — кнопка «+»: публикация сразу встаёт на эту дату.
+function planPulse(items) {
+  const t = today(), from = mondayOf(t), to = addDays(from, 27);
+  const ahead = items.filter(p => p.date && p.date >= from && p.date <= to);
+  const week = ahead.filter(p => p.date <= addDays(from, 6));
+  const ready = items.filter(p => p.status === 'Утверждено').length;
+  const waiting = items.filter(p => p.status !== 'Опубликовано' && needsText(p) && (!p.date || p.date >= t)).length;
+  const emptyWeeks = [0, 1, 2, 3].filter(w => !ahead.some(p => p.date >= addDays(from, w * 7) && p.date <= addDays(from, w * 7 + 6))).length;
+  const days = Array.from({ length: 28 }, (_, i) => {
+    const d = addDays(from, i), list = ahead.filter(p => p.date === d).sort((a, b) => String(a.post_time).localeCompare(String(b.post_time)));
+    const label = `${shortDate(d)}${list.length ? ': ' + list.map(p => `${p.channel} — ${p.title}`).join('; ') : ' — нет публикаций'}`;
+    return `<button class="rday${d === t ? ' today' : ''}${d < t ? ' past' : ''}${i % 7 > 4 ? ' wknd' : ''}" ${list.length === 1 ? `data-p="${E(list[0].id)}"` : list.length ? `data-action="rdayopen" data-id="${d}"` : `data-action="newpday" data-id="${d}"`}
+      title="${E(label)}" aria-label="${E(label)}"><b>${Number(d.slice(8))}</b><span class="rdots">${list.slice(0, 4).map(p =>
+        `<i style="--rt:var(--tone-${rubricOf(p.rubric)?.tone || 'gray'})" class="${p.status === 'Опубликовано' ? 'done' : ''}"></i>`).join('')}${list.length > 4 ? '<em>+</em>' : ''}</span></button>`;
+  }).join('');
+  const byRub = RUBRICS.map(r => ({ r, n: ahead.filter(p => p.rubric === r.id).length })).filter(x => x.n);
+  const other = ahead.length - byRub.reduce((a, x) => a + x.n, 0);
+  return `<section class="card planpulse" aria-label="Ритм публикаций">
+    <div class="rhythm"><div class="rhead"><b>Ритм на 4 недели</b><small class="muted">${shortDate(from)} — ${shortDate(to)}</small></div>
+      <div class="rgrid">${['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'].map(x => `<small>${x}</small>`).join('')}${days}</div></div>
+    <div class="pstats">
+      <div><span>Эта неделя</span><b>${week.length}</b><small>${week.filter(p => p.status === 'Опубликовано').length} вышло · ${week.filter(p => p.status !== 'Опубликовано').length} впереди</small></div>
+      <div><span>Готово к выходу</span><b>${ready}</b><small>статус «Утверждено»</small></div>
+      <div class="${waiting ? 'warn' : ''}"><span>Ждут текста</span><b>${waiting}</b><small>${waiting ? 'кнопка «Написать посты» сверху' : 'все тексты на месте'}</small></div>
+      <div class="${emptyWeeks ? 'warn' : ''}"><span>Пустых недель</span><b>${emptyWeeks}</b><small>${emptyWeeks ? 'в ритме дыра — заполните' : 'ритм без провалов'}</small></div>
+    </div>
+    <div class="rubmix"><div class="rhead"><b>Баланс рубрик</b><small class="muted">${ahead.length} публикаций за 4 недели</small></div>
+      ${ahead.length ? `<div class="rubbar">${byRub.map(({ r, n }) => `<i style="--rt:var(--tone-${r.tone});flex:${n}" title="${E(r.id)}: ${n}"></i>`).join('')}${other ? `<i style="flex:${other}" class="norub" title="Без рубрики: ${other}"></i>` : ''}</div>` : ''}
+      <ul>${RUBRICS.map(r => { const n = ahead.filter(p => p.rubric === r.id).length;
+        return `<li class="${n ? '' : 'zero'}" style="--rt:var(--tone-${r.tone})" title="${E(r.hint)}"><i></i>${E(r.id)}<b>${n}</b></li>`; }).join('')}</ul></div>
+  </section>`;
+}
+
+// Таблица: неделя за неделей — когда, где, что, каким визуалом и зачем.
+function planTable(items) {
+  const t = today(), cur = mondayOf(t);
+  const inRange = p => contentRange === 'all' || (contentRange === 'next' ? !p.date || p.date >= cur : p.date && p.date < cur);
+  const list = items.filter(inRange).sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || String(a.post_time).localeCompare(String(b.post_time)));
+  if (contentRange === 'past') list.reverse();
+  if (!list.length) return `<div class="card empty"><h2>${contentRange === 'past' ? 'Прошедших публикаций нет' : 'Впереди пусто'}</h2>
+    <p>${contentRange === 'past' ? 'Здесь появятся вышедшие посты.' : 'Нажмите «План на месяц» — Claude разложит публикации по дням, или кликните пустой день в ритме сверху.'}</p></div>`;
+  const groups = [];
+  for (const p of list) {
+    const key = p.date ? mondayOf(p.date) : 'none';
+    const g = groups.find(x => x.key === key) || (groups.push({ key, rows: [] }), groups[groups.length - 1]);
+    g.rows.push(p);
+  }
+  const title = k => k === 'none' ? 'Без даты' : k === cur ? 'Эта неделя' : k === addDays(cur, 7) ? 'Следующая неделя' : k === addDays(cur, -7) ? 'Прошлая неделя'
+    : `Неделя с ${shortDate(k)}`;
+  return `<div class="ptable" role="table" aria-label="Контент-план по неделям">
+    <div class="ptrow pthead" role="row"><span role="columnheader">Когда</span><span role="columnheader">Где и формат</span><span role="columnheader">Публикация</span>
+      <span role="columnheader">Визуал</span><span role="columnheader">Цель</span><span role="columnheader">Статус</span><span></span></div>
+    ${groups.map(g => `<section class="ptweek${g.key === cur ? ' now' : ''}" role="rowgroup">
+      <header><h3>${title(g.key)}</h3>${g.key !== 'none' ? `<small class="muted">${shortDate(g.key)} — ${shortDate(addDays(g.key, 6))}</small>` : ''}
+        <span class="ptwcount">${g.rows.length} ${plural(g.rows.length, 'публикация', 'публикации', 'публикаций')}${g.rows.some(p => p.status === 'Опубликовано') ? ` · вышло ${g.rows.filter(p => p.status === 'Опубликовано').length}` : ''}</span>
+        <span class="rubbar mini">${g.rows.map(p => `<i style="--rt:var(--tone-${rubricOf(p.rubric)?.tone || 'gray'})"></i>`).join('')}</span></header>
+      ${g.rows.map(planRow).join('')}</section>`).join('')}
+  </div>`;
+}
+
+function planRow(p) {
+  const n = network(p.channel), r = rubricOf(p.rubric), i = P_STATUS.indexOf(p.status);
+  const late = p.date && p.date < today() && p.status !== 'Опубликовано';
+  const noText = needsText(p) && p.status !== 'Опубликовано';
+  const first = String(p.body || '').split('\n').find(l => l.trim() && l.trim() !== p.title.trim()) || '';
+  const views = lastViews(p.id);
+  return `<article class="ptrow${p.date === today() ? ' istoday' : ''}${p.status === 'Опубликовано' ? ' isdone' : ''}" role="button" tabindex="0" data-p="${E(p.id)}"
+      style="--rt:var(--tone-${r?.tone || 'gray'})">
+    <div class="ptwhen" role="cell">${p.date ? `<span class="wd">${E(weekday(p.date))}</span><b>${Number(p.date.slice(8))}</b><small>${E(shortDate(p.date).replace(/^\d+\s/, ''))}${p.post_time ? ' · ' + E(p.post_time) : ''}</small>` : '<small class="muted">без даты</small>'}</div>
+    <div class="ptnet" role="cell"><span class="neticon">${icon(n?.icon || 'social', 16)}</span><span><b>${E(p.channel)}</b><small>${E(p.format || 'формат не выбран')}</small></span></div>
+    <div class="ptmain" role="cell">${r ? `<span class="rub">${E(r.id)}</span>` : ''}<h3>${E(p.title)}</h3>
+      <p class="${noText ? 'notext' : ''}">${noText ? `${icon('ai', 13)} Текста ещё нет — его напишет Claude` : E(first.slice(0, 170))}</p></div>
+    <div class="ptvis" role="cell">${p.visual ? `${icon('photo', 14)}<span>${E(p.visual.slice(0, 150))}</span>` : '<small class="muted">ТЗ на визуал не задано</small>'}</div>
+    <div class="ptgoal" role="cell">${p.goal ? `<span class="goal g${GOALS.indexOf(p.goal)}">${E(p.goal)}</span>` : '<small class="muted">—</small>'}${views !== null ? `<small>${num(views)} просм.</small>` : ''}</div>
+    <div class="ptstat" role="cell"><span class="pst s${i}">${E(p.status)}</span><span class="pdots" aria-hidden="true">${P_STATUS.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('')}</span>
+      ${late ? '<small class="minus">дата прошла</small>' : ''}</div>
+    <div class="ptact">${noText ? `<button class="rowact ai" data-action="aiwriteone" data-id="${E(p.id)}" aria-label="Написать текст «${E(p.title)}»" title="Написать текст">${icon('ai', 16)}</button>` : ''}
+      ${i >= 0 && i < P_STATUS.length - 1 ? `<button class="rowact" data-action="movep" data-id="${E(p.id)}" data-step="1" aria-label="Дальше: «${E(P_STATUS[i + 1])}»" title="Дальше: «${E(P_STATUS[i + 1])}»">${icon('next', 16)}</button>` : ''}
+      <button class="rowact del" data-action="delp" data-id="${E(p.id)}" aria-label="Удалить «${E(p.title)}»" title="Удалить">${icon('delete', 16)}</button></div>
+  </article>`;
+}
+
+// Claude пишет тексты подряд: каждый пост — отдельный запрос с рубрикой,
+// форматом и заметкой. Готовое встаёт черновиком: выходит только проверенное.
+async function aiWriteAll(ids) {
+  const list = ids.map(id => db.content.find(p => p.id === id)).filter(Boolean).slice(0, 8);
+  if (!list.length) return;
+  const state = list.map(p => ({ p, st: 'wait', note: '' }));
+  const paint = () => {
+    const done = state.filter(x => x.st === 'ok').length;
+    modal(`<h2>Пишу посты · ${done} из ${state.length}</h2>
+      <p class="muted">Claude пишет по рубрике, формату и заметке к посту, опираясь на проверенные факты из базы знаний. Готовые встают черновиками — прочитайте и утвердите.</p>
+      <ol class="writelist">${state.map(x => `<li class="w-${x.st}"><span class="wst">${x.st === 'ok' ? icon('check', 15) : x.st === 'err' ? icon('warn', 15) : x.st === 'run' ? icon('loading', 15) : ''}</span>
+        <span><b>${E(x.p.title)}</b><small class="muted">${E(x.p.channel)}${x.p.date ? ' · ' + E(shortDate(x.p.date)) : ''}${x.note ? ' · ' + E(x.note) : ''}</small></span>
+        ${x.st === 'ok' ? `<button class="chip" data-p="${E(x.p.id)}">Открыть</button>` : ''}</li>`).join('')}</ol>`);
+  };
+  paint();
+  for (const x of state) {
+    x.st = 'run'; paint();
+    try {
+      const p = db.content.find(y => y.id === x.p.id) || x.p;
+      const res = await api.generate({ mode: 'post', network: p.channel, title: p.title, direction: PRODUCT_DIR[p.product] || '', brief: p.body, rubric: p.rubric, format: p.format });
+      const saved = await api.update('content', { ...p, body: res.body, visual: p.visual || res.visual || '', cta: p.cta || res.cta || '',
+        status: p.status === 'Идея' ? 'Черновик' : p.status });
+      upsertLocal('content', saved);
+      noteLocal('update', 'content', saved);
+      x.p = saved; x.st = 'ok';
+      x.note = [res.over ? `длиннее предела на ${res.over} зн.` : '', res.gaps?.length ? 'не хватило: ' + res.gaps.join('; ') : ''].filter(Boolean).join(' · ');
+    } catch (e) {
+      x.st = 'err'; x.note = e.message || 'ошибка';
+      if (/лимит/i.test(x.note)) { for (const y of state) if (y.st === 'wait') { y.st = 'err'; y.note = 'остановлено: дневной лимит'; } }
+    }
+    paint();
+    if (state.every(y => y.st !== 'wait')) break;
+  }
+  render();
 }
 
 // --------------------------------------------------------- ИИ для контента
@@ -1886,15 +2036,17 @@ function aiContentResult(mode, res, direction) {
     if (!picked.length) { toast('Ничего не отмечено'); return; }
     const rows = picked.map(x => ({
       id: uid(), title: x.title.slice(0, 300), body: `${x.rubric}${x.format ? ' · ' + x.format : ''}. ${x.angle || x.brief || ''}`.slice(0, 20000),
-      product: DIR_PRODUCT[direction] || 'Studio', author: 'ADERVIS', channel: x.network, status: 'Идея', date: x.date || '', url: ''
+      product: DIR_PRODUCT[direction] || 'Studio', author: 'ADERVIS', channel: x.network, status: 'Идея', date: x.date || '', url: '',
+      format: String(x.format || '').slice(0, 40), rubric: rubricOf(x.rubric) ? x.rubric : '', goal: rubricOf(x.rubric)?.goal || '',
+      post_time: x.time || (x.date ? NET_TIME[x.network] || '' : ''), visual: '', cta: ''
     }));
     try {
       await api.upsertAll('content', rows);
       for (const r of rows) upsertLocal('content', { ...r, _at: new Date().toISOString() });
       $('#modal').close();
-      if (mode === 'plan') contentView = 'calendar';
+      if (mode === 'plan') { contentView = 'table'; contentRange = 'next'; }
       render();
-      toast(`В план добавлено: ${rows.length}`);
+      toast(`В план добавлено: ${rows.length} — тексты напишет кнопка «Написать посты»`);
     } catch (e) { handleError(e); }
   };
 }
@@ -1911,8 +2063,11 @@ async function aiPost(btn) {
   $('#aipostgaps').textContent = '';
   try {
     const res = await api.generate({ mode: 'post', network: f.elements.channel.value, title,
-      direction: PRODUCT_DIR[f.elements.product.value] || '', brief: f.elements.body.value.trim() });
+      direction: PRODUCT_DIR[f.elements.product.value] || '', brief: f.elements.body.value.trim(),
+      rubric: f.elements.rubric.value, format: f.elements.format.value });
     f.elements.body.value = res.body;
+    if (res.visual && !f.elements.visual.value.trim()) f.elements.visual.value = res.visual;
+    if (res.cta && !f.elements.cta.value.trim()) f.elements.cta.value = res.cta;
     f.elements.body.dispatchEvent(new Event('input'));
     $('#aipostgaps').textContent = [res.over ? `Длиннее предела площадки на ${res.over} знаков — сократите` : '',
       res.gaps?.length ? 'Не хватило: ' + res.gaps.join('; ') : '', res.left !== undefined ? `осталось запросов: ${res.left}` : ''].filter(Boolean).join(' · ');
@@ -6313,7 +6468,8 @@ function changePassword() {
   };
 }
 
-function modal(html) {
+function modal(html, cls = '') {
+  $('#modal').className = cls;
   $('#modal').innerHTML = `<button class="close iconbtn" data-action="close" aria-label="Закрыть">${icon('close', 18)}</button>` + html;
   // у каждой кнопки удаления — корзина: опасное действие видно сразу
   $('#modal').querySelectorAll('button.danger').forEach(b => { if (!b.querySelector('svg')) b.insertAdjacentHTML('afterbegin', icon('delete', 15)); });
@@ -6462,8 +6618,9 @@ function editP(id, preset = {}) {
   const exists = db.content.some(p => p.id === id);
   const p = db.content.find(p => p.id === id) || {
     id: uid(), title: '', body: '', author: 'Артём', channel: contentNet !== 'Все' ? contentNet : 'Telegram',
-    product: 'Studio', status: 'Черновик', date: '', url: '', ...preset
+    product: 'Studio', status: 'Черновик', date: '', url: '', format: '', rubric: '', post_time: '', goal: '', visual: '', cta: '', ...preset
   };
+  const fmts = n => { const list = network(n)?.formats || []; return p.format && !list.includes(p.format) ? [...list, p.format] : list; };
   const channels = NETWORK_NAMES.includes(p.channel) ? NETWORK_NAMES : [...NETWORK_NAMES, p.channel];
   const selects = [
     ['author', 'Автор', ['Артём', 'Александр', 'ADERVIS']],
@@ -6471,10 +6628,14 @@ function editP(id, preset = {}) {
     ['product', 'Направление', ['Studio', 'CRM', 'Stock', 'Медиаэксперименты']],
     ['status', 'Статус', P_STATUS]
   ];
-  modal(`<h2>Публикация</h2><form id="pf">
+  modal(`<h2>Публикация</h2><div class="pfwrap"><form id="pf">
     <div class="formgrid">
       ${selects.map(([n, l, a]) => `<div><label>${l}</label><select name="${n}">${opts(a, p[n])}</select></div>`).join('')}
+      <div><label for="pfformat">Формат</label><select id="pfformat" name="format"><option value="">Не выбран</option>${opts(fmts(p.channel), p.format)}</select></div>
+      <div><label for="pfrubric">Рубрика</label><select id="pfrubric" name="rubric"><option value="">Без рубрики</option>${opts(RUBRICS.map(r => r.id), p.rubric)}</select></div>
       <div><label>Дата публикации</label><input type="date" name="date" value="${E(p.date)}"></div>
+      <div><label for="pftime">Время выхода</label><input id="pftime" type="time" name="post_time" value="${E(p.post_time)}"></div>
+      <div><label for="pfgoal">Цель</label><select id="pfgoal" name="goal"><option value="">Не задана</option>${opts(GOALS, p.goal)}</select></div>
       <div><label>Ссылка на вышедший пост</label><input type="url" name="url" maxlength="500" value="${E(p.url || '')}"
         placeholder="ставит парсер или вы"></div>
     </div>
@@ -6486,11 +6647,36 @@ function editP(id, preset = {}) {
     <small class="muted aipostgaps" id="aipostgaps" aria-live="polite"></small>
     <small class="counter" id="pcount" aria-live="polite"></small>
     <p class="nethint" id="nethint"></p>
+    <label for="pfvisual">ТЗ на визуал — что снять или нарисовать</label>
+    <textarea id="pfvisual" name="visual" class="short" maxlength="2000" placeholder="Например: вертикальный клип 20 секунд — банка крупно, свет сбоку, финал с логотипом">${E(p.visual)}</textarea>
+    <label for="pfcta">Призыв к действию</label>
+    <input id="pfcta" name="cta" maxlength="300" value="${E(p.cta)}" placeholder="Например: напишите «смета» в сообщения — пришлём расчёт">
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(p._by))}, ${ago(p._at)}</p>` : ''}
     ${exists ? publishBlock(p) : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
-      ${exists ? `<button type="button" class="danger" data-action="delp" data-id="${E(p.id)}">Удалить публикацию</button>` : ''}</div></form>`);
+      ${exists ? `<button type="button" class="danger" data-action="delp" data-id="${E(p.id)}">Удалить публикацию</button>` : ''}</div></form>
+    <aside class="ppreview" aria-label="Как увидят подписчики"><small class="muted">Как увидят подписчики</small><div id="ppv"></div></aside></div>`, 'wide');
   const f = $('#pf');
+  // Превью в духе площадки: шапка канала, текст с переносами, место под визуал.
+  const preview = () => {
+    const net = network(f.elements.channel.value), r = rubricOf(f.elements.rubric.value);
+    const text = f.elements.body.value.trim(), vis = f.elements.visual.value.trim(), cta = f.elements.cta.value.trim();
+    const cut = net?.name === 'ВКонтакте' && text.length > 420;
+    const when = [f.elements.date.value ? shortDate(f.elements.date.value) : '', f.elements.post_time.value].filter(Boolean).join(' в ') || 'дата не назначена';
+    $('#ppv').innerHTML = `<div class="pvcard net-${E((net?.icon || 'social'))}">
+      <div class="pvhead"><img src="brand/icon.svg" alt=""><span><b>ADERVIS${net?.name === 'Telegram' ? ' Digital' : ''}</b><small>${E(net?.name || f.elements.channel.value)} · ${E(when)}</small></span>
+        ${r ? `<span class="rub" style="--rt:var(--tone-${r.tone})">${E(r.id)}</span>` : ''}</div>
+      ${net?.name === 'Telegram' && vis ? `<div class="pvmedia">${icon('photo', 22)}<span>${E(vis)}</span></div>` : ''}
+      <div class="pvtext">${text ? E(cut ? text.slice(0, 420).replace(/\s+\S*$/, '') + '…' : text) : '<span class="muted">Текст появится здесь</span>'}${cut ? '<span class="pvmore">Показать полностью</span>' : ''}</div>
+      ${net?.name !== 'Telegram' && vis ? `<div class="pvmedia">${icon('photo', 22)}<span>${E(vis)}</span></div>` : ''}
+      ${cta ? `<div class="pvcta">${icon('chat', 15)} ${E(cta)}</div>` : ''}
+      <div class="pvfoot">${icon('eye', 14)} ${f.elements.format.value ? E(f.elements.format.value) : 'формат не выбран'}${f.elements.goal.value ? ' · цель: ' + E(f.elements.goal.value.toLowerCase()) : ''}</div></div>`;
+  };
+  f.addEventListener('input', preview);
+  f.addEventListener('change', preview);
+  // Рубрика подсказывает цель, площадка — время выхода и форматы.
+  f.elements.rubric.addEventListener('change', () => { const r = rubricOf(f.elements.rubric.value); if (r && !f.elements.goal.value) f.elements.goal.value = r.goal; preview(); });
+  f.elements.date.addEventListener('change', () => { if (f.elements.date.value && !f.elements.post_time.value) f.elements.post_time.value = NET_TIME[f.elements.channel.value] || ''; preview(); });
   // Счётчик меряет то, что уйдёт на площадку, и сравнивает с её лимитом:
   // лишнее видно до публикации, а не после отказа площадки.
   const count = () => {
@@ -6510,8 +6696,13 @@ function editP(id, preset = {}) {
   };
   f.elements.body.oninput = count;
   f.elements.title.oninput = count;
-  f.elements.channel.onchange = count;
+  f.elements.channel.onchange = () => {
+    const cur = f.elements.format.value;
+    f.elements.format.innerHTML = `<option value="">Не выбран</option>${opts(network(f.elements.channel.value)?.formats || [], cur)}`;
+    count(); preview();
+  };
   count();
+  preview();
   submitForm(f, 'content', p, exists, 'Материал сохранён');
 }
 
@@ -7386,6 +7577,11 @@ document.addEventListener('click', async e => {
     case 'openlead': go('leads'); editLead(b.dataset.id); break;
     case 'contentnet': contentNet = b.dataset.id; render(); break;
     case 'contentview': contentView = b.dataset.id; render(); break;
+    case 'contentrange': contentRange = b.dataset.id; render(); break;
+    case 'newpday': editP(undefined, { date: b.dataset.id, post_time: NET_TIME[contentNet !== 'Все' ? contentNet : 'Telegram'] || '' }); break;
+    case 'rdayopen': contentView = 'table'; contentRange = 'all'; query = ''; render(); document.querySelector(`.ptrow[data-p="${CSS.escape(db.content.find(p => p.date === b.dataset.id)?.id || '')}"]`)?.scrollIntoView({ block: 'center' }); break;
+    case 'aiwriteall': aiWriteAll(waitingText().map(p => p.id)); break;
+    case 'aiwriteone': aiWriteAll([b.dataset.id]); break;
     case 'movep': moveP(b.dataset.id, Number(b.dataset.step)); break;
     case 'feed': runFeed(b.dataset.id); break;
     case 'feedapply': feedApply([b.dataset.id]); break;
