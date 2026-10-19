@@ -9,7 +9,9 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
-const SEEDFILE = path.join(HERE, '..', '..', 'local-0.3', 'adervis-seed.json');
+// Стартовые данные — обезличенная копия: текст внутренних записей заменён
+// заглушкой, потому что репозиторий открыт.
+const SEEDFILE = path.join(HERE, 'fixtures', 'seed.json');
 const OUT = path.join(HERE, 'screenshots');
 fs.mkdirSync(OUT, { recursive: true });
 const seed = JSON.parse(fs.readFileSync(SEEDFILE, 'utf8'));

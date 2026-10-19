@@ -13,7 +13,7 @@ const src = fs.readFileSync(path.join(HERE, 'ui.test.mjs'), 'utf8');
 // берём подменённый сервер из основных проверок, чтобы не держать вторую копию
 const fakeSrc = src.slice(src.indexOf('const fake = (seedData) =>'), src.indexOf('const browser = await chromium.launch()'));
 const fake = new Function('return ' + fakeSrc.replace('const fake = ', '').trim().replace(/;$/, ''))();
-const seed = JSON.parse(fs.readFileSync(path.join(HERE, '..', '..', 'local-0.3', 'adervis-seed.json'), 'utf8'));
+const seed = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'seed.json'), 'utf8'));
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png' };
 const server = http.createServer((req, res) => {

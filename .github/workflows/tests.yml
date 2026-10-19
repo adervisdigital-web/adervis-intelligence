@@ -1,0 +1,37 @@
+# Проверки ADERVIS Intelligence на каждое сохранение в main.
+# База (PGlite), сборка запросов к ИИ, боты, сводка и интерфейс в браузере —
+# то же, что `npm test` в папке tests. Если что-то сломалось, коммит в GitHub
+# отмечается красным, а снимки экрана из проверок прикладываются к запуску.
+name: Проверки
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+      - run: npm ci
+      - name: Браузер для проверок интерфейса
+        run: npx playwright-core install --with-deps chromium
+      - run: npm test
+      - name: Снимки экрана при ошибке
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: tests/screenshots
+          retention-days: 7
