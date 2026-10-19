@@ -113,6 +113,7 @@ const fake = (seedData) => {
     channel_stats: [],
     survey_answers: [],
     messages: [],
+    digest_subscribers: [],
     briefs: [],
     studio_rates: [
       { id: 'art', name: 'Арт-директор, концепция', rate: 2000, note: 'Ориентир — проверьте', sort: 10 },
@@ -216,6 +217,8 @@ const fake = (seedData) => {
       log('update', 'outreach_settings', { id: 'main' });
       return clone(state.outreach);
     },
+    async saveDigestHour(chatId, hour) { state.digest_subscribers.find(x => x.chat_id === chatId).hour = hour; },
+    async dropDigestSub(chatId) { state.digest_subscribers = state.digest_subscribers.filter(x => x.chat_id !== chatId); },
     async setChannelSecret(name, value) { window.__SECRETS__ = { ...(window.__SECRETS__ || {}), [name]: value }; },
     async channels(payload) {
       (window.__CHANNELS__ ||= []).push(clone(payload));
@@ -224,6 +227,7 @@ const fake = (seedData) => {
       if (payload.action === 'status') {
         const vkOn = !!window.__VKCONNECTED__;
         return { ok: true, manager: !!state.outreach.manager_chat_id, instagram: {},
+          intel: { token: true, connected: !!window.__INTEL__, username: window.__INTEL__ ? 'adervis_intel_bot' : '', subscribers: clone(state.digest_subscribers) },
           vk: { token: !!sec.vk_token, connected: vkOn, status: vkOn ? 'ok' : 'none', name: vkOn ? 'ADERVIS Digital' : '', screen: vkOn ? 'adervis_digital' : '',
             others: vkOn ? ['efepnuuxtzwzygwipgxt.supabase.co'] : [] },
           telegram: { token: !!sec.tg_bot_token, connected: !!window.__TGCONNECTED__, username: state.outreach.tg_bot_username, pending: 0, lastError: '' } };
@@ -240,10 +244,17 @@ const fake = (seedData) => {
         state.outreach.vk_community_id = 123;
         return { ok: true, name: 'ADERVIS Digital', screen: 'adervis_digital', status: 'ok', others: ['efepnuuxtzwzygwipgxt.supabase.co'] };
       }
+      if (payload.action === 'digest-code') { window.__INTEL__ = true; return { ok: true, code: '654321', username: 'adervis_intel_bot' }; }
+      if (payload.action === 'digest-now') {
+        if (!state.digest_subscribers.length) throw new Error('Пока никто не подписан на сводку');
+        window.__DIGEST_SENT__ = state.digest_subscribers.length;
+        return { ok: true, sent: state.digest_subscribers.length };
+      }
       if (payload.action === 'link-code') return { ok: true, code: '123456', username: state.outreach.tg_bot_username };
       const p = state.prospects.find(x => x.id === payload.prospectId);
       if (payload.action === 'read') { p.unread = 0; return { ok: true }; }
       if (payload.action === 'mode') { p.bot_mode = payload.mode; return { ok: true, mode: payload.mode }; }
+      if (payload.action === 'elsewhere') { p.elsewhere = payload.where; if (payload.where) p.unread = 0; return { ok: true, where: payload.where }; }
       if (payload.action === 'send') {
         const m = { id: 'm' + (state.messages.length + 1), prospect_id: p.id, channel: 'Telegram', direction: 'out', author: session,
           kind: 'text', text: payload.text, meta: {}, external_id: '', created_at: new Date(Date.now() + state.messages.length).toISOString() };
@@ -1875,6 +1886,20 @@ check('«На сегодня»: клиент ждёт ответа', (await page
 await page.click('.todayrow[data-id="dl:tg-ivan"]');
 await page.waitForSelector('.dlgchat');
 check('из «На сегодня» — сразу в переписку', (await page.textContent('#crumb')) === 'Диалоги' && (await page.textContent('.dlgwho b')) === 'Иван');
+// клиент ушёл в личную переписку — диалог больше не «ждёт ответа»
+await page.click('[data-action=dlgaway]');
+await page.click('[data-action=dlgawayto][data-id="ВК, личная страница"]');
+await page.waitForFunction(() => window.__STATE__.prospects.find(p => p.id === 'tg-ivan').elsewhere === 'ВК, личная страница');
+check('«ушёл в личку»: не ждёт ответа, без счётчика и отметки', await page.$eval('#nav button[data-page=dialogs] .navbadge', b => b.hidden)
+  && (await page.textContent('.dlgitem[data-dlg=tg-ivan]')).includes('в личке') && !(await page.$('.dlgitem[data-dlg=tg-ivan] .dlgwaiting'))
+  && (await page.textContent('.dlghead')).includes('в личке: ВК, личная страница'));
+await nav('home');
+check('«ушёл в личку»: в «На сегодня» не просрочено', !(await page.textContent('.todaycard')).includes('Ждёт ответа в Telegram'));
+await page.evaluate(() => window.__incoming('tg-ivan', 'Я снова тут'));
+await page.evaluate(() => { window.__STATE__.prospects.find(p => p.id === 'tg-ivan').elsewhere = ''; });
+await page.click('#refresh');
+await page.waitForFunction(() => document.querySelector('.todaycard').textContent.includes('Ждёт ответа в Telegram'));
+check('клиент снова написал в канал — диалог снова ждёт ответа', true);
 
 // --- 5ц. брифы и КП: ТЗ → разбор → вопросы → смета → план → КП → диалог
 // .docx собираем здесь же: настоящий zip с document.xml, как у Word
@@ -2018,6 +2043,29 @@ await page.fill('#dlgtext', '');
 await nav('leads');
 await page.click(`[data-l="${stB.briefs[0].lead_id}"]`);
 check('в карточке заявки — ссылка на бриф и КП', (await page.textContent('#modal')).includes('Бриф и КП: Видеодайджест'));
+await page.click('#modal [data-action=close]');
+
+// --- 5ч. утренняя сводка в Telegram
+await nav('settings');
+await page.click('.card [data-action=digest]');
+await page.waitForSelector('#dgbody [data-action=digestlink]');
+check('сводка: пока никто не подписан', (await page.textContent('#dgbody')).includes('Пока никто не подписан'));
+await page.click('[data-action=digestlink]');
+await page.waitForSelector('#dgbody a.btnlink');
+check('сводка: ссылка ведёт в служебного бота с кодом', (await page.getAttribute('#dgbody a.btnlink', 'href')) === 'https://t.me/adervis_intel_bot?start=digest_654321');
+await page.evaluate(() => window.__STATE__.digest_subscribers.push({ chat_id: 555, name: 'Артём', hour: 9 }));
+await page.click('#modal [data-action=close]');
+await page.click('.todaycard [data-action=digest], .card [data-action=digest]');
+await page.waitForSelector('[data-digesthour="555"]');
+await page.selectOption('[data-digesthour="555"]', '8');
+await page.waitForFunction(() => window.__STATE__.digest_subscribers[0].hour === 8);
+check('сводка: час меняется прямо в окне', true);
+await page.click('[data-action=digestnow]');
+await page.waitForFunction(() => window.__DIGEST_SENT__ === 1);
+check('сводка: «прислать сейчас» отправляет подписчикам', true);
+await page.click('[data-action=digestdrop][data-id="555"]');
+await page.waitForFunction(() => !window.__STATE__.digest_subscribers.length);
+check('сводка: отписать из приложения', (await page.textContent('#dgbody')).includes('Пока никто не подписан'));
 await page.click('#modal [data-action=close]');
 
 // --- 6. задачи

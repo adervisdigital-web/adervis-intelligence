@@ -82,7 +82,7 @@ const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 // Эти поля ведёт сервер — бот и переписка. Приложение их показывает, но не
 // отправляет обратно: иначе сохранение карточки затёрло бы сообщение,
 // пришедшее, пока она была открыта.
-const SERVER_FIELDS = { prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction'] };
+const SERVER_FIELDS = { prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction', 'elsewhere'] };
 
 function toRow(table, o) {
   const row = {};
@@ -218,6 +218,8 @@ function createApi(cfg) {
     // Ключ бота уходит в базу и обратно в браузер не возвращается никогда.
     async setChannelSecret(name, value) { must(await sb.rpc('set_channel_secret', { p_name: name, p_value: value })); },
     channels: payload => callFn('channels', payload),
+    async saveDigestHour(chatId, hour) { must(await sb.from('digest_subscribers').update({ hour }).eq('chat_id', chatId)); },
+    async dropDigestSub(chatId) { must(await sb.from('digest_subscribers').delete().eq('chat_id', chatId)); },
 
     // Файлы лежат в закрытом хранилище: прямая ссылка без входа не работает.
     async uploadFile(record, file) {
@@ -2237,7 +2239,8 @@ function todayPanel() {
         <span class="todayicon">${icon(x.ic, 16)}</span>
         <span class="todaytext"><b>${E(x.title)}</b><small>${E(x.what)}</small></span>
         <span class="todaywhen">${x.late ? 'просрочено' : x.when === today() ? 'сегодня' : x.when === dayShift(1) ? 'завтра' : E(shortDate(x.when))}</span></button></li>`).join('')}</ul>
-      ${list.length > shown.length ? `<p class="muted">И ещё ${list.length - shown.length} — откройте заявки и поиск клиентов.</p>` : ''}`
+      ${list.length > shown.length ? `<p class="muted">И ещё ${list.length - shown.length} — откройте заявки и поиск клиентов.</p>` : ''}
+      <p><button class="linkbtn" data-action="digest">${icon('telegram', 14)} Получать это в Telegram каждое утро</button></p>`
       : '<p class="muted todayempty">Срочного нет. Хорошее время написать новым компаниям из поиска клиентов.</p>'}
   </div>`;
 }
@@ -2885,7 +2888,9 @@ const CHANNEL_OF = p => p.tg_chat_id ? 'Telegram' : p.vk_peer_id ? 'ВКонта
 const CHANNEL_ICON = { Telegram: 'telegram', 'ВКонтакте': 'social', Instagram: 'photo' };
 const SCRIPT_STAGES = ['Первое сообщение', 'Ответы на вопросы', 'Возражения и закрытие'];
 // Клиент написал последним, а бот в диалоге выключен — ответить должен человек.
-const waitingReply = p => !!CHANNEL_OF(p) && p.last_direction === 'in' && p.bot_mode === 'human';
+// Ушёл в личную переписку — разговор идёт там, здесь ничего не ждёт.
+const waitingReply = p => !!CHANNEL_OF(p) && !p.elsewhere && p.last_direction === 'in' && p.bot_mode === 'human';
+const ELSEWHERE = ['ВК, личная страница', 'Telegram, личный', 'WhatsApp', 'Телефон', 'Почта', 'Встреча'];
 const DIALOG_FILTERS = [
   ['Все', () => true],
   ['Ждут ответа', waitingReply],
@@ -2936,7 +2941,8 @@ const dialogItem = p => {
     <span class="dlgtext"><b>${E(p.name)}</b><small>${p.last_direction === 'out' ? '<i>Мы:</i> ' : ''}${E(p.last_text || '')}</small></span>
     <span class="dlgmeta"><small>${listTime(p.last_message_at)}</small>${p.unread
       ? `<b class="dlgun" aria-label="непрочитанных: ${p.unread}">${p.unread}</b>`
-      : waitingReply(p) ? '<b class="dlgwaiting" title="Ждёт ответа" aria-label="ждёт ответа"></b>' : ''}</span>
+      : waitingReply(p) ? '<b class="dlgwaiting" title="Ждёт ответа" aria-label="ждёт ответа"></b>'
+      : p.elsewhere ? `<small class="dlgaway" title="${E(p.elsewhere)}">в личке</small>` : ''}</span>
   </button>`;
 };
 
@@ -2958,6 +2964,9 @@ function chatHtml(p) {
       <div class="dlgtools">${tag(p.status)}
         <button type="button" class="chip${bot ? ' on' : ''}" data-action="dlgmode" aria-pressed="${bot}"
           title="${bot ? 'Бот отвечает сам. Нажмите, чтобы вести диалог самому' : 'Бот молчит, отвечаете вы. Нажмите, чтобы бот снова отвечал'}">${icon('ai', 14)} ${bot ? 'Бот отвечает' : 'Бот выключен'}</button>
+        ${p.elsewhere
+          ? `<span class="tag" title="Разговор продолжается там">в личке: ${E(p.elsewhere)}</span><button type="button" class="chip" data-action="dlghere">Вернуть в чат</button>`
+          : `<button type="button" class="chip" data-action="dlgaway" title="Клиент перешёл в личную переписку — диалог не будет висеть как «ждёт ответа»">Ушёл в личку</button>`}
         <button type="button" class="chip" data-pr="${E(p.id)}" aria-label="Карточка компании">${icon('edit', 14)}<span>Карточка</span></button></div>
     </header>
     <div class="dlgmsgs" id="dlgmsgs">${body}</div>
@@ -3142,6 +3151,27 @@ async function dialogMode() {
   } catch (err) {
     toast('Не переключилось: ' + (err.message || 'ошибка сервера'), 6000);
   }
+}
+
+async function dialogElsewhere(where) {
+  const p = db.prospects.find(x => x.id === dialog.id);
+  if (!p) return;
+  try {
+    await api.channels({ action: 'elsewhere', prospectId: p.id, where });
+    p.elsewhere = where;
+    if (where) p.unread = 0;
+    $('#modal').close();
+    render();
+    toast(where ? `Отмечено: разговор идёт — ${where}. Диалог больше не ждёт ответа.` : 'Диалог снова здесь');
+  } catch (err) {
+    toast('Не сохранилось: ' + (err.message || 'ошибка сервера'), 6000);
+  }
+}
+
+function pickElsewhere() {
+  modal(`<h2>Куда ушёл разговор?</h2>
+    <p class="muted">Диалог перестанет висеть как «ждёт ответа» и «просрочено». Напишет клиент снова сюда — отметка снимется сама.</p>
+    <div class="createlist">${ELSEWHERE.map(w => `<button class="createitem" data-action="dlgawayto" data-id="${E(w)}"><b>${E(w)}</b></button>`).join('')}</div>`);
 }
 
 // Готовый текст — в поле ответа, а не сразу клиенту: человек дочитает и поправит.
@@ -4142,6 +4172,68 @@ function ratesModal() {
       toast('Ставки сохранены — сметы пересчитаны');
     } catch (err) { handleError(err); }
   };
+}
+
+// ------------------------------------------------------- утренняя сводка
+//
+// Служебный бот @adervis_intel_bot каждое утро присылает «На сегодня»:
+// те же дела, что в списке на главной. Подписка — по ссылке с кодом.
+let digestInfo = null;
+
+async function digestModal() {
+  modal(`<h2>Утренняя сводка в Telegram</h2><div id="dgbody"><p class="muted">Проверяю…</p></div>`);
+  try { digestInfo = (await api.channels({ action: 'status' })).intel || {}; } catch (err) { digestInfo = { error: err.message || 'нет связи' }; }
+  paintDigest();
+}
+
+function paintDigest(link) {
+  const box = $('#dgbody');
+  if (!box) return;
+  const d = digestInfo || {}, subs = d.subscribers || [];
+  box.innerHTML = `${d.error ? `<div class="notice error">Не удалось проверить: ${E(d.error)}</div>` : ''}
+    <p>Каждое утро служебный бот ${d.username ? `<b>@${E(d.username)}</b>` : 'ADERVIS Intelligence'} присылает «На сегодня»: просроченное, дела на сегодня,
+      клиентов, которые ждут ответа, и итоги суток. Команда /today — сводка в любой момент.</p>
+    ${subs.length ? `<table class="table"><thead><tr><th>Кому</th><th>Во сколько (Пермь)</th><th></th></tr></thead><tbody>
+      ${subs.map(s => `<tr><td>${E(s.name || 'Telegram ' + s.chat_id)}</td>
+        <td><select class="input" data-digesthour="${E(s.chat_id)}" aria-label="Час сводки">${[7, 8, 9, 10, 11].map(h => `<option value="${h}" ${Number(s.hour) === h ? 'selected' : ''}>${h}:00</option>`).join('')}</select></td>
+        <td><button class="chip" data-action="digestdrop" data-id="${E(s.chat_id)}">Отписать</button></td></tr>`).join('')}</tbody></table>`
+      : '<p class="muted">Пока никто не подписан.</p>'}
+    ${link ? `<p><a class="btnlink" href="${E(link)}" target="_blank" rel="noopener noreferrer">${icon('telegram', 15)} Открыть бота и подписаться</a></p>
+      <p class="muted">Откройте ссылку с телефона, где вы в Telegram. Ссылка действует 15 минут.</p>` : ''}
+    <div class="formactions"><button class="primary" data-action="digestlink">${icon('telegram', 15)} Подписать мой Telegram</button>
+      ${subs.length ? '<button data-action="digestnow">Прислать сводку сейчас</button>' : ''}</div>`;
+  box.querySelectorAll('[data-digesthour]').forEach(sel => sel.onchange = async () => {
+    try { await api.saveDigestHour(Number(sel.dataset.digesthour), Number(sel.value)); toast(`Сводка будет приходить в ${sel.value}:00`); }
+    catch (err) { handleError(err); }
+  });
+}
+
+async function digestLink(btn) {
+  btn.disabled = true;
+  try {
+    const r = await api.channels({ action: 'digest-code' });
+    digestInfo.username = r.username || digestInfo.username;
+    paintDigest(`https://t.me/${r.username}?start=digest_${r.code}`);
+  } catch (err) {
+    toast('Не получилось: ' + (err.message || 'ошибка сервера'), 6000);
+    btn.disabled = false;
+  }
+}
+
+async function digestNow(btn) {
+  btn.disabled = true;
+  try { const r = await api.channels({ action: 'digest-now' }); toast(`Сводка отправлена: ${r.sent}`); }
+  catch (err) { toast('Не отправлено: ' + (err.message || 'ошибка сервера'), 6000); }
+  btn.disabled = false;
+}
+
+async function digestDrop(chatId) {
+  try {
+    await api.dropDigestSub(Number(chatId));
+    digestInfo.subscribers = (digestInfo.subscribers || []).filter(s => String(s.chat_id) !== String(chatId));
+    paintDigest();
+    toast('Отписано');
+  } catch (err) { handleError(err); }
 }
 
 // ------------------------------------------------------------------ метрики
@@ -5825,6 +5917,9 @@ function render() {
           <p>Доступ выдан: ${db.members.map(m => E(m.name)).join(', ') || '—'}</p>
           <button data-action="theme">Сменить тему</button> <button data-action="password">Сменить пароль</button> <button data-action="signout">Выйти</button>
           <p class="muted">Ctrl / ⌘ + K — поиск. Esc — закрыть окно.</p></div></div>
+      <div class="card" style="margin-top:18px"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Утренняя сводка в Telegram</h2>
+        <button data-action="digest">${icon('telegram', 15)} Настроить</button></div>
+        <p class="muted">Служебный бот присылает «На сегодня» каждое утро в выбранный час; /today — в любой момент.</p></div>
       <div class="card" style="margin-top:18px"><h2>Журнал изменений</h2>${feed(40)}</div>
       <div class="card" style="margin-top:18px"><h2>Подключения</h2>
         ${[['Supabase · база и вход', 'Подключён'], ['AI-провайдер', 'Подключён'],
@@ -7001,6 +7096,13 @@ document.addEventListener('click', async e => {
     }
     default: if (/^(bf|kp)/.test(b.dataset.action || '')) await briefAction(b); break;
     case 'dlgback': dialog.id = ''; render(); break;
+    case 'dlgaway': pickElsewhere(); break;
+    case 'dlgawayto': dialogElsewhere(b.dataset.id); break;
+    case 'dlghere': dialogElsewhere(''); break;
+    case 'digest': digestModal(); break;
+    case 'digestlink': digestLink(b); break;
+    case 'digestnow': digestNow(b); break;
+    case 'digestdrop': digestDrop(b.dataset.id); break;
     case 'dlgmode': dialogMode(); break;
     case 'dlgquick': dialogInsert((db.outreach.quick_replies || [])[Number(b.dataset.id)] || ''); break;
     case 'dlgscript': pickScript(); break;
