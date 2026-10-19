@@ -142,6 +142,36 @@ const msgs = (sb, dir) => sb.T.messages.filter(m => !dir || m.direction === dir)
   check('«заявка» словами — анкета', sent.at(-1).text.includes('Короткая анкета'));
 }
 
+// --- переписка началась до бота: живой разговор менеджера
+{
+  const { sb, deps, ch, sent, notes, cfg } = setup();
+  ch.past = async () => [
+    { in: false, text: '', at: '2026-10-15T10:00:00.000Z', id: '0' },
+    { in: true, text: 'Добрый день, отправляем ТЗ на видеодайджест', at: '2026-10-15T09:00:00.000Z', id: '1' },
+    { in: false, text: 'Спасибо, изучим и вернёмся', at: '2026-10-15T09:30:00.000Z', id: '2' },
+    { in: true, text: 'Получится ли вернуться с предложением до середины недели?', at: '2026-10-19T12:00:00.000Z', id: '3' }
+  ];
+  await handleIncoming(deps, ch, cfg, { id: 77, kind: 'text', text: 'Получится ли вернуться с предложением до середины недели?', messageId: '3' });
+  const p = sb.T.prospects[0];
+  check('прежняя переписка: бот не здоровается и не отвечает', sent.length === 0 && p.bot_mode === 'human');
+  check('прежняя переписка перенесена в «Диалоги» по порядку, текущее — последним', msgs(sb).length === 3
+    && msgs(sb)[0].meta.imported && msgs(sb)[0].text.startsWith('Добрый день') && msgs(sb)[1].author === 'менеджер в ВКонтакте'
+    && msgs(sb)[2].text.startsWith('Получится') && !msgs(sb)[2].meta.imported);
+  check('менеджеру — сигнал о сообщении', notes.at(-1).includes('Получится ли вернуться'));
+}
+
+// --- о проекте в работе пишут человеку, на «привет» хватит меню
+{
+  const { sb, deps, ch, sent, notes, cfg } = setup();
+  await handleIncoming(deps, ch, cfg, { id: 88, kind: 'text', text: 'Пришлите, пожалуйста, КП на ролик', messageId: '1' });
+  check('просят КП — без меню и ИИ, сразу менеджеру', sent.length === 1 && sent[0].text.includes('Передал менеджеру') && !sent[0].kb
+    && sb.T.prospects[0].bot_mode === 'human' && notes.at(-1).startsWith('📌'));
+  await handleIncoming(deps, ch, cfg, { id: 89, kind: 'text', text: 'Привет!', messageId: '1' });
+  check('на «привет» — только приветствие с меню', sent.length === 2 && sent[1].kb === MAIN_KB);
+  await handleIncoming(deps, ch, cfg, { id: 89, kind: 'text', text: 'Сколько стоит ролик?', messageId: '2' });
+  check('следующий вопрос — уже ответ ИИ', sent.length === 3 && sent[2].text.startsWith('Ролики'));
+}
+
 // --- разбор событий ВКонтакте
 const vkMsg = (m, type = 'message_new') => ({ type, group_id: 1, object: type === 'message_new' ? { message: m } : m });
 const t1 = parseVk(vkMsg({ id: 55, peer_id: 501, from_id: 501, text: ' Привет ' }));

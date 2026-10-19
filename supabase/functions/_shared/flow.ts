@@ -5,7 +5,7 @@
 // тестами без настоящих серверов.
 
 import {
-  briefStep, briefQuestions, portfolioReply, managerNote, buildReplyPrompt, cleanReply, budgetAmount, menuWord,
+  briefStep, briefQuestions, portfolioReply, managerNote, buildReplyPrompt, cleanReply, budgetAmount, menuWord, isGreeting, isDealTalk,
   DEFAULT_WELCOME, MAIN_KB, ACTION_KB, type BotState, type Keyboard, type Fact
 } from './bot.ts';
 
@@ -21,7 +21,10 @@ export type Channel = {
   // номер отправленного сообщения в канале или null, если не доставлено
   send: (id: number | string, text: string, kb?: Keyboard) => Promise<string | null>;
   profile?: (id: number | string) => Promise<{ name: string; link: string } | null>;
+  // прежняя переписка в канале — до того, как подключили бота
+  past?: (id: number | string) => Promise<PastMessage[]>;
 };
+export type PastMessage = { in: boolean; text: string; at: string; id: string };
 
 export type Deps = {
   sb: Sb;
@@ -46,11 +49,12 @@ export type Incoming = {
 
 export async function addMessage(sb: Sb, row: {
   prospect_id: string; channel: string; direction: 'in' | 'out'; text: string;
-  author?: string; kind?: string; meta?: Row; external_id?: string;
+  author?: string; kind?: string; meta?: Row; external_id?: string; created_at?: string;
 }) {
   const { error } = await sb.from('messages').insert({
     prospect_id: row.prospect_id, channel: row.channel, direction: row.direction, text: row.text.slice(0, 8000),
-    author: (row.author ?? '').slice(0, 120), kind: row.kind ?? 'text', meta: row.meta ?? {}, external_id: (row.external_id ?? '').slice(0, 120)
+    author: (row.author ?? '').slice(0, 120), kind: row.kind ?? 'text', meta: row.meta ?? {}, external_id: (row.external_id ?? '').slice(0, 120),
+    ...(row.created_at ? { created_at: row.created_at } : {})
   });
   if (error) console.error('addMessage:', error.message);
 }
@@ -84,10 +88,22 @@ async function findOrCreate(sb: Sb, ch: Channel, ev: Incoming): Promise<Row | nu
   const { data: found } = await sb.from('prospects').select('*').eq(ch.key, ev.id).maybeSingle();
   if (found) return found;
   const prof = ch.profile ? await ch.profile(ev.id).catch(() => null) : null;
+  // С человеком уже переписывались до бота — это живой разговор менеджера:
+  // бот не здоровается и не отвечает, а переносит переписку в «Диалоги».
+  const past = ch.past ? (await ch.past(ev.id).catch(() => [])).filter(m => m.id !== ev.messageId && m.text.trim()) : [];
   const { data: made, error } = await sb.from('prospects').insert({
     name: (prof?.name || ev.name || `${ch.name} ${ev.id}`).slice(0, 200), [ch.key]: ev.id, source: ch.source,
-    status: 'Ответили', socials: (prof?.link || ev.link || '').slice(0, 1000), note: '', bot_state: { mode: 'menu', aiRounds: 0 }
+    status: 'Ответили', socials: (prof?.link || ev.link || '').slice(0, 1000), note: past.length ? 'Переписка началась до подключения бота.' : '',
+    bot_state: { mode: 'menu', aiRounds: 0 }, bot_mode: past.length ? 'human' : 'bot'
   }).select().single();
+  if (!error && past.length) {
+    for (const m of [...past].sort((a, b) => a.at.localeCompare(b.at)).slice(-20)) {
+      await addMessage(sb, { prospect_id: made.id, channel: ch.name, direction: m.in ? 'in' : 'out', text: m.text,
+        author: m.in ? made.name : `менеджер в ${ch.name}`, external_id: m.id, created_at: m.at, meta: { imported: true } });
+    }
+    await sb.from('prospects').update({ unread: 0 }).eq('id', made.id);
+    made.bot_mode = 'human';
+  }
   if (!error) return made;
   // два сообщения подряд от нового человека — второе найдёт первое
   const { data: again } = await sb.from('prospects').select('*').eq(ch.key, ev.id).maybeSingle();
@@ -150,8 +166,17 @@ async function onMessage(d: Deps, ch: Channel, cfg: Row, p: Row, ev: Incoming) {
   if (word === 'm:brief') return startBrief(d, ch, cfg, p);
   if (word === 'm:manager') return askManager(d, ch, p);
 
+  // Пишут о проекте в работе — предложение, ТЗ, договор, оплата: отвечает человек.
+  if (isDealTalk(text)) {
+    await d.sb.from('prospects').update({ bot_mode: 'human' }).eq('id', p.id);
+    await say(d, ch, p, 'Спасибо! Передал менеджеру — он ответит в ближайшее время 🙌', undefined, 'system');
+    return d.notify(`📌 ${p.name} · ${ch.name}: ${text.slice(0, 300)}`);
+  }
+
   // Первое сообщение нового человека — сначала приветствие и меню.
   if (!before) await say(d, ch, p, welcome(cfg, p), MAIN_KB, 'system');
+  // На «привет» хватит меню — второе сообщение от ИИ тут лишнее.
+  if (!before && isGreeting(text)) return;
   // Картинку без подписи ИИ не разберёт — пусть посмотрит человек.
   if (ev.attachment) return d.notify(`📎 ${p.name} · ${ch.name}: ${text}`);
 

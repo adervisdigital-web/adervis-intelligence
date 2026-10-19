@@ -1960,6 +1960,12 @@ await page.click('[data-action=bftab][data-id=kp]');
 const kp = norm(await page.textContent('.kppreview'));
 check('КП: клиент, состав, цены вариантов, опции, этапы, условия', kp.includes('Химпром') && kp.includes('Заставка') && kp.includes('Базовый вариант')
   && kp.includes('Звуковое оформление') && kp.includes('Концепция') && kp.includes('Предоплата 50%') && kp.includes('2 круга правок'), kp.slice(0, 300));
+check('КП: условия самозанятых, обещания из анкеты, портфолио', kp.includes('без НДС') && kp.includes('Не попали в задачу — переделаем') && kp.includes('behance.net/adervisdigital'));
+await page.fill('#kpstyle', 'Направление 1: стекло и фирменный синий');
+await page.fill('#kprefs', 'Интро для «Лукойла» — https://adervis.ru/cases/lukoil-ai/\nhttp://небезопасно.рф');
+await page.waitForFunction(() => document.querySelector('.kppreview').textContent.includes('Как видим оформление'));
+check('КП: стиль словами и ссылки; не https — без ссылки', await page.$eval('.kppreview a[href="https://adervis.ru/cases/lukoil-ai/"]', a => a.textContent === 'adervis.ru/cases/lukoil-ai')
+  && !(await page.$('.kppreview a[href^="http://"]')));
 await page.screenshot({ path: path.join(OUT, 'intel-brief-kp.png'), fullPage: true });
 await page.fill('#kpfull', '210000');
 await page.waitForFunction(() => document.querySelector('.kppreview').textContent.replace(/\s/g, '').includes('210000₽'));
@@ -1986,6 +1992,20 @@ await page.click('[data-action=todayopen][data-id^="br:"]');
 await page.waitForSelector('.bftabs');
 check('из «На сегодня» — сразу в бриф', (await page.textContent('h1')) === 'Видеодайджест');
 await page.screenshot({ path: path.join(OUT, 'intel-brief.png') });
+// переписку связываем с заявкой — и вопросы по ТЗ уходят прямо в неё
+await nav('prospects');
+await page.click('tr[data-pr="tg-olga"]');
+await page.selectOption('#prlead', stB.briefs[0].lead_id);
+await page.click('#prf button.primary');
+await page.waitForFunction(id => window.__STATE__.prospects.find(p => p.id === 'tg-olga').lead_id === id, stB.briefs[0].lead_id);
+await nav('briefs');
+await page.click(`[data-brief="${stB.briefs[0].id}"]`);
+await page.click('[data-action=bftab][data-id=questions]');
+await page.click('[data-action=bfqchat]');
+await page.waitForSelector('#dlgtext');
+check('связанная переписка: вопросы встают в поле ответа клиенту', (await page.textContent('#crumb')) === 'Диалоги'
+  && (await page.inputValue('#dlgtext')).includes('1. Какой срок запуска?') && (await page.textContent('.dlgwho b')) === 'Ольга');
+await page.fill('#dlgtext', '');
 await nav('leads');
 await page.click(`[data-l="${stB.briefs[0].lead_id}"]`);
 check('в карточке заявки — ссылка на бриф и КП', (await page.textContent('#modal')).includes('Бриф и КП: Видеодайджест'));
