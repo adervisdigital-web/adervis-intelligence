@@ -2038,6 +2038,12 @@ stB = await state();
 const sentLead = stB.leads.find(l => l.id === stB.briefs[0].lead_id);
 check('КП отправлено: заявка в воронке «КП отправлено», напоминание через 2 дня', sentLead.status === 'КП отправлено' && sentLead.next_on === localDay(2) && stB.briefs[0].kp.sent_on === localDay());
 
+await page.click('[data-action=bfback]');
+await page.waitForSelector('.bfcard');
+check('список брифов: пульс, шаг цепочки, сумма КП', (await page.textContent('.bfpulse')).includes('Сумма КП в работе')
+  && (await page.textContent('.bfcard')).includes('шаг 5 из 6') && (await page.textContent('.bfcard .bfprice')).replace(/\s/g, '').includes('210000'));
+await page.screenshot({ path: path.join(OUT, 'intel-briefs-list.png') });
+await page.click(`[data-brief="${stB.briefs[0].id}"]`);
 await page.click('[data-action=bftab][data-id=talk]');
 check('диалог: восемь шагов, текущий подсвечен, цена из КП в тексте', (await page.$$('.bfstep')).length === 8 && (await page.$$('.bfstep.now')).length === 3
   && norm(await page.textContent('.bftalk')).includes('210 000 ₽'));
