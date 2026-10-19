@@ -179,6 +179,26 @@ check('служебная роль может пополнять базу зна
   (await fail('service_role', '', `insert into public.knowledge(id,title,body,category,source,access,status)
     values ('svc1','Через служебный ключ','Текст','Компания','Ручной ввод','Публичное','Подтверждено')`)) === null);
 
+// --- клиент ушёл в личную переписку
+await as('service_role', '', `insert into public.prospects(id, name, source, vk_peer_id) values ('pv1', 'Анастасия', 'ВКонтакте-бот', 901)`);
+await as('service_role', '', `insert into public.messages(prospect_id, channel, direction, text) values ('pv1', 'ВКонтакте', 'in', 'Давайте в ВК с личной страницы')`);
+const pvAt = (await as('authenticated', 'artem@adervis.ru', `select updated_at::text t from public.prospects where id='pv1'`)).rows[0].t;
+await as('service_role', '', `update public.prospects set elsewhere = 'ВК, личная страница' where id = 'pv1'`);
+check('«ушёл в личку» — не правка карточки', (await as('authenticated', 'artem@adervis.ru', `select updated_at::text t, elsewhere from public.prospects where id='pv1'`)).rows[0].t === pvAt);
+await as('service_role', '', `insert into public.messages(prospect_id, channel, direction, text) values ('pv1', 'ВКонтакте', 'out', 'Пишу вам в личку')`);
+check('своё сообщение отметку не снимает', (await as('authenticated', 'artem@adervis.ru', `select elsewhere from public.prospects where id='pv1'`)).rows[0].elsewhere === 'ВК, личная страница');
+await as('service_role', '', `insert into public.messages(prospect_id, channel, direction, text) values ('pv1', 'ВКонтакте', 'in', 'Я снова здесь')`);
+check('клиент снова написал в канал — отметка снята', (await as('authenticated', 'artem@adervis.ru', `select elsewhere from public.prospects where id='pv1'`)).rows[0].elsewhere === '');
+
+// --- утренняя сводка
+await as('service_role', '', `insert into public.digest_subscribers(chat_id, name) values (555, 'Артём')`);
+check('сводка: участник видит подписчиков и меняет час', (await fail('authenticated', 'artem@adervis.ru', `update public.digest_subscribers set hour = 8 where chat_id = 555`)) === null
+  && (await as('authenticated', 'artem@adervis.ru', `select hour from public.digest_subscribers`)).rows[0].hour === 8);
+check('сводка: подписать из приложения нельзя — только ботом', (await fail('authenticated', 'artem@adervis.ru', `insert into public.digest_subscribers(chat_id) values (1)`)) !== null);
+check('сводка: посторонний не видит подписчиков', (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.digest_subscribers')).rows[0].c === 0);
+check('сводка: секрет расписания создан и закрыт', (await as('service_role', '', `select length(value) n from public.channel_secrets where name = 'digest_secret'`)).rows[0].n === 64
+  && (await fail('authenticated', 'artem@adervis.ru', `select * from public.channel_secrets`)) !== null);
+
 // --- брифы и КП
 check('ставки студии заведены', (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.studio_rates`)).rows[0].c === 9);
 await as('authenticated', 'artem@adervis.ru', `insert into public.leads(id, name, source, direction, status) values ('lb1', 'Химпром', 'ВКонтакте', 'Студия', 'В работе')`);

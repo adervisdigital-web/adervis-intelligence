@@ -6,6 +6,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import {
   admin, secret, settings, tgApi, tgSend, addMessage, json, CORS, SUPABASE_URL, PUBLIC_KEY, vkApi, vkChannel, VK_V, type Sb
 } from '../_shared/outreach.ts';
+import { buildDigest, sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -32,6 +33,22 @@ Deno.serve(async (req) => {
         const mode = body.mode === 'bot' ? 'bot' : 'human';
         await sb.from('prospects').update({ bot_mode: mode }).eq('id', String(body.prospectId ?? ''));
         return json({ ok: true, mode });
+      }
+      // клиент ушёл в личную переписку — диалог больше не «ждёт ответа»
+      case 'elsewhere': {
+        const where = String(body.where ?? '').trim().slice(0, 60);
+        await sb.from('prospects').update({ elsewhere: where, ...(where ? { unread: 0 } : {}) }).eq('id', String(body.prospectId ?? ''));
+        return json({ ok: true, where });
+      }
+      case 'intel-connect': return json(await intelConnect(sb));
+      case 'digest-code': return json(await digestCode(sb));
+      case 'digest-now': {
+        const { data: subs } = await sb.from('digest_subscribers').select('chat_id');
+        if (!subs?.length) throw new Error('Пока никто не подписан на сводку');
+        const text = await buildDigest(sb);
+        let sent = 0;
+        for (const s of subs) if ((await sendDigest(Number(s.chat_id), text))?.ok) sent++;
+        return json({ ok: true, sent });
       }
       default: return json({ error: 'Неизвестное действие' }, 400);
     }
@@ -63,7 +80,9 @@ async function status(sb: Sb) {
     vk = { token: true, connected: mine?.status === 'ok', status: mine?.status ?? 'none', name: g?.name ?? '', screen: g?.screen_name ?? '',
       others: list.items.filter((x: any) => x !== mine).map((x: any) => hostOf(x.url)), error: list.error };
   }
-  return { ok: true, telegram, manager: !!cfg.manager_chat_id, vk, instagram: { token: has.has('ig_page_token') } };
+  const { data: subs } = await sb.from('digest_subscribers').select('chat_id,name,hour').order('created_at');
+  const intel = { token: !!INTEL_TOKEN, connected: has.has('intel_webhook_secret'), username: cfg.intel_bot_username || '', subscribers: subs ?? [] };
+  return { ok: true, telegram, manager: !!cfg.manager_chat_id, vk, instagram: { token: has.has('ig_page_token') }, intel };
 }
 
 // --------------------------------------------------------------- ВКонтакте
@@ -181,4 +200,30 @@ async function send(sb: Sb, prospectId: string, text: string, email: string) {
   const status = ['Найден', 'Изучили'].includes(p.status) ? 'Написали' : p.status;
   await sb.from('prospects').update({ unread: 0, bot_mode: 'human', status, attempt_count: (p.attempt_count ?? 0) + 1 }).eq('id', p.id);
   return { ok: true, channel };
+}
+
+// ------------------------------------------------- служебный бот и сводка
+// @adervis_intel_bot уже есть в проекте (им функция publish пишет в канал):
+// подписываем его на сообщения руководителей с новым секретом.
+async function intelConnect(sb: Sb) {
+  if (!INTEL_TOKEN) throw new Error('В проекте нет ключа служебного бота TELEGRAM_BOT_TOKEN');
+  const me = await tgApi(INTEL_TOKEN, 'getMe', {});
+  if (!me?.ok) throw new Error('Telegram не принял ключ служебного бота');
+  const hook = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+  await sb.from('channel_secrets').upsert({ name: 'intel_webhook_secret', value: hook });
+  const set = await tgApi(INTEL_TOKEN, 'setWebhook', { url: `${SUPABASE_URL}/functions/v1/intel-bot`, secret_token: hook, allowed_updates: ['message'] });
+  if (!set?.ok) throw new Error('Telegram не принял адрес служебного бота: ' + (set?.description ?? ''));
+  await tgApi(INTEL_TOKEN, 'setMyCommands', { commands: [
+    { command: 'today', description: 'Сводка «На сегодня»' }, { command: 'stop', description: 'Не присылать утреннюю сводку' }
+  ] });
+  await sb.from('outreach_settings').update({ intel_bot_username: me.result.username ?? '' }).eq('id', 'main');
+  return { ok: true, username: me.result.username };
+}
+
+async function digestCode(sb: Sb) {
+  const { data: hook } = await sb.from('channel_secrets').select('name').eq('name', 'intel_webhook_secret').maybeSingle();
+  const username = hook ? (await settings(sb)).intel_bot_username : (await intelConnect(sb)).username;
+  const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 900000 + 100000);
+  await sb.from('outreach_settings').update({ digest_code: code, digest_code_expires: new Date(Date.now() + 15 * 60_000).toISOString() }).eq('id', 'main');
+  return { ok: true, code, username };
 }

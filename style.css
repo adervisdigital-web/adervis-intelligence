@@ -1573,3 +1573,6 @@ dialog label.checkrow input{width:18px;height:18px;flex:none;margin:2px 0 0;acce
 .bfnext label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
 .bfnext .input{width:100%}
 @media(max-width:720px){.bfnext{grid-template-columns:1fr}}
+
+.dlgaway{font-size:11px;color:var(--muted);border:1px dashed var(--line);border-radius:99px;padding:0 6px;white-space:nowrap}
+.todaycard .linkbtn{display:inline-flex;gap:6px;align-items:center;min-height:40px}
