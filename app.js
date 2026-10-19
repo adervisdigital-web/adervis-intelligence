@@ -84,7 +84,7 @@ const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 // Эти поля ведёт сервер — бот и переписка. Приложение их показывает, но не
 // отправляет обратно: иначе сохранение карточки затёрло бы сообщение,
 // пришедшее, пока она была открыта.
-const SERVER_FIELDS = { prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction', 'elsewhere'] };
+const SERVER_FIELDS = { briefs: ['crm_id'], prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction', 'elsewhere'] };
 
 function toRow(table, o) {
   const row = {};
@@ -220,6 +220,7 @@ function createApi(cfg) {
     // Ключ бота уходит в базу и обратно в браузер не возвращается никогда.
     async setChannelSecret(name, value) { must(await sb.rpc('set_channel_secret', { p_name: name, p_value: value })); },
     channels: payload => callFn('channels', payload),
+    crm: payload => callFn('crm', payload),
     async saveDigestHour(chatId, hour) { must(await sb.from('digest_subscribers').update({ hour }).eq('chat_id', chatId)); },
     async dropDigestSub(chatId) { must(await sb.from('digest_subscribers').delete().eq('chat_id', chatId)); },
 
@@ -3283,10 +3284,13 @@ function fillScript(text, p) {
   const cta = db.outreach.cta || {};
   const fromBot = /бот$/i.test(p?.source || '');
   const vars = { rest: fromBot ? '' : p?.name || '', call: cta.call || 'Созвон на 5 минут', call_link: cta.call_link || '',
-    brief: cta.brief || 'Короткий бриф', brief_link: cta.brief_link || '', meeting: cta.meeting || 'Встреча' };
+    brief: cta.brief || 'Короткий бриф', brief_link: cta.brief_link || crmBriefLink('general'), meeting: cta.meeting || 'Встреча' };
   return String(text || '').replace(/\{(rest|call|call_link|brief|brief_link|meeting)\}/g,
     (m, k) => (vars[k] || '').trim() || (k === 'rest' ? 'вашего заведения' : m));
 }
+
+// Ссылка на бриф в ADERVIS CRM — клиент заполняет, CRM заводит карточку, Intelligence получает бриф.
+const crmBriefLink = (type = 'general') => db.outreach.crm_agency_id ? `https://app.adervis.ru/?brief=${encodeURIComponent(db.outreach.crm_agency_id)}&type=${type}` : '';
 
 const scriptsByStage = () => SCRIPT_STAGES.map((name, stage) => [name, stage,
   db.sales_scripts.filter(s => Number(s.stage) === stage).sort((a, b) => (a.sort ?? 100) - (b.sort ?? 100))]);
@@ -3722,7 +3726,8 @@ function renderBriefs() {
   const b = db.briefs.find(x => x.id === briefView.id);
   if (b) return renderBrief(b);
   const head = heading('Брифы и КП', 'Заявка с ТЗ — от разбора до подписанного КП: вопросы клиенту, смета, план, коммерческое предложение и что писать на каждом шаге.',
-    `<div class="headactions"><button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button>
+    `<div class="headactions"><button data-action="crm">${icon('link', 15)} ADERVIS CRM${db.outreach.crm_agency_id ? ' <b class="okdot" aria-label="подключена"></b>' : ''}</button>
+      <button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button>
       <button class="primary" data-action="bfnew">+ Бриф</button></div>`);
   const chain = `<ol class="bfchain">${BRIEF_STAGES.map((s, i) => `<li><b>${i + 1}</b>${s}</li>`).join('')}</ol>`;
   const list = [...db.briefs].sort((a, c) => (a.stage === 'Сделка' || a.stage === 'Отказ') - (c.stage === 'Сделка' || c.stage === 'Отказ')
@@ -3753,7 +3758,7 @@ function briefCard(x) {
   return `<article class="card click bfcard tone-${BRIEF_TONE[x.stage] || 'gold'}" tabindex="0" role="button" data-brief="${E(x.id)}">
     <button class="cardx" data-action="bfdel" data-id="${E(x.id)}" aria-label="Удалить бриф «${E(x.title)}»" title="Удалить">${icon('delete', 15)}</button>
     <div class="lhead"><span class="lavatar">${E(initials(x.client || x.title))}</span>
-      <div><small class="muted">${E(x.client || 'Клиент не указан')}</small><h2>${E(x.title)}</h2></div></div>
+      <div><small class="muted">${E(x.client || 'Клиент не указан')}${x.crm_id ? ' · <span class="crmtag">из CRM</span>' : ''}</small><h2>${E(x.title)}</h2></div></div>
     <div class="bfsteps" aria-label="Шаг ${idx + 1} из ${BRIEF_STAGES.length}: ${E(x.stage)}">${BRIEF_STAGES.map((st, i) =>
       `<i class="${x.stage === 'Отказ' ? 'off' : i < idx ? 'done' : i === idx ? 'now' : ''}" title="${E(st)}"></i>`).join('')}</div>
     <p class="bfstage"><b>${E(x.stage)}</b>${x.stage === 'Отказ' ? '' : `<small class="muted">шаг ${idx + 1} из ${BRIEF_STAGES.length}</small>`}</p>
@@ -3771,7 +3776,7 @@ function renderBrief(b) {
   const lead = briefLead(b), chat = briefChat(b);
   const head = `<div class="bfhead">
     <button class="linkbtn" data-action="bfback">${icon('back', 15)} Все брифы</button>
-    <div class="head" style="margin:8px 0 12px"><div><div class="eyebrow">${E(b.client || 'Клиент не указан')}</div><h1>${E(b.title)}</h1>
+    <div class="head" style="margin:8px 0 12px"><div><div class="eyebrow">${E(b.client || 'Клиент не указан')}${b.crm_id ? ' <span class="crmtag">из CRM</span>' : ''}</div><h1>${E(b.title)}</h1>
       <p class="muted">${lead ? `Заявка: <button class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button>` : 'Без заявки в воронке'}
       ${chat ? ` · <button class="linkbtn" data-action="bfchat">${icon('chat', 14)} переписка</button>` : ''}
       · <small id="bfsaved" class="muted" aria-live="polite"></small></p></div>
@@ -4266,6 +4271,72 @@ async function briefAction(btn) {
     case 'kpsent': await kpSent(b); break;
     case 'bftalkcopy': await copyText(talkSteps(b)[i][3]); break;
     case 'bftalkchat': toChat(b, talkSteps(b)[i][3]); break;
+  }
+}
+
+// ---- ADERVIS CRM: вход студии, ссылки на брифы, перенос брифов, шаблоны
+let crmInfo = null;
+async function crmModal() {
+  modal(`<h2>ADERVIS CRM</h2><div id="crmbody"><p class="muted">Проверяю связь с CRM…</p></div>`);
+  try { crmInfo = await api.crm({ action: 'status' }); } catch (err) { crmInfo = { connected: false, error: err.message }; }
+  paintCrm();
+}
+
+function paintCrm(note = '') {
+  const box = $('#crmbody');
+  if (!box) return;
+  const c = crmInfo || {};
+  if (!c.connected) {
+    box.innerHTML = `<p>Клиент заполняет бриф по ссылке CRM — CRM заводит карточку клиента, а сюда приходит заявка и бриф на разбор.
+      Подключите вход в ADERVIS CRM — тот же, которым вы входите на app.adervis.ru.</p>
+      ${c.error ? `<div class="notice error">${E(c.error)}</div>` : ''}
+      <form id="crmf"><div class="formgrid">
+        <div><label for="crmemail">Почта в CRM</label><input id="crmemail" type="email" autocomplete="off" required maxlength="120"></div>
+        <div><label for="crmpass">Пароль в CRM</label><input id="crmpass" type="text" class="secretfield" autocomplete="off" data-lpignore="true" data-1p-ignore required maxlength="200"></div>
+      </div>
+      <p class="muted">Пароль хранится на сервере Intelligence и в браузер не возвращается. Им читаются только брифы вашей студии; данные и код CRM не меняются.</p>
+      <p class="muted" id="crmerr" role="alert"></p>
+      <div class="formactions"><button class="primary">Подключить CRM</button></div></form>`;
+    $('#crmf').onsubmit = async e => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button.primary');
+      btn.disabled = true; $('#crmerr').textContent = 'Проверяю вход в CRM…';
+      try {
+        const r = await api.crm({ action: 'connect', email: $('#crmemail').value, password: $('#crmpass').value });
+        crmInfo = r;
+        db.outreach.crm_agency_id = r.agency;
+        await reload(); render();
+        paintCrm(r.imported ? `Перенесено новых брифов: ${r.imported}` : 'CRM подключена — новых брифов пока нет');
+      } catch (err) { $('#crmerr').textContent = 'Не подключилось: ' + (err.message || 'ошибка сервера'); btn.disabled = false; }
+    };
+    return;
+  }
+  box.innerHTML = `${note ? `<div class="notice">${E(note)}</div>` : ''}${c.error ? `<div class="notice error">${E(c.error)}</div>` : ''}
+    <div class="crmstat"><span>${icon('check', 15)} Подключена: <b>${E(c.login)}</b></span>
+      <span class="muted">Брифов в CRM: ${c.counts?.total ?? 0}, новых: ${c.counts?.fresh ?? 0}</span>
+      <span class="muted">Последняя проверка: ${c.lastSync ? E(ago(c.lastSync)) : 'ещё не было'} · новые брифы подтягиваются сами каждые 30 минут</span></div>
+    <div class="formactions"><button class="primary" data-action="crmsync">${icon('refresh', 15)} Подтянуть брифы сейчас</button></div>
+    <h3>Ссылки на брифы — для клиентов</h3>
+    <ul class="crmlinks">${(c.links || []).map(l => `<li><b>${E(l.label)}</b><span class="muted">${E(l.url.replace('https://', ''))}</span>
+      <button class="chip" data-action="crmcopy" data-id="${E(l.url)}">${icon('copy', 14)} Скопировать</button></li>`).join('')}</ul>
+    <h3>Брифы ADERVIS для CRM</h3>
+    <p class="muted">Брифы под услуги студии — в дополнение к встроенным: ${(c.adervisTemplates || []).map(t => `${E(t.label)}${t.installed ? ' ✓' : ''}`).join(', ')}.
+      Перед записью закройте вкладки CRM: открытая вкладка может затереть новые брифы своими старыми настройками. После записи откройте CRM заново.</p>
+    <div class="formactions"><button data-action="crmtemplates">${icon('upload', 15)} Записать брифы ADERVIS в CRM</button>
+      <button class="danger" data-action="crmoff">Отключить CRM</button></div>`;
+}
+
+async function crmAction(btn, action) {
+  if (action === 'disconnect' && !confirm('Отключить CRM? Брифы перестанут приходить сами. Уже перенесённые останутся.')) return;
+  btn.disabled = true;
+  try {
+    const r = await api.crm({ action });
+    if (action === 'sync') { if (r.imported) { await reload(); render(); } crmInfo = await api.crm({ action: 'status' }); paintCrm(r.imported ? `Перенесено новых брифов: ${r.imported}` : 'Новых брифов нет'); }
+    if (action === 'templates') { crmInfo = await api.crm({ action: 'status' }); paintCrm(`Записано в CRM: ${r.installed.join(', ')}. Откройте CRM заново — брифы появятся в разделе «Брифы».`); }
+    if (action === 'disconnect') { db.outreach.crm_agency_id = ''; crmInfo = { connected: false }; render(); paintCrm(); }
+  } catch (err) {
+    toast('Не получилось: ' + (err.message || 'ошибка сервера'), 7000);
+    btn.disabled = false;
   }
 }
 
@@ -6523,7 +6594,7 @@ const LEAD_STATUS = ['Новое', 'В работе', 'КП отправлено
 // Платные каналы — те же названия, что в «Рекламе»: по ним считается цена
 // заявки. Telegram без приписки — свой канал, «Telegram Ads» — реклама.
 const LEAD_SOURCES = ['Сайт', 'Рекомендация', 'Повторный клиент', 'ВКонтакте', 'Яндекс Директ',
-  'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Telegram', 'Behance', 'Поиск клиентов', 'Личный контакт',
+  'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Telegram', 'Behance', 'Поиск клиентов', 'Бриф CRM', 'Личный контакт',
   'Другое', 'Не знаем'];
 
 function leadStats() {
@@ -7251,6 +7322,11 @@ document.addEventListener('click', async e => {
     case 'dlgfilter': dialog.filter = b.dataset.id; render(); break;
     case 'bfnew': editBrief(); break;
     case 'bfrates': ratesModal(); break;
+    case 'crm': crmModal(); break;
+    case 'crmsync': crmAction(b, 'sync'); break;
+    case 'crmtemplates': crmAction(b, 'templates'); break;
+    case 'crmoff': crmAction(b, 'disconnect'); break;
+    case 'crmcopy': copyText(b.dataset.id, 'Ссылка на бриф скопирована'); break;
     case 'bfback': flushPendingBrief(); briefView.id = ''; render(); break;
     case 'openbrief': $('#modal').close(); openBrief(b.dataset.id); break;
     case 'newbrieffor': {
