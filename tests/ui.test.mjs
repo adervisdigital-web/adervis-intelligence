@@ -878,8 +878,17 @@ check('в меню иконки в обычном весе, не залитые'
   await page.$$eval('#nav button svg', ss => ss.every(s => s.dataset.weight === 'regular')));
 check('в панели сверху тоже иконки',
   (await page.$$eval('#menu svg, #search svg, #theme svg, #refresh svg, #create svg', s => s.length)) === 5);
-check('активный раздел подсвечен золотым',
-  (await page.$eval('#nav button.active i', e => getComputedStyle(e).color)) === 'rgb(246, 189, 58)');
+check('у раздела «Брендбук» плитка — голубая, цвет группы «Компания»', (await page.$eval('#nav button.active i', e => getComputedStyle(e).backgroundColor)) === 'rgb(56, 189, 248)');
+await nav('home');
+check('активный раздел подсвечен цветом своей группы (главная — золото)',
+  (await page.$eval('#nav button.active i', e => getComputedStyle(e).backgroundColor)) === 'rgb(246, 189, 58)');
+check('у групп меню — свои цвета из брендбука',
+  await page.$eval('.navsection[data-group="Реклама"] .navtile', e => getComputedStyle(e).color) === 'rgb(239, 68, 68)'
+  && await page.$eval('.navsection[data-group="Контент"] .navtile', e => getComputedStyle(e).color) === 'rgb(139, 92, 246)');
+await page.click('#rail');
+check('меню сворачивается в полосу иконок и помнит это', await page.evaluate(() => document.body.classList.contains('rail')
+  && document.querySelector('.sidebar').getBoundingClientRect().width < 90 && localStorage.getItem('intel.nav.rail') === '1'));
+await page.click('#rail');
 
 // --- 1б. нейроцепочка
 await nav('chain');

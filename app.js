@@ -13,9 +13,11 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 let toastTimer;
 function toast(text, ms = 3500) {
-  $('#alerts').textContent = text;
+  const box = $('#alerts');
+  box.innerHTML = `<span>${E(text)}</span><button class="toastx" aria-label="Закрыть уведомление">${icon('close', 14)}</button>`;
+  box.querySelector('.toastx').onclick = () => { box.innerHTML = ''; };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => ($('#alerts').textContent = ''), ms);
+  toastTimer = setTimeout(() => (box.innerHTML = ''), ms);
 }
 
 // Иконки — один набор в фирменной геометрии. По брендбуку: только SVG внутри
@@ -320,6 +322,11 @@ const NAV = [
   ['Компания', ['knowledge', 'cases', 'products', 'competitors', 'brand']],
   ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
 ];
+// У каждой группы меню — свой цвет из брендбука (цвета направлений): по
+// нему узнаёшь, где находишься, — в меню, в шапке раздела, на телефоне.
+const GROUP_TONE = { '': 'gold', 'Продажи': 'gold', 'Реклама': 'red', 'Контент': 'violet', 'Аналитика': 'green', 'Компания': 'sky', 'Система': 'gray' };
+const groupOf = id => NAV.find(([, ids]) => ids.includes(id))?.[0] ?? '';
+const toneOf = id => GROUP_TONE[groupOf(id)] || 'gold';
 // В меню пункт короче заголовка раздела: группа уже говорит, о чём речь.
 const NAV_LABEL = { ads: 'Кампании', assistant: 'ИИ-помощник', products: 'Услуги и продукты', tasks: 'Задачи' };
 // На телефоне — нижняя панель: четыре главных раздела и «Ещё». Отвечать
@@ -391,7 +398,9 @@ const source = s => /^https?:\/\//.test(s)
   : `<small>${E(s)}</small>`;
 
 function heading(title, desc, action = '') {
-  return `<div class="head"><div><div class="eyebrow">ADERVIS DIGITAL</div><h1>${title}</h1><p class="muted">${desc}</p></div>${action}</div>`;
+  const grp = groupOf(page);
+  return `<div class="head pagehead tone-${toneOf(page)}"><div><span class="pagegroup">${icon(page, 15)}${E(grp || (page === 'home' ? 'Главное' : 'ADERVIS'))}</span>
+    <h1>${title}</h1><p class="muted">${desc}</p></div>${action}</div>`;
 }
 
 function kc(k) {
@@ -2601,13 +2610,13 @@ function renderProspects() {
           aria-pressed="${prospectFilter.status === s}">${E(s)} <b>${n}</b></button>`).join('')}
       </div></div>
     <div class="card tablewrap"><table class="table">
-      <thead><tr><th>Компания</th><th>Город</th><th>Контакты</th><th>Статус</th><th>Обновлено</th></tr></thead>
+      <thead><tr><th>Компания</th><th>Город</th><th>Контакты</th><th>Статус</th><th>Обновлено</th><th class="rowacts"><span class="offscreen">Действия</span></th></tr></thead>
       <tbody>${rows.map(p => `<tr class="clickrow" tabindex="0" role="button" data-pr="${E(p.id)}">
         <td><b>${E(p.name)}</b>${p.category ? `<br><small class="muted">${E(p.category)}</small>` : ''}</td>
         <td>${E(p.city)}</td>
         <td class="contacticons">${[[p.phone, 'phone', 'телефон'], [p.email, 'mail', 'почта'], [p.website, 'website', 'сайт'], [p.socials, 'social', 'соцсети']]
           .map(([v, ic, t]) => v ? `<span title="${t}" aria-label="${t}">${icon(ic, 15)}</span>` : '').join('') || '<small class="muted">нет</small>'}</td>
-        <td>${tag(p.status)}</td><td><small>${ago(p._at)}</small></td></tr>`).join('')}</tbody></table></div>
+        <td>${tag(p.status)}</td><td><small>${ago(p._at)}</small></td>${rowActs('delprospect', p.id, p.name)}</tr>`).join('')}</tbody></table></div>
     ${rows.length ? '' : '<div class="card empty">Под отбор ничего не подошло.</div>'}`
     : `<div class="card empty"><h2>Список пуст</h2><p>Найдите организации по виду бизнеса и городу или добавьте компанию вручную.
       Лучше всего работают те, кому нужен визуал прямо сейчас: открылись недавно, запускают новый продукт, выходят на маркетплейсы.</p></div>`;
@@ -3638,6 +3647,7 @@ function renderBriefs() {
   return head + chain + (list.length ? `<div class="grid three">${list.map(x => {
     const t = briefTotals(x, 'full'), late = x.next_on && x.next_on < today() && !['Сделка', 'Отказ'].includes(x.stage);
     return `<article class="card click bfcard" tabindex="0" role="button" data-brief="${E(x.id)}">
+      <button class="cardx" data-action="bfdel" data-id="${E(x.id)}" aria-label="Удалить бриф «${E(x.title)}»" title="Удалить">${icon('delete', 15)}</button>
       <div class="eyebrow">${E(x.client || 'Клиент не указан')}</div><h2>${E(x.title)}</h2>
       <div class="bfdots" aria-label="Шаг: ${E(x.stage)}">${BRIEF_STAGES.map(s => `<i class="${BRIEF_STAGES.indexOf(s) <= BRIEF_STAGES.indexOf(x.stage) ? 'on' : ''}"></i>`).join('')}</div>
       <p>${tag(x.stage, x.stage === 'Сделка' ? 'good' : x.stage === 'Отказ' ? 'bad' : 'work')}${t.count ? ` <b>${rub(roundUp(t.min, 1000))} – ${rub(roundUp(t.max, 1000))}</b>` : ''}</p>
@@ -5934,6 +5944,7 @@ function render() {
 
   const keep = page === 'dialogs' ? dialogSnapshot() : null;
   $('#view').innerHTML = s;
+  decorateSearch();
   if (keep) wireDialogs(keep);
   const bff = $('#bffile');
   if (bff) bff.onchange = async e => {
@@ -6106,7 +6117,33 @@ function changePassword() {
 
 function modal(html) {
   $('#modal').innerHTML = `<button class="close iconbtn" data-action="close" aria-label="Закрыть">${icon('close', 18)}</button>` + html;
+  // у каждой кнопки удаления — корзина: опасное действие видно сразу
+  $('#modal').querySelectorAll('button.danger').forEach(b => { if (!b.querySelector('svg')) b.insertAdjacentHTML('afterbegin', icon('delete', 15)); });
   if (!$('#modal').open) $('#modal').showModal();
+}
+
+// Действия в конце строки таблицы: корзина появляется при наведении,
+// на телефоне видна всегда. Клик по строке по-прежнему открывает карточку.
+const rowActs = (action, id, name) => `<td class="rowacts"><button class="rowact" data-action="${action}" data-id="${E(id)}"
+  aria-label="Удалить «${E(name)}»" title="Удалить">${icon('delete', 16)}</button></td>`;
+
+// Поле поиска — с лупой и крестиком очистки.
+function decorateSearch() {
+  for (const id of ['prq', 'leadq', 'dlgq', 'filter', 'decq']) {
+    const el = document.getElementById(id);
+    if (!el || el.parentElement.classList.contains('searchwrap')) continue;
+    const wrap = document.createElement('span');
+    wrap.className = 'searchwrap';
+    el.replaceWith(wrap);
+    wrap.innerHTML = icon('search', 16);
+    wrap.append(el);
+    const x = document.createElement('button');
+    x.type = 'button'; x.className = 'searchx'; x.setAttribute('aria-label', 'Очистить поиск'); x.innerHTML = icon('close', 14);
+    x.hidden = !el.value;
+    x.onclick = () => { el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); document.getElementById(id)?.focus(); };
+    el.addEventListener('input', () => { x.hidden = !el.value; });
+    wrap.append(x);
+  }
 }
 
 const opts = (list, v) => list.map(x => `<option ${x === v ? 'selected' : ''}>${E(x)}</option>`).join('');
@@ -6434,11 +6471,11 @@ function renderLeads() {
   const list = filters + `<div class="head"><h2>Все обращения</h2>
       <small class="muted">${rows.length === db.leads.length ? 'свежие сверху' : `показано ${rows.length} из ${db.leads.length}`}</small>${views}</div>`
     + (leadView === 'board' ? leadBoard(rows) : `<div class="card tablewrap"><table class="table">
-      <thead><tr><th>Когда</th><th>Кто</th><th>Откуда</th><th>Направление</th><th>Чего хотел</th><th>Сумма</th><th>Статус</th></tr></thead>
+      <thead><tr><th>Когда</th><th>Кто</th><th>Откуда</th><th>Направление</th><th>Чего хотел</th><th>Сумма</th><th>Статус</th><th class="rowacts"><span class="offscreen">Действия</span></th></tr></thead>
       <tbody>${rows.map(l => `<tr class="clickrow" tabindex="0" role="button" data-l="${E(l.id)}">
         <td class="date">${E(l.came_on)}</td><td><b>${E(l.name)}</b></td><td>${E(l.source)}</td>
         <td>${tag(l.direction)}</td><td>${E((l.request || '').slice(0, 60))}${(l.request || '').length > 60 ? '…' : ''}</td>
-        <td>${l.amount ? num(l.amount) : '—'}</td><td>${tag(l.status)}</td></tr>`).join('')}
+        <td>${l.amount ? num(l.amount) : '—'}</td><td>${tag(l.status)}</td>${rowActs('dellead', l.id, l.name)}</tr>`).join('')}
       </tbody></table></div>`)
     + (rows.length ? '' : '<div class="card empty">Под отбор ничего не подошло. Снимите фильтр или измените запрос.</div>');
 
@@ -7362,13 +7399,29 @@ $('#gateform').onsubmit = async e => {
   }
 };
 
-const navItem = id => `<button data-page="${id}"><i>${icon(id)}</i><span>${NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`;
+const navItem = id => `<button data-page="${id}" title="${E(NAV_LABEL[id] || SECTION_TITLE[id])}"><i class="navtile">${icon(id, 18)}</i><span>${NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`;
 $('#nav').innerHTML = NAV.map(([group, ids]) => group
-  ? `<div class="navsection" data-group="${group}">
-      <button class="navgroup" data-toggle="${group}" aria-expanded="true"><span>${group}</span><b class="navbadge" hidden></b>${icon('expand', 14)}</button>
+  ? `<div class="navsection tone-${GROUP_TONE[group]}" data-group="${group}">
+      <button class="navgroup" data-toggle="${group}" aria-expanded="true"><em class="navdot"></em><span>${group}</span><b class="navbadge" hidden></b>${icon('expand', 14)}</button>
       <div class="navitems">${ids.map(navItem).join('')}</div></div>`
-  : `<div class="navsection solo">${ids.map(navItem).join('')}</div>`).join('');
-$('#tabbar').innerHTML = TABBAR.map(id => `<button data-page="${id}"><i>${icon(id, 20)}</i><span>${TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('')
+  : `<div class="navsection solo tone-gold">${ids.map(navItem).join('')}</div>`).join('');
+// Свёрнутое меню — полоса иконок; помнится на устройстве.
+const setRail = on => {
+  document.body.classList.toggle('rail', on);
+  $('#rail').setAttribute('aria-label', on ? 'Развернуть меню' : 'Свернуть меню');
+  $('#rail').title = on ? 'Развернуть меню' : 'Свернуть меню';
+  try { localStorage.setItem('intel.nav.rail', on ? '1' : '0'); } catch (e) { /* без памяти */ }
+};
+$('#rail').innerHTML = icon('back', 16);
+$('#rail').onclick = () => setRail(!document.body.classList.contains('rail'));
+try { if (localStorage.getItem('intel.nav.rail') === '1') setRail(true); } catch (e) { /* по умолчанию развёрнуто */ }
+$('#navsearch').innerHTML = `${icon('search', 16)}<span>Найти</span><kbd>Ctrl K</kbd>`;
+$('#navsearch').onclick = () => search();
+$('#sbtheme').innerHTML = icon('theme', 17);
+$('#sbtheme').onclick = () => $('#theme').click();
+$('#sbsettings').innerHTML = icon('settings', 17);
+$('#sbout').innerHTML = icon('logout', 17);
+$('#tabbar').innerHTML = TABBAR.map(id => `<button class="tone-${toneOf(id)}" data-page="${id}"><i>${icon(id, 20)}</i><span>${TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('')
   + `<button id="tabmore" aria-label="Все разделы"><i>${icon('menu', 20)}</i><span>Ещё</span></button>`;
 $('#tabmore').onclick = () => document.body.classList.toggle('menu');
 $('#nav').addEventListener('click', e => {

@@ -1576,3 +1576,104 @@ dialog label.checkrow input{width:18px;height:18px;flex:none;margin:2px 0 0;acce
 
 .dlgaway{font-size:11px;color:var(--muted);border:1px dashed var(--line);border-radius:99px;padding:0 6px;white-space:nowrap}
 .todaycard .linkbtn{display:inline-flex;gap:6px;align-items:center;min-height:40px}
+
+/* ==========================================================================
+   НАВИГАЦИЯ 2.0 — «пульт студии»
+   У каждой группы свой цвет из брендбука (цвета направлений): золото —
+   продажи, красный — реклама, фиолетовый — контент, зелёный — аналитика,
+   голубой — компания, серый — система. Цвет живёт в плитке иконки,
+   подсветке активного пункта и в метке группы над заголовком раздела.
+   Меню сворачивается в полосу иконок; профиль внизу — с кнопками-иконками.
+   ========================================================================== */
+:root{--tone-gold:#f6bd3a;--tone-red:#ef4444;--tone-violet:#8b5cf6;--tone-green:#22c55e;--tone-sky:#38bdf8;--tone-gray:#9ca3af}
+.tone-gold{--acc:var(--tone-gold)}.tone-red{--acc:var(--tone-red)}.tone-violet{--acc:var(--tone-violet)}
+.tone-green{--acc:var(--tone-green)}.tone-sky{--acc:var(--tone-sky)}.tone-gray{--acc:var(--tone-gray)}
+
+.sidebar{width:268px;padding:16px 12px 14px;gap:10px;background:#0e0e0f;
+  background-image:radial-gradient(120% 40% at 0% 0%,rgba(246,189,58,.08),transparent 60%)}
+html:not([data-theme=dark]) .sidebar{background-color:#121213}
+.sidebar .brand{padding:2px 4px 6px;gap:10px}
+.sidebar .brand>div:not(.brandmark){flex:1;min-width:0}
+.railbtn{width:30px;height:30px;padding:0;display:grid;place-items:center;border-radius:9px;background:transparent;border:1px solid #2a2a2c;color:#8f8f94;transition:transform .2s}
+.railbtn:hover{color:#fff;border-color:#3a3a3e;background:#1b1b1d}
+.navsearch{display:flex;align-items:center;gap:9px;width:100%;padding:9px 11px;border-radius:11px;background:#18181a;border:1px solid #262628;color:#8f8f94;font-size:13px;text-align:left}
+.navsearch span{flex:1}
+.navsearch kbd{font:600 10px/1 var(--font-ui);color:#77777c;border:1px solid #2f2f32;border-radius:6px;padding:3px 5px}
+.navsearch:hover{color:#e8e8ea;border-color:#3a3a3e}
+
+.nav{gap:2px;padding-right:2px}
+.navsection{gap:1px}
+.navsection + .navsection{margin-top:4px;padding-top:6px;border-top:1px solid #1d1d20}
+.nav .navgroup{text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;color:#8a8a90;padding:8px 10px 6px;gap:8px}
+.nav .navgroup .navdot{width:7px;height:7px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 18%,transparent);flex:none}
+.nav button[data-page]{position:relative;padding:5px 8px;gap:10px;border-radius:11px;color:#c4c4c9;border:0}
+.nav button[data-page] .navtile{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:9px;
+  background:color-mix(in srgb,var(--acc) 13%,transparent);color:var(--acc)}
+.nav button[data-page]:hover{background:#19191b;color:#fff}
+.nav button[data-page]:hover .navtile{background:color-mix(in srgb,var(--acc) 22%,transparent)}
+.nav button[data-page].active{color:#fff;box-shadow:none;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--acc) 22%,transparent),color-mix(in srgb,var(--acc) 4%,transparent) 85%)}
+.nav button[data-page].active::before{content:'';position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--acc)}
+.nav button[data-page].active .navtile{background:var(--acc);color:#141414}
+.nav button[data-page] .navbadge{background:color-mix(in srgb,var(--acc) 26%,#1b1b1d);color:#fff}
+.nav button[data-page] .navbadge.late{background:#d64545}
+
+.sidebar .bottom{border-top:1px solid #1d1d20;padding:12px 4px 0;display:grid;gap:10px}
+.sidebar .bottom .user{margin:0;gap:10px;min-width:0}
+.sidebar .bottom .who{display:grid;min-width:0}
+.sidebar .bottom .who b,.sidebar .bottom .who small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.useracts{display:flex;gap:6px}
+.useracts .sbact{flex:1;height:36px;padding:0;display:grid;place-items:center;border-radius:10px;background:#18181a;border:1px solid #262628;color:#a3a3a8;width:auto}
+.useracts .sbact:hover{color:#fff;border-color:#3a3a3e;background:#1f1f22}
+.useracts .sbact.active{color:var(--gold);border-color:color-mix(in srgb,var(--gold) 40%,#262628)}
+.useracts .sbact.out:hover{color:#ff8a8a;border-color:#5a2a2a;background:#2a1414}
+
+/* свёрнутое меню — полоса иконок (только на компьютере) */
+@media(min-width:721px){
+  body.rail .sidebar{width:76px;padding-left:10px;padding-right:10px}
+  body.rail .sidebar .brand{flex-direction:column;padding:2px 0 6px}
+  body.rail .sidebar .brand>div:not(.brandmark),body.rail .navsearch span,body.rail .navsearch kbd,
+  body.rail .nav button[data-page] span,body.rail .nav .navgroup span,body.rail .nav .navgroup svg,
+  body.rail .nav .navgroup .navbadge,body.rail .sidebar .bottom .who{display:none}
+  body.rail .railbtn{transform:rotate(180deg)}
+  body.rail .navsearch{justify-content:center;padding:9px 0}
+  body.rail .nav .navgroup{justify-content:center;padding:8px 0 4px}
+  body.rail .nav button[data-page]{justify-content:center;padding:5px 0}
+  body.rail .nav button[data-page] .navbadge{position:absolute;top:0;right:2px;min-width:17px;height:17px;font-size:10px;padding:0 4px}
+  body.rail .nav button[data-page].active::before{left:-10px}
+  body.rail .sidebar .bottom .user{justify-content:center}
+  body.rail .useracts{flex-direction:column}
+  body.rail .main{margin-left:76px;width:calc(100% - 76px)}
+}
+@media(min-width:1680px){body.rail .main{margin-left:max(76px,calc((100vw - 1360px) / 2))}}
+@media(min-width:721px) and (max-width:1050px){.sidebar{width:236px}.main{margin-left:236px;width:calc(100% - 236px)}}
+
+/* метка группы над заголовком раздела — вместо одинакового «ADERVIS DIGITAL» */
+.pagehead .pagegroup{display:inline-flex;align-items:center;gap:6px;padding:4px 11px 4px 7px;margin-bottom:10px;border-radius:99px;
+  font-size:12px;font-weight:600;background:color-mix(in srgb,var(--acc) 14%,transparent);color:color-mix(in srgb,var(--acc) 72%,var(--ink))}
+html[data-theme=dark] .pagehead .pagegroup{color:var(--acc)}
+
+/* кнопки-иконки: корзина в строке, на карточке, крестик в поиске и уведомлении */
+.rowacts{width:46px;text-align:right;padding-right:6px !important}
+.rowact,.cardx{width:34px;height:34px;padding:0;display:inline-grid;place-items:center;border-radius:9px;background:transparent;border:1px solid transparent;color:var(--muted);opacity:0;transition:opacity .12s,color .12s,background .12s}
+tr:hover .rowact,tr:focus-within .rowact,.rowact:focus-visible,.bfcard:hover .cardx,.bfcard:focus-within .cardx,.cardx:focus-visible{opacity:1}
+.rowact:hover,.cardx:hover{color:#ef4444;background:color-mix(in srgb,#ef4444 12%,transparent);border-color:color-mix(in srgb,#ef4444 30%,transparent)}
+@media(hover:none){.rowact,.cardx{opacity:1}}
+.bfcard{position:relative}
+.cardx{position:absolute;top:12px;right:12px}
+.searchwrap{position:relative;display:flex;align-items:center;flex:1;min-width:0}
+.searchwrap > svg{position:absolute;left:12px;color:var(--muted);pointer-events:none}
+.searchwrap > .input{width:100%;padding-left:38px;padding-right:38px}
+.searchx{position:absolute;right:5px;width:30px;height:30px;padding:0;display:grid;place-items:center;border-radius:8px;border:0;background:transparent;color:var(--muted)}
+.searchx:hover{color:var(--ink);background:var(--bg)}
+.searchx[hidden]{display:none}
+#alerts:not(:empty){display:flex;align-items:center;gap:10px;padding-right:8px}
+.toastx{width:28px;height:28px;padding:0;display:grid;place-items:center;border-radius:8px;border:0;background:transparent;color:inherit;opacity:.65}
+.toastx:hover{opacity:1;background:rgba(127,127,127,.18)}
+button.danger{display:inline-flex;align-items:center;gap:7px}
+@media(max-width:720px){.tabbar button.active i{color:var(--acc)}}
+.nav .navgroup .navdot{font-style:normal}
+.rowact,.cardx{width:36px;height:36px}
+@media(max-width:720px){.rowacts{display:none}}
+@media(min-width:721px){#menu{display:none}
+  body.rail .useracts .sbact{flex:none;width:100%;height:36px}}
