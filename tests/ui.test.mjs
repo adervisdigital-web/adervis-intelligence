@@ -1730,6 +1730,15 @@ check('у анкеты в меню — главные второй анкеты'
 await page.fill('.sq[data-q="2-1.3"] .sqfree', 'Артём — дизайнер, Александр — оператор');
 await page.waitForFunction(() => window.__STATE__.survey_answers.some(a => a.id === '2-1.3' && a.answer.free));
 check('ответ второй анкеты сохраняется под своим номером', true);
+// вторая закрыта — третья: цены, портфолио и продажи
+await page.evaluate(() => {
+  for (const b of window.ADERVIS_SURVEY_2) for (const q of b.qs)
+    if (!window.__STATE__.survey_answers.some(a => a.id === q.id)) window.__STATE__.survey_answers.push({ id: q.id, answer: { picks: [0] } });
+});
+await page.click('#refresh');
+await nav('survey');
+check('после второй анкеты — третья: цены, портфолио и продажи', /Анкета 3 · Цены, портфолио и продажи: отвечено 0 из 31/.test(await page.textContent('#spdone'))
+  && (await page.textContent('#view')).includes('анкета 2 «История и люди» — 47 ответов'));
 await page.screenshot({ path: path.join(OUT, 'intel-survey.png') });
 
 // --- 5х. диалоги: бот для клиентов, переписка, скрипты
