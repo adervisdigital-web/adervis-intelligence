@@ -2145,29 +2145,83 @@ function leadFunnelCard() {
   </div>`;
 }
 
+// Доска заявок: столбцы-статусы в своих цветах, сумма в шапке, карточки
+// перетаскиваются мышкой (стрелки — для клавиатуры и телефона). Перенос в
+// «Отказ · пропало» открывает карточку — причину потери надо записать.
+const STAGE_TONE = { 'Новое': 'sky', 'В работе': 'gold', 'КП отправлено': 'violet', 'Сделка': 'green' };
+const initials = name => String(name || '?').replace(/[«»"]/g, '').split(/[\s—-]+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+
 function leadBoard(rows) {
   const card = l => {
     const i = FUNNEL.indexOf(l.status);
-    const step = (d, label, arrow) => `<button class="chip movebtn" data-action="movelead" data-id="${E(l.id)}" data-step="${d}"
-      aria-label="${E(label)}" title="${E(label)}">${arrow}</button>`;
-    return `<article class="card click lcard" tabindex="0" role="button" data-l="${E(l.id)}" data-dir="${E(l.direction)}">
-      <div class="pcardhead"><span class="netmark">${E(l.source)}</span><small class="muted">${E(shortDate(l.came_on))}</small></div>
-      <h3>${E(l.name)}</h3>
-      ${l.next_on && FUNNEL.slice(0, 3).includes(l.status) ? `<small class="${l.next_on < today() ? 'minus' : l.next_on === today() ? 'duetoday' : 'muted'}">${icon('time', 12)} ${E(shortDate(l.next_on))}${l.next_step ? ' · ' + E(l.next_step) : ''}</small>` : ''}
-      ${l.request ? `<p class="muted lreq">${E(l.request.slice(0, 80))}${l.request.length > 80 ? '…' : ''}</p>` : ''}
-      <div class="pcardfoot"><small class="muted">${l.amount ? num(l.amount) + ' ₽' : ''}</small>
-        <span class="movebtns">${i > 0 ? step(-1, `Вернуть в «${FUNNEL[i - 1]}»`, '←') : ''}${i >= 0 && i < 3 ? step(1, `Дальше: «${FUNNEL[i + 1]}»`, '→') : ''}</span></div>
+    const step = (d, label, ic) => `<button class="chip movebtn" data-action="movelead" data-id="${E(l.id)}" data-step="${d}"
+      aria-label="${E(label)}" title="${E(label)}">${icon(ic, 14)}</button>`;
+    const due = l.next_on && FUNNEL.slice(0, 3).includes(l.status)
+      ? `<span class="lnext ${l.next_on < today() ? 'late' : l.next_on === today() ? 'now' : ''}">${icon('time', 12)} ${l.next_on < today() ? 'просрочено' : l.next_on === today() ? 'сегодня' : E(shortDate(l.next_on))}${l.next_step ? ' · ' + E(l.next_step.slice(0, 40)) : ''}</span>` : '';
+    return `<article class="card click lcard" tabindex="0" role="button" draggable="true" data-drag="${E(l.id)}" data-l="${E(l.id)}" data-dir="${E(l.direction)}">
+      <button class="cardx" data-action="dellead" data-id="${E(l.id)}" aria-label="Удалить заявку «${E(l.name)}»" title="Удалить">${icon('delete', 15)}</button>
+      <div class="lhead"><span class="lavatar">${E(initials(l.name))}</span>
+        <div><h3>${E(l.name)}</h3><small class="muted">${E(l.source)} · ${E(shortDate(l.came_on))}</small></div></div>
+      ${due}
+      ${l.request ? `<p class="muted lreq">${E(l.request.slice(0, 90))}${l.request.length > 90 ? '…' : ''}</p>` : ''}
+      <div class="pcardfoot"><b class="lamount">${l.amount ? num(l.amount) + ' ₽' : ''}</b>
+        <span class="movebtns">${i > 0 ? step(-1, `Вернуть в «${FUNNEL[i - 1]}»`, 'back') : ''}${i >= 0 && i < 3 ? step(1, `Дальше: «${FUNNEL[i + 1]}»`, 'next') : ''}</span></div>
     </article>`;
   };
+  const col = (key, title, list, tone, extra = '') => {
+    const sum = list.reduce((n, l) => n + (Number(l.amount) || 0), 0);
+    return `<section class="boardcol tone-${tone}${extra}" data-drop="${E(key)}" aria-label="${E(title)}">
+      <header><i class="coldot"></i><b>${E(title)}</b><span class="colcount">${list.length}</span>${sum ? `<small class="colsum">${num(sum)} ₽</small>` : ''}</header>
+      ${list.map(card).join('') || '<p class="muted boardempty">Перетащите сюда заявку</p>'}</section>`;
+  };
   const lost = rows.filter(l => LOST.includes(l.status));
-  return `<div class="board leadboard">${FUNNEL.map(st => {
-    const list = rows.filter(l => l.status === st);
-    return `<section class="boardcol" aria-label="${E(st)}"><header><b>${E(st)}</b><span>${list.length}</span></header>
-      ${list.map(card).join('') || '<p class="muted boardempty">Пусто</p>'}</section>`;
-  }).join('')}
-    <section class="boardcol lost" aria-label="Отказ и пропало"><header><b>Отказ · пропало</b><span>${lost.length}</span></header>
-      ${lost.map(card).join('') || '<p class="muted boardempty">Пусто</p>'}</section></div>`;
+  return `<div class="board leadboard">${FUNNEL.map(st => col(st, st, rows.filter(l => l.status === st), STAGE_TONE[st])).join('')}
+    ${col('lost', 'Отказ · пропало', lost, 'red', ' lost')}</div>`;
 }
+
+// Перенос заявки в другой статус — со стрелок и перетаскиванием.
+async function setLeadStatus(id, to) {
+  const l = db.leads.find(x => x.id === id);
+  if (!l || l.status === to) return;
+  try {
+    const saved = await api.update('leads', { ...l, status: to, reached: reachedOf(to, l.reached), lost_reason: LOST.includes(to) ? l.lost_reason : '' });
+    upsertLocal('leads', saved);
+    noteLocal('update', 'leads', { ...saved, title: saved.name });
+    render();
+    if (LOST.includes(to)) { editLead(id); toast('Отметьте, почему не вышло — так видно, что чинить'); }
+    else toast(`«${l.name}» — ${to}`);
+  } catch (e) {
+    handleError(e);
+  }
+}
+
+// перетаскивание карточек между столбцами
+document.addEventListener('dragstart', e => {
+  const card = e.target.closest?.('[data-drag]');
+  if (!card) return;
+  e.dataTransfer.setData('text/plain', card.dataset.drag);
+  e.dataTransfer.effectAllowed = 'move';
+  card.classList.add('dragging');
+});
+document.addEventListener('dragend', e => {
+  e.target.closest?.('[data-drag]')?.classList.remove('dragging');
+  document.querySelectorAll('.boardcol.over').forEach(c => c.classList.remove('over'));
+});
+document.addEventListener('dragover', e => {
+  const col = e.target.closest?.('.leadboard .boardcol[data-drop]');
+  if (!col) return;
+  e.preventDefault();
+  document.querySelectorAll('.boardcol.over').forEach(c => c !== col && c.classList.remove('over'));
+  col.classList.add('over');
+});
+document.addEventListener('drop', e => {
+  const col = e.target.closest?.('.leadboard .boardcol[data-drop]');
+  if (!col) return;
+  e.preventDefault();
+  col.classList.remove('over');
+  const id = e.dataTransfer.getData('text/plain');
+  setLeadStatus(id, col.dataset.drop === 'lost' ? 'Отказ' : col.dataset.drop);
+});
 
 async function moveLead(id, step) {
   const l = db.leads.find(x => x.id === id);
