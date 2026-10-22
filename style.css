@@ -2013,3 +2013,7 @@ dialog textarea.short{min-height:84px}
 .smtable .smgroup td{padding-top:16px;font-weight:700;border-bottom:1px solid #cfcfcf}
 .smtable .smtotal td{font-weight:700;border-top:2px solid #1b1e24;border-bottom:0;padding-top:10px}
 .smtable td.kpprice{white-space:nowrap;padding-left:16px}
+
+.smtable .smsub td{font-weight:700;border-bottom:1px solid #cfcfcf;padding-bottom:10px}
+.bfsubs{display:flex;gap:8px;align-items:center;margin-top:30px}
+.bfsubs input{width:18px;height:18px;flex:none}

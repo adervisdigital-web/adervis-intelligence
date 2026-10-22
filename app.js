@@ -4030,6 +4030,7 @@ function bfEstimate(b) {
     <div class="formactions"><button data-action="bfitemadd">+ Работа</button></div>
     <div class="formgrid bfset">
       <div><label for="bfreserve">Запас на правки и ведение, %</label><input class="input" id="bfreserve" type="number" min="0" max="100" data-bf="estimate.reserve" value="${E(e.reserve ?? 10)}"></div>
+      <div><label class="checkitem bfsubs"><input type="checkbox" data-bf="estimate.subtotals" ${e.subtotals ? 'checked' : ''}><span>Итоги по разделам в смете для клиента — например, цена каждого ролика</span></label></div>
       <div><label for="bfround">Округлять цену до, ₽</label><select class="input" id="bfround" data-bf="estimate.round">${[1000, 5000, 10000].map(n => `<option value="${n}" ${Number(e.round || 1000) === n ? 'selected' : ''}>${num(n)}</option>`).join('')}</select></div>
     </div>
     <div id="bftotals">${totalsHtml(b)}</div></div>
@@ -4188,21 +4189,32 @@ function estimateDoc(b) {
     list.forEach((it, i) => { const p = i === list.length - 1 ? left : Math.round(price * weight(it) / w / 100) * 100; out.set(it, p); left -= p; });
     return out;
   };
-  const full = split(items.filter(it => inVariant(it, 'full')), k.full);
+  // итоги по разделам (например, цена каждого ролика) — круглые: делим цену
+  // сначала между разделами с шагом округления, потом строки внутри раздела
+  const step = Number(e.round) || 1000, groupOf = it => it.group || 'Работы';
+  const splitGroups = (list, price) => {
+    if (!e.subtotals) return split(list, price);
+    const gs = [...new Set(list.map(groupOf))], out = new Map();
+    const gw = gs.map(g => list.filter(it => groupOf(it) === g).reduce((n, it) => n + weight(it), 0)), W = gw.reduce((a, x) => a + x, 0) || 1;
+    let left = price;
+    gs.forEach((g, i) => { const p = i === gs.length - 1 ? left : Math.round(price * gw[i] / W / step) * step; left -= p; split(list.filter(it => groupOf(it) === g), p, out); });
+    return out;
+  };
+  const full = splitGroups(items.filter(it => inVariant(it, 'full')), k.full);
   let base = new Map();
   if (two) {
     const shared = items.filter(it => (it.variant || 'both') === 'both'), own = items.filter(it => it.variant === 'base');
     const rest = k.base - shared.reduce((n, it) => n + full.get(it), 0);
     // если цену базового сильно урезали руками — делим её заново целиком
-    base = own.length && rest > 0 ? split(own, rest, new Map(shared.map(it => [it, full.get(it)]))) : split(items.filter(it => inVariant(it, 'base')), k.base);
+    base = own.length && rest > 0 ? split(own, rest, new Map(shared.map(it => [it, full.get(it)]))) : splitGroups(items.filter(it => inVariant(it, 'base')), k.base);
   }
   const groups = [...new Set(items.map(it => it.group || 'Работы'))].map(g => ({
     name: g, rows: items.filter(it => (it.group || 'Работы') === g && (full.has(it) || base.has(it)))
       .map(it => ({ name: it.name, base: base.has(it) ? base.get(it) : null, full: full.has(it) ? full.get(it) : null }))
-  })).filter(g => g.rows.length);
+  })).filter(g => g.rows.length).map(g => ({ ...g, sum: { base: g.rows.reduce((n, r) => n + (r.base || 0), 0), full: g.rows.reduce((n, r) => n + (r.full || 0), 0) } }));
   const valid = new Date(Date.parse(k.date) + k.valid * 864e5).toLocaleDateString('ru', { day: 'numeric', month: 'long' });
   return {
-    k, two, groups, date: new Date(k.date + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' }),
+    k, two, groups, subtotals: !!e.subtotals, date: new Date(k.date + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' }),
     options: (e.options || []).filter(o => o.name).map(o => ({ name: o.name, why: o.why || '', price: optionPrice(b, o) })),
     terms: [`Предоплата ${k.prepay}%, остаток — после сдачи.`,
       k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок входят в стоимость.` : '',
@@ -4216,7 +4228,8 @@ function estimateText(b) {
     : r.base === null ? `${money(r.full)} (только в полном)` : r.full === null ? `${money(r.base)} (только в базовом)`
     : `базовый ${money(r.base)}, полный ${money(r.full)}`;
   return [`Смета: ${b.title}`, `Для: ${b.client || '—'}`, '',
-    ...d.groups.flatMap(g => [g.name, ...g.rows.map(r => `— ${r.name} — ${price(r)}`), '']),
+    ...d.groups.flatMap(g => [g.name, ...g.rows.map(r => `— ${r.name} — ${price(r)}`),
+      ...(d.subtotals ? [`Итого «${g.name}»: ${d.two ? `базовый ${rub(g.sum.base)}, полный ${rub(g.sum.full)}` : rub(g.sum.full)}`] : []), '']),
     d.two ? `Итого: базовый вариант — ${rub(d.k.base)}, полный — ${rub(d.k.full)}` : `Итого: ${rub(d.k.full)}`,
     ...(d.options.length ? ['', 'Дополнительно, по желанию:', ...d.options.map(o => `— ${o.name} — + ${rub(o.price)}`)] : []),
     '', 'Условия:', ...d.terms.map(t => `— ${t}`)].join('\n');
@@ -4231,7 +4244,8 @@ function estimateHtml(b) {
     <p class="kpfor">Для: <b>${E(b.client || '—')}</b></p>
     <table class="kptable smtable"><thead><tr><th>Работа</th>${d.two ? '<th>Базовый</th><th>Полный</th>' : '<th>Стоимость</th>'}</tr></thead><tbody>
       ${d.groups.map(g => `<tr class="smgroup"><td colspan="${cols}">${E(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${E(r.name)}</td>
-        ${d.two ? `<td class="kpprice">${money(r.base)}</td>` : ''}<td class="kpprice">${money(r.full)}</td></tr>`).join('')).join('')}
+        ${d.two ? `<td class="kpprice">${money(r.base)}</td>` : ''}<td class="kpprice">${money(r.full)}</td></tr>`).join('')
+        + (d.subtotals ? `<tr class="smsub"><td>Итого «${E(g.name)}»</td>${d.two ? `<td class="kpprice">${rub(g.sum.base)}</td>` : ''}<td class="kpprice">${rub(g.sum.full)}</td></tr>` : '')).join('')}
       <tr class="smtotal"><td>Итого</td>${d.two ? `<td class="kpprice">${rub(d.k.base)}</td>` : ''}<td class="kpprice">${rub(d.k.full)}</td></tr>
     </tbody></table>
     ${d.options.length ? `<section><h2>Дополнительно — по желанию</h2><table class="kptable"><tbody>${d.options.map(o => `<tr><td>${E(o.name)}${o.why ? `<br><small>${E(o.why)}</small>` : ''}</td>
@@ -4285,12 +4299,19 @@ function estimateXlsx(b) {
   row(() => str('A', '№', 3) + str('B', 'Работа', 3) + (d.two ? str('C', 'Базовый', 3) + str('D', 'Полный', 3) : str('C', 'Стоимость', 3)));
   const first = r + 1;
   let no = 0;
+  const subs = [];
   for (const g of d.groups) {
     wide(g.name, 4);
+    const from = r + 1;
     for (const it of g.rows) row(() => str('A', String(++no), 5) + str('B', it.name, 5) + (d.two ? n('C', it.base, 6) + n('D', it.full, 6) : n('C', it.full, 6)));
+    if (d.subtotals) {
+      const to = r, f = (col, v) => `<c r="${col}${r}" s="10"><f>SUM(${col}${from}:${col}${to})</f><v>${v}</v></c>`;
+      row(() => str('A', '', 2) + str('B', `Итого «${g.name}»`, 2) + (d.two ? f('C', g.sum.base) + f('D', g.sum.full) : f('C', g.sum.full)));
+      subs.push(r);
+    }
   }
   const lastRow = r;
-  const sum = (col, v) => `<c r="${col}${r}" s="8"><f>SUM(${col}${first}:${col}${lastRow})</f><v>${v}</v></c>`;
+  const sum = (col, v) => `<c r="${col}${r}" s="8"><f>${subs.length ? subs.map(x => col + x).join('+') : `SUM(${col}${first}:${col}${lastRow})`}</f><v>${v}</v></c>`;
   row(() => str('A', '', 7) + str('B', 'Итого', 7) + (d.two ? sum('C', d.k.base) + sum('D', d.k.full) : sum('C', d.k.full)));
   if (d.options.length) {
     row(() => '');
@@ -4318,7 +4339,7 @@ function estimateXlsx(b) {
 <fill><patternFill patternType="solid"><fgColor rgb="FFF2F3F6"/></patternFill></fill></fills>
 <borders count="3"><border/><border><bottom style="thin"><color rgb="FFB8BCC6"/></bottom></border><border><top style="medium"><color rgb="FF1B1E24"/></top></border></borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="10">
+<cellXfs count="11">
 <xf/>
 <xf fontId="2" applyFont="1"/>
 <xf fontId="1" applyFont="1"/>
@@ -4329,6 +4350,7 @@ function estimateXlsx(b) {
 <xf fontId="1" borderId="2" applyFont="1" applyBorder="1"/>
 <xf numFmtId="164" fontId="1" borderId="2" applyNumberFormat="1" applyFont="1" applyBorder="1"/>
 <xf fontId="3" applyFont="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>
+<xf numFmtId="164" fontId="1" applyNumberFormat="1" applyFont="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -4403,7 +4425,7 @@ function onBriefInput(e) {
   const el = e.target.closest('[data-bf]');
   const b = db.briefs.find(x => x.id === briefView.id);
   if (!el || !b) return;
-  const v = el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.type === 'date' ? (el.value || null)
+  const v = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.type === 'date' ? (el.value || null)
     : el.dataset.bf === 'estimate.round' ? Number(el.value) : el.value;
   setPath(b, el.dataset.bf, v);
   if (el.dataset.bf.startsWith('estimate.')) b.estimate.edited = true;
@@ -6971,7 +6993,7 @@ const LEAD_STATUS = ['Новое', 'В работе', 'КП отправлено
 // Платные каналы — те же названия, что в «Рекламе»: по ним считается цена
 // заявки. Telegram без приписки — свой канал, «Telegram Ads» — реклама.
 const LEAD_SOURCES = ['Сайт', 'Рекомендация', 'Повторный клиент', 'ВКонтакте', 'Яндекс Директ',
-  'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Telegram', 'Behance', 'Поиск клиентов', 'Бриф CRM', 'Личный контакт',
+  'Telegram Ads', 'Авито', '2ГИС', 'Яндекс.Карты', 'Блогеры', 'Telegram', 'Behance', 'Поиск клиентов', 'Бриф CRM', 'Почта', 'Тендер', 'Личный контакт',
   'Другое', 'Не знаем'];
 
 function leadStats() {
