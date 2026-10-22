@@ -300,6 +300,13 @@ const fake = (seedData) => {
       }
       throw new Error('Неизвестное действие');
     },
+    // КП-ссылка: файлы «загружаются» как data:-картинки, снимки копятся в __KPSHARES__
+    async uploadKpMedia(briefId, file) {
+      return { path: `${briefId}/${file.name}`, url: 'https://x.supabase.co/storage/v1/object/public/kp-media/' + encodeURIComponent(briefId + '/' + file.name) };
+    },
+    async removeKpMedia(paths) { window.__KPREMOVED__ = paths; },
+    async kpShareGet(token) { return (window.__KPSHARES__ || {})[token] ? { token, views: 2, last_view_at: now(), first_view_at: now() } : null; },
+    async kpSharePut(row) { (window.__KPSHARES__ ||= {})[row.token] = clone(row); return { token: row.token, views: 0 }; },
     async user() { return session ? { email: session } : null; },
     async signIn(email, password) {
       if (password !== 'secret') { const e = new Error('Invalid login credentials'); throw e; }
@@ -2096,6 +2103,44 @@ const kp = norm(await page.textContent('.kppreview'));
 check('КП: клиент, состав, цены вариантов, опции, этапы, условия', kp.includes('Уралхим') && kp.includes('Заставка') && kp.includes('Базовый вариант')
   && kp.includes('Звуковое оформление') && kp.includes('Концепция') && kp.includes('Предоплата 50%') && kp.includes('2 круга правок'), kp.slice(0, 300));
 check('КП: условия самозанятых, обещания из анкеты, портфолио', kp.includes('без НДС') && kp.includes('Не попали в задачу — переделаем') && kp.includes('behance.net/adervisdigital'));
+
+// КП-ссылка: примеры, публикация, снимок без часов и ставок
+const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+await ctx.route('https://x.supabase.co/storage/**', r => r.fulfill({ contentType: 'image/png', body: PIXEL }));
+await page.click('[data-action=bfshare]');
+await page.setInputFiles('#kpmfile', { name: 'заставка_стекло.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') });
+await page.waitForSelector('.kpmedia li');
+check('КП-ссылка: пример загружен, подпись из имени файла', (await page.inputValue('.kpmedia [data-k=caption]')) === 'заставка стекло');
+await page.fill('.kpmedia [data-k=group]', 'Направление 1 «Технологичное стекло»');
+await page.click('#kppublish');
+await page.waitForFunction(() => Object.keys(window.__KPSHARES__ || {}).length === 1);
+const share = Object.values(await page.evaluate(() => window.__KPSHARES__))[0];
+const shareJson = JSON.stringify(share.data);
+check('КП-ссылка: снимок — смета как у клиента, пример, сроки', share.data.estimate.full === 205000 && share.data.media.length === 1
+  && share.data.media[0].group.startsWith('Направление 1') && share.data.plan.length > 0 && share.data.title === 'Видеодайджест', JSON.stringify({ full: share.data.estimate.full, media: share.data.media, plan: share.data.plan?.length }));
+check('КП-ссылка: часов и ставок студии в снимке нет', !/"min"|"max"|"role"|Моушн-дизайнер|Арт-директор/.test(shareJson));
+check('КП-ссылка: ссылка скопирована и видна в окне', /kp\.html\?t=[A-Za-z0-9]{24}$/.test(await page.evaluate(() => navigator.clipboard.readText()))
+  && (await page.inputValue('#kplink')).includes(share.token));
+await page.screenshot({ path: path.join(OUT, 'intel-kp-share.png') });
+await page.click('#modal [data-action=close]');
+
+// сама страница КП у клиента: на компьютере и на телефоне
+const kpPage = await ctx.newPage();
+await kpPage.route('**/functions/v1/kp', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: share.data }) }));
+await kpPage.goto(BASE + 'kp.html?t=' + share.token);
+await kpPage.waitForSelector('.hero h1');
+const kpText = (await kpPage.textContent('body')).replace(/\s/g, '');
+check('страница КП: название, клиент, цена, смета, этапы, пример', (await kpPage.textContent('.hero h1')) === 'Видеодайджест' && kpText.includes('Уралхим')
+  && kpText.includes('205000₽') && (await kpPage.$$('.est tbody tr')).length > 2 && (await kpPage.$$('.plan li')).length > 0 && (await kpPage.$$('.gallery img')).length === 1);
+await kpPage.screenshot({ path: path.join(OUT, 'kp-page.png'), fullPage: true });
+await kpPage.setViewportSize({ width: 390, height: 844 });
+check('страница КП на телефоне: без горизонтальной прокрутки, кнопка «Позвонить» внизу', await kpPage.evaluate(() => document.documentElement.scrollWidth <= 390)
+  && await kpPage.isVisible('.bar .btn'));
+await kpPage.screenshot({ path: path.join(OUT, 'kp-page-mobile.png'), fullPage: true });
+await kpPage.goto(BASE + 'kp.html');
+await kpPage.waitForSelector('.kp-error');
+check('страница КП без токена — понятная ошибка', (await kpPage.textContent('.kp-error h1')) === 'Ссылка неполная');
+await kpPage.close();
 await page.fill('#kpconcept', '## Ролик 1 — «Обычный четверг»\n**Идея.** Обычный день семьи\n\n1. Утро\n2. Финал\n- <b>не тег</b>');
 await page.waitForFunction(() => document.querySelector('.kppreview')?.textContent.includes('Концепция и сюжет'));
 check('КП: концепция с подзаголовком, шагами и списком; HTML из текста не исполняется', await page.$eval('.kppreview', d =>

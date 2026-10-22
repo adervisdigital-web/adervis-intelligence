@@ -1,0 +1,98 @@
+/* Страница КП для клиента ADERVIS: графитовая шапка с золотым знаком,
+   светлые разделы для чтения, крупная галерея примеров. */
+@font-face{font-family:'Unbounded';font-weight:500;font-display:swap;src:url(fonts/unbounded-500-cyrillic.woff2) format('woff2');unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:'Unbounded';font-weight:500;font-display:swap;src:url(fonts/unbounded-500-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2212}
+@font-face{font-family:'Unbounded';font-weight:700;font-display:swap;src:url(fonts/unbounded-700-cyrillic.woff2) format('woff2');unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:'Unbounded';font-weight:700;font-display:swap;src:url(fonts/unbounded-700-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2212}
+@font-face{font-family:'Golos Text';font-weight:400;font-display:swap;src:url(fonts/golostext-400-cyrillic.woff2) format('woff2');unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:'Golos Text';font-weight:400;font-display:swap;src:url(fonts/golostext-400-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2212}
+@font-face{font-family:'Golos Text';font-weight:500;font-display:swap;src:url(fonts/golostext-500-cyrillic.woff2) format('woff2');unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:'Golos Text';font-weight:600;font-display:swap;src:url(fonts/golostext-600-cyrillic.woff2) format('woff2');unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:'Golos Text';font-weight:600;font-display:swap;src:url(fonts/golostext-600-latin.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2212}
+
+:root{--graphite:#121316;--graphite2:#1b1d22;--paper:#f3f4f6;--ink:#16181d;--muted:#5d6470;--line:#e1e3e8;--gold:#f6bd3a;--card:#fff;
+  --display:'Unbounded',system-ui,sans-serif;--text:'Golos Text',system-ui,sans-serif}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 var(--text)}
+a{color:inherit}
+img,video{display:block;max-width:100%}
+.kp-loading,.kp-error{max-width:640px;margin:20vh auto;padding:0 20px;text-align:center;color:var(--muted)}
+.kp-error h1{font:700 26px/1.3 var(--display);color:var(--ink)}
+
+/* шапка */
+.hero{background:radial-gradient(1200px 500px at 85% -10%,#2a2416 0,transparent 60%),var(--graphite);color:#fff;padding:28px 20px 56px}
+.wrap{max-width:1100px;margin:0 auto}
+.read{max-width:760px;margin:0 auto}
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.top img{height:30px;width:auto}
+.top span{color:#a9adb6;font-size:14px}
+.hero h1{font:700 clamp(30px,5.4vw,64px)/1.08 var(--display);letter-spacing:-.02em;margin:64px 0 14px;max-width:16ch}
+.hero .for{font-size:19px;color:#c9ccd3;margin:0}
+.hero .for b{color:#fff;font-weight:600}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:#2c2f36;border:1px solid #2c2f36;border-radius:18px;overflow:hidden;margin-top:40px}
+.facts div{background:var(--graphite2);padding:18px 22px}
+.facts small{display:block;color:#9aa0aa;font-size:13px}
+.facts b{display:block;font:700 clamp(20px,2.4vw,30px)/1.2 var(--display);margin-top:6px}
+.facts .gold{color:var(--gold)}
+.intro{font-size:20px;line-height:1.55;color:#e3e5ea;max-width:62ch;margin:36px 0 0}
+
+/* разделы */
+section{padding:56px 20px 0}
+section h2{font:700 clamp(22px,2.8vw,32px)/1.2 var(--display);letter-spacing:-.01em;margin:0 0 20px}
+section h3{font:600 19px/1.3 var(--text);margin:26px 0 8px}
+section p{margin:0 0 12px}
+section ul,section ol{margin:0 0 12px;padding-left:22px}
+section li{margin:4px 0}
+
+/* галерея примеров */
+.gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:8px}
+.gallery figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.gallery figure.wide{grid-column:1/-1}
+.gallery figcaption{padding:12px 16px;font-size:15px;color:var(--muted)}
+.gallery img,.gallery video{width:100%;aspect-ratio:16/9;object-fit:cover;background:#0d0e11}
+.group-title{font:600 15px/1.3 var(--text);color:var(--muted);margin:30px 0 10px}
+.group-title:first-child{margin-top:0}
+
+/* смета */
+.est{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;font-size:15px}
+.est th,.est td{padding:11px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.est th{font-weight:600;color:var(--muted);font-size:13px}
+.est .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.est .grp td{background:#f7f8fa;font-weight:600;padding-top:16px}
+.est .sub td{font-weight:600}
+.est tfoot td{font:700 17px/1.3 var(--display);border-bottom:0;border-top:2px solid var(--ink)}
+.est-wrap{overflow-x:auto;border-radius:16px}
+.opts{margin-top:14px}
+.opts li{display:flex;justify-content:space-between;gap:16px;border-bottom:1px dashed var(--line);padding:8px 0;list-style:none}
+.opts{padding:0}
+.opts small{display:block;color:var(--muted)}
+
+/* этапы */
+.plan{list-style:none;padding:0;margin:0;counter-reset:st}
+.plan li{position:relative;padding:0 0 22px 52px;margin:0;counter-increment:st}
+.plan li::before{content:counter(st);position:absolute;left:0;top:0;width:34px;height:34px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font:700 14px var(--display)}
+.plan li::after{content:'';position:absolute;left:16px;top:38px;bottom:4px;width:2px;background:var(--line)}
+.plan li:last-child::after{display:none}
+.plan b{display:block}
+.plan small{color:var(--muted);font-size:14px}
+
+/* связь */
+.cta{margin:64px 0 0;background:var(--graphite);color:#fff;padding:48px 20px 64px}
+.cta h2{font:700 clamp(22px,3vw,34px)/1.2 var(--display);margin:0 0 10px}
+.cta p{color:#c9ccd3;margin:0 0 24px}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 22px;border-radius:14px;background:var(--gold);color:#16181d;font-weight:600;text-decoration:none;font-size:17px;margin:0 10px 10px 0}
+.btn.ghost{background:transparent;color:#fff;border:1px solid #3a3e46}
+.valid{color:#8f95a0;font-size:14px;margin-top:22px}
+.bar{display:none}
+
+@media(max-width:720px){
+  body{font-size:16px}
+  .facts{grid-template-columns:1fr}
+  .gallery{grid-template-columns:1fr}
+  .hero h1{margin-top:44px}
+  .bar{display:flex;position:sticky;bottom:0;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:rgba(18,19,22,.94);backdrop-filter:blur(8px)}
+  .bar .btn{flex:1;justify-content:center;margin:0;padding:12px}
+}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+@media print{.bar,.cta .btn{display:none}.hero{background:#121316;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
