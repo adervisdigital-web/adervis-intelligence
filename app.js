@@ -1788,6 +1788,7 @@ function renderContentPlan() {
   const head = heading('Контент-план', 'Что, где, когда и как выходит. Идеи и тексты пишет Claude на фактах из базы знаний — вы проверяете и утверждаете.',
     `<div class="headactions"><button class="aichip" data-action="aiideas">${icon('ai', 15)} Идеи</button>
       <button class="aichip" data-action="aiplan">${icon('ai', 15)} План на месяц</button>
+      <button class="aichip" data-action="aicase">${icon('star', 15)} Пост о работе</button>
       ${waiting.length ? `<button class="aichip strong" data-action="aiwriteall">${icon('edit', 15)} Написать посты · ${waiting.length}</button>` : ''}
       <button class="primary" data-action="newp">+ Публикация</button></div>`);
 
@@ -2048,6 +2049,54 @@ function aiContentResult(mode, res, direction) {
       render();
       toast(`В план добавлено: ${rows.length} — тексты напишет кнопка «Написать посты»`);
     } catch (e) { handleError(e); }
+  };
+}
+
+// Пост о готовой работе — по образцу владельцев: заход, о клиенте, «Что
+// внутри:», настроение, призыв. Клиента называем только с его разрешения.
+function caseForm() {
+  modal(`<h2>Пост о готовой работе</h2><form id="casef">
+    <div class="formgrid">
+      <div><label for="caseclient">Клиент</label><input id="caseclient" name="client" maxlength="120" placeholder="База отдыха «Раздолье»"></div>
+      <div><label for="caseformat">Что выкладываем</label><select id="caseformat" name="format">${opts(['Видео', 'Клип', 'Карусель', 'Пост'], 'Видео')}</select></div>
+    </div>
+    <label class="checkitem caseok"><input type="checkbox" name="named"><span>Клиент разрешил называть его в соцсетях</span></label>
+    <label for="casework">Что сделали</label>
+    <textarea id="casework" name="work" class="short" maxlength="3000" required placeholder="Рекламный ролик 57 секунд в 4K: съёмка с земли и с дрона, анимированная карта маршрута, инфоплашки, монтаж и цвет"></textarea>
+    <label for="casefacts">Факты о клиенте — из ролика или от клиента, необязательно</label>
+    <textarea id="casefacts" name="facts" class="short" maxlength="3000" placeholder="40 км от Перми, на берегу Сылвы; пляж первой категории; больше 400 мест"></textarea>
+    <label>Площадки</label>
+    <div class="netchecks">${['ВКонтакте', 'Telegram'].map(n => `<label class="checkitem"><input type="checkbox" name="net" value="${E(n)}" checked><span>${icon(network(n).icon, 14)} ${E(n)}</span></label>`).join('')}</div>
+    <div class="formgrid"><div><label for="casedate">Когда выпускаем — необязательно</label><input id="casedate" type="date" name="date"></div></div>
+    <p class="muted">Пишет по образцу вашего поста про «Раздолье». Цифры и факты — только из полей выше и базы знаний. Готовое встанет в план черновиком.</p>
+    <p class="muted" id="caseerr" role="alert"></p>
+    <div class="formactions"><button class="primary">${icon('ai', 15)} Написать пост</button></div></form>`);
+  $('#casef').onsubmit = async e => {
+    e.preventDefault();
+    const f = e.target, btn = f.querySelector('button.primary');
+    const nets = [...f.querySelectorAll('input[name=net]:checked')].map(i => i.value);
+    if (!nets.length) { $('#caseerr').textContent = 'Отметьте хотя бы одну площадку'; return; }
+    const task = { client: f.elements.client.value.trim(), named: f.elements.named.checked, work: f.elements.work.value.trim(),
+      facts: f.elements.facts.value.trim(), format: f.elements.format.value };
+    const date = f.elements.date.value;
+    btn.disabled = true; $('#caseerr').textContent = `Пишу ${nets.length > 1 ? 'посты' : 'пост'}…`;
+    const made = [];
+    try {
+      for (const net of nets) {
+        const res = await api.generate({ mode: 'case', network: net, ...task });
+        const saved = await api.insert('content', { id: uid(), title: (res.title || `Кейс: ${task.client || 'готовая работа'}`).slice(0, 300), body: res.body,
+          product: 'Studio', author: 'ADERVIS', channel: net, status: 'Черновик', date: date || '', url: '', format: net === 'Telegram' && task.format === 'Видео' ? 'Пост с фото или видео' : task.format,
+          rubric: 'Кейс', goal: 'Доверие', post_time: date ? NET_TIME[net] || '' : '', visual: String(res.visual || '').slice(0, 2000), cta: String(res.cta || '').slice(0, 300) });
+        upsertLocal('content', saved); noteLocal('insert', 'content', saved); made.push(saved);
+      }
+      render();
+      editP(made[0].id);
+      toast(made.length > 1 ? `Готово: ${made.length} поста в плане — проверьте и утвердите` : 'Пост готов — проверьте и утвердите', 6000);
+    } catch (err) {
+      $('#caseerr').textContent = (made.length ? `Написано ${made.length} из ${nets.length}. ` : '') + 'Не получилось: ' + (err.message || 'ошибка модели');
+      btn.disabled = false;
+      if (made.length) render();
+    }
   };
 }
 
@@ -3827,10 +3876,25 @@ async function filesText(files) {
   return parts.join('\n\n');
 }
 
+// Голосовое → текст: расшифровывает сервер (Gemini принимает аудио в запросе).
+const AUDIO_EXT = /\.(ogg|oga|opus|mp3|m4a|wav|webm|aac)$/i;
+const fileBase64 = file => new Promise((ok, no) => {
+  const r = new FileReader();
+  r.onload = () => ok(String(r.result).split(',')[1] || '');
+  r.onerror = () => no(new Error('файл не прочитался'));
+  r.readAsDataURL(file);
+});
+async function voiceText(file) {
+  if (file.size > 8e6) throw new Error(`${file.name}: больше 8 МБ — разделите запись`);
+  const res = await api.generate({ mode: 'transcribe', name: file.name, data: await fileBase64(file) });
+  return `Голосовое (расшифровка):\n${res.text}`;
+}
+
 async function fileText(file) {
+  if (AUDIO_EXT.test(file.name)) return voiceText(file);
   if (/\.docx$/i.test(file.name)) return docxText(file);
   if (/\.(txt|md)$/i.test(file.name) || file.type.startsWith('text/')) return file.text();
-  throw new Error('подходят .docx и .txt; из PDF скопируйте текст и вставьте');
+  throw new Error('подходят .docx, .txt и голосовые (ogg, mp3, m4a); из PDF скопируйте текст и вставьте');
 }
 
 // ---- сохранение: правки копятся и уходят одним запросом через мгновение
@@ -3968,7 +4032,7 @@ function tabBadge(b, k) {
 
 function bfTz(b) {
   return `<div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">ТЗ клиента</h2>
-      <span><button data-action="bffile">${icon('upload', 15)} Загрузить .docx</button><input type="file" id="bffile" accept=".docx,.txt,.md" multiple hidden></span></div>
+      <span><button data-action="bffile">${icon('upload', 15)} Добавить файлы: ТЗ, голосовые</button><input type="file" id="bffile" accept=".docx,.txt,.md,.ogg,.oga,.opus,.mp3,.m4a,.wav,.webm,.aac" multiple hidden></span></div>
     <textarea class="input bftext" data-bf="source_text" maxlength="60000" aria-label="Текст ТЗ" placeholder="Вставьте текст ТЗ или брифа клиента">${E(b.source_text)}</textarea>
     <p class="muted">${(b.source_text || '').length} знаков. Для разбора текст ТЗ уходит в ИИ; ставки и суммы студии — нет.</p>
     <div class="formactions"><button class="primary" data-action="bfai" ${briefView.busy ? 'disabled' : ''}>${icon('ai', 15)} ${briefView.busy ? 'Разбираю ТЗ… до минуты' : b.analysis?.summary ? 'Разобрать заново' : 'Разобрать ТЗ с ИИ'}</button></div>
@@ -4559,7 +4623,7 @@ function editBrief(id, preset = {}) {
       ${leads.map(l => `<option value="${E(l.id)}" ${l.id === b.lead_id ? 'selected' : ''}>${E(l.name)} · ${E(l.status)}</option>`).join('')}</select>
     ${exists ? '' : `<div class="bfnewlead"><label for="bfsrc">Откуда пришла заявка</label><select id="bfsrc" name="source">${opts(LEAD_SOURCES, preset.source || 'Не знаем')}</select></div>
     <label for="bfsrcf">ТЗ клиента</label>
-    <p class="fileadd"><button type="button" id="bfsrcbtn">${icon('upload', 15)} Загрузить .docx или .txt — можно несколько</button><input type="file" id="bfsrcf" accept=".docx,.txt,.md" multiple hidden>
+    <p class="fileadd"><button type="button" id="bfsrcbtn">${icon('upload', 15)} ТЗ и голосовые — можно несколько файлов</button><input type="file" id="bfsrcf" accept=".docx,.txt,.md,.ogg,.oga,.opus,.mp3,.m4a,.wav,.webm,.aac" multiple hidden>
       <small class="muted" id="bfsrcst"></small></p>
     <textarea name="source_text" maxlength="60000" style="min-height:140px" placeholder="Или вставьте текст ТЗ">${E(b.source_text)}</textarea>`}
     <div class="formactions"><button class="primary">${exists ? 'Сохранить' : 'Создать'}</button>
@@ -4574,6 +4638,7 @@ function editBrief(id, preset = {}) {
       const files = [...e.target.files], file = files[0];
       e.target.value = '';
       if (!file) return;
+      if (files.some(x => AUDIO_EXT.test(x.name))) $('#bfsrcst').textContent = 'Расшифровываю голосовые — до минуты…';
       try {
         f.elements.source_text.value = (await filesText(files)).slice(0, 60000);
         $('#bfsrcst').textContent = `${files.length > 1 ? `${files.length} файла` : file.name}: ${f.elements.source_text.value.length} знаков`;
@@ -6584,7 +6649,13 @@ function render() {
     const files = [...e.target.files], b = db.briefs.find(x => x.id === briefView.id);
     e.target.value = '';
     if (!files.length || !b) return;
-    try { b.source_text = (await filesText(files)).slice(0, 60000); await saveBriefNow(b, files.length > 1 ? `ТЗ загружено: ${files.length} файла` : `ТЗ загружено: ${files[0].name}`); }
+    if (files.some(x => AUDIO_EXT.test(x.name))) toast('Расшифровываю голосовые — до минуты…', 60000);
+    try {
+      const add = await filesText(files), was = String(b.source_text || '').trim();
+      // к готовому ТЗ дописываем: голосовое к ТЗ — частый случай
+      b.source_text = (was ? `${was}\n\n${files.length > 1 ? add : `=== ${files[0].name}\n${add}`}` : add).slice(0, 60000);
+      await saveBriefNow(b, files.length > 1 ? `Добавлено файлов: ${files.length}` : `Добавлено: ${files[0].name}`);
+    }
     catch (err) { toast('Файл не прочитался: ' + err.message, 6000); }
   };
   if (page === 'brand' && deck.on) bindDeckSwipe();
@@ -7777,6 +7848,7 @@ document.addEventListener('click', async e => {
     case 'aiads': aiAds(b.dataset.id); break;
     case 'aiideas': aiContentForm('ideas'); break;
     case 'aiplan': aiContentForm('plan'); break;
+    case 'aicase': caseForm(); break;
     case 'aipost': aiPost(b); break;
     case 'leadperiod': leadPeriod = b.dataset.id; render(); break;
     case 'leadview': leadView = b.dataset.id; render(); break;

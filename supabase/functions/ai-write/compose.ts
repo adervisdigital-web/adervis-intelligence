@@ -673,3 +673,82 @@ export function parseBrief(text: string, t: BriefTask) {
     gaps: []
   };
 }
+
+// ------------------------------------------------------- голосовые в бриф
+// Голосовые клиента и партнёров кладут в бриф вместе с ТЗ. Расшифровку
+// делает Gemini — он принимает аудио прямо в запросе.
+export const AUDIO_MIME: Record<string, string> = { ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', mp3: 'audio/mpeg', m4a: 'audio/mp4',
+  wav: 'audio/wav', webm: 'audio/webm', aac: 'audio/aac' };
+export const AUDIO_MAX = 8_000_000;
+export const TRANSCRIBE_PROMPT = 'Это голосовое сообщение клиента или партнёра продакшн-студии о заказе. Точно расшифруй речь на русском: только текст, без пояснений, кавычек и меток времени. Названия, цифры, даты и сроки — как сказаны. Неразборчивое помечай [неразборчиво]. Разбивай на абзацы по смыслу.';
+
+export function sanitizeAudio(raw: unknown) {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const name = String(o.name ?? 'голосовое').trim().slice(0, 120);
+  const ext = (name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
+  const mime = AUDIO_MIME[ext];
+  if (!mime) throw new Error('Подходят голосовые и аудио: ogg, opus, mp3, m4a, wav, webm, aac.');
+  const data = String(o.data ?? '').replace(/\s+/g, '');
+  if (!data || !/^[A-Za-z0-9+/]+=*$/.test(data)) throw new Error('Аудио не передалось — выберите файл ещё раз.');
+  if (data.length * 3 / 4 > AUDIO_MAX) throw new Error('Файл больше 8 МБ — разделите запись на части.');
+  return { name, mime, data };
+}
+
+export function audioRequest(model: string, key: string, baseUrl: string, a: { mime: string; data: string }) {
+  const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
+  return {
+    url: `${base}/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+    headers: { 'Content-Type': 'application/json' },
+    body: { contents: [{ role: 'user', parts: [{ inlineData: { mimeType: a.mime, data: a.data } }, { text: TRANSCRIBE_PROMPT }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 8192 } }
+  };
+}
+
+// ------------------------------------------------- пост о готовой работе
+// По образцу поста владельцев о ролике для «Раздолья»: цепляющая первая
+// строка, абзац о клиенте и задаче, «Что внутри:» списком, строка настроения,
+// призыв. Клиента называем, только если он разрешил.
+export type CaseTask = { network: string; client: string; named: boolean; work: string; facts: string; format: string };
+export function sanitizeCaseTask(raw: unknown): CaseTask {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  const work = String(o.work ?? '').trim().slice(0, 3000);
+  if (work.length < 10) throw new Error('Опишите, что сделали для клиента, — хотя бы одной фразой.');
+  return {
+    network: String(o.network) in NETWORKS ? String(o.network) : 'ВКонтакте',
+    client: String(o.client ?? '').replace(/\s+/g, ' ').trim().slice(0, 120),
+    named: o.named === true,
+    work, facts: String(o.facts ?? '').trim().slice(0, 3000),
+    format: String(o.format ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)
+  };
+}
+
+const CASE_EXAMPLE = `Минута - и вы уже хотите в «Раздолье»
+
+База отдыха в Троице, 40 км от Перми, на берегу Сылвы. Мы сняли ролик, который за 60 секунд показывает, почему сюда стоит приехать: вода, пляж, домики и всё, чем можно заняться.
+
+Что внутри:
+- берег, пляж, причал, эко-дома, коттеджи и номера - с земли и с дрона;
+- анимированная карта: как добраться из Перми;
+- монтаж и цветокоррекция в 4K.
+
+Спокойно и по-летнему - как сам отдых на Сылве.
+
+Снимаем такие ролики для баз отдыха, отелей и бизнеса. Напишите в сообщения сообщества - обсудим вашу задачу и предложим формат.`;
+
+export function buildCasePrompt(t: CaseTask, facts: Fact[]): string {
+  const lim = POST_LIMIT[t.network];
+  return [...contentRules, '',
+    `Напиши пост-кейс о готовой работе студии для площадки ${t.network}: ${NETWORKS[t.network] || 'без ограничений'}.${lim ? ` Жёсткий предел — ${lim} знаков.` : ''}`,
+    'Структура, как в примере владельцев: первая строка — цепляющий заход про результат для зрителя; абзац — кто клиент, где он и что сделали; «Что внутри:» — короткий список через дефис; одна строка настроения; призыв написать в сообщения.',
+    t.network === 'Telegram' ? 'Для Telegram — короче: заход, два-три предложения о работе, призыв.' : '',
+    t.named && t.client ? `Клиента можно называть: ${t.client}.` : 'Клиента НЕ называть — опиши его по сфере и городу без названия.',
+    t.format ? `Формат публикации: ${t.format}.` : '',
+    'Что сделали (от автора — это факты работы): ' + t.work,
+    t.facts ? 'Факты о клиенте из ролика или от клиента (можно упоминать): ' + t.facts : '',
+    'Не придумывай цифры, сроки и результаты, которых нет выше. Пример ниже — только образец структуры и тона, его факты не используй.',
+    'visual — что поставить в пост: ролик, обложка, кадры. cta — призыв одной фразой.',
+    'Верни строго JSON: {"title":"рабочее название","body":"текст поста","visual":"","cta":"","gaps":["чего не хватило"]}',
+    '', 'ПРИМЕР СТИЛЯ:\n' + CASE_EXAMPLE,
+    '', facts.length ? 'ФАКТЫ О СТУДИИ:\n' + facts.map(f => `[${f.id}] ${f.title}\n${f.body}`).join('\n\n') : ''
+  ].filter(x => x !== '').join('\n');
+}

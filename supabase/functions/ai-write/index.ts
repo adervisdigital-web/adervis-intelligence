@@ -12,7 +12,7 @@ import {
   buildPrompt, buildRewritePrompt, buildPitchPrompt, parseReply, sanitizeOptions, sanitizeRewrite, sanitizePitch, usableFacts,
   sanitizeAdTask, buildKeywordPrompt, buildAdPrompt, parseKeywords, parseAds,
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost,
-  sanitizeBriefTask, buildBriefPrompt, parseBrief,
+  sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
   providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
 } from './compose.ts';
 
@@ -89,7 +89,29 @@ Deno.serve(async (req) => {
     }
 
     const input = await req.json();
-    const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post', 'brief'].includes(input?.mode) ? input.mode : 'write';
+
+    // Голосовое → текст для брифа: только Gemini принимает аудио в запросе.
+    if (input?.mode === 'transcribe') {
+      if (PROVIDER !== 'gemini') return json({ error: 'Расшифровка голосовых работает с Gemini, а сейчас подключён другой провайдер.' }, 400);
+      const audio = sanitizeAudio(input);
+      let payload = null, usedModel = '', lastStatus = 0;
+      for (const [i, model] of modelAttempts(MODEL, FALLBACK_MODEL).entries()) {
+        const r = audioRequest(model, AI_KEY, AI_BASE_URL, audio);
+        const resp = await fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(r.body) });
+        if (resp.ok) { payload = await resp.json(); usedModel = model; break; }
+        lastStatus = resp.status;
+        console.error('ai-write transcribe:', model, resp.status, (await resp.text()).slice(0, 300));
+        if (!RETRY_STATUS.includes(resp.status)) break;
+        if (i === 0) await new Promise(res => setTimeout(res, 1500));
+      }
+      if (!payload) return json({ error: RETRY_STATUS.includes(lastStatus) ? 'Модель сейчас перегружена. Попробуйте через минуту.' : `Расшифровка не удалась (ошибка ${lastStatus}).` }, 502);
+      const text = providerText('gemini', payload).trim();
+      if (!text) return json({ error: 'В записи не нашлось речи.' }, 422);
+      await admin.from('ai_usage').insert({ actor: user.email, model: `gemini/${usedModel}`, drafts: 0, chars: text.length });
+      return json({ text: text.slice(0, 20000), model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
+    }
+
+    const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post', 'brief', 'case'].includes(input?.mode) ? input.mode : 'write';
 
     // Публичные и проверенные записи. Политики доступа базы действуют и здесь:
     // запрос идёт от имени вошедшего человека.
@@ -114,12 +136,14 @@ Deno.serve(async (req) => {
     const adTask = ['keywords', 'ads'].includes(mode) ? sanitizeAdTask(input) : null;
     const contentTask = ['ideas', 'plan'].includes(mode) ? sanitizeContentTask(input) : null;
     const postTask = mode === 'post' ? sanitizePostTask(input) : null;
+    const caseTask = mode === 'case' ? sanitizeCaseTask(input) : null;
     // Разбор ТЗ клиента: текст ТЗ уходит в модель, ставки студии — нет.
     const briefTask = mode === 'brief' ? sanitizeBriefTask(input) : null;
     const prompt = mode === 'brief' ? buildBriefPrompt(briefTask!, facts)
       : mode === 'ideas' ? buildIdeasPrompt(contentTask!, facts)
       : mode === 'plan' ? buildPlanPrompt(contentTask!, facts)
       : mode === 'post' ? buildPostPrompt(postTask!, facts)
+      : mode === 'case' ? buildCasePrompt(caseTask!, facts)
       : mode === 'pitch'
       ? buildPitchPrompt(sanitizePitch(input))
       : mode === 'keywords' ? buildKeywordPrompt(adTask!, facts)
@@ -131,7 +155,7 @@ Deno.serve(async (req) => {
     let payload = null;
     let usedModel = '';
     let lastStatus = 0;
-    const claude = ['brief', 'post', 'plan', 'ideas'].includes(mode) && !!BRIEF_KEY;
+    const claude = ['brief', 'post', 'plan', 'ideas', 'case'].includes(mode) && !!BRIEF_KEY;
     const provider = claude ? BRIEF_PROVIDER : PROVIDER;
 
     for (const [i, model] of (claude ? modelAttempts(BRIEF_MODEL, '') : modelAttempts(MODEL, FALLBACK_MODEL)).entries()) {
@@ -165,13 +189,13 @@ Deno.serve(async (req) => {
     }
 
     // Фразы и объявления — свой ответ: у них нет «черновиков со ссылками».
-    if (adTask || contentTask || postTask || briefTask) {
+    if (adTask || contentTask || postTask || briefTask || caseTask) {
       const parsed = mode === 'brief' ? parseBrief(text, briefTask!)
         : mode === 'keywords' ? parseKeywords(text, adTask!)
         : mode === 'ads' ? parseAds(text, adTask!)
         : mode === 'ideas' ? parseIdeas(text, contentTask!)
         : mode === 'plan' ? parsePlan(text, contentTask!)
-        : parsePost(text, postTask!.network);
+        : parsePost(text, (postTask || caseTask)!.network);
       await admin.from('ai_usage').insert({ actor: user.email, model: `${provider}/${usedModel}`, drafts: 0, chars: text.length });
       return json({ ...parsed, model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
     }

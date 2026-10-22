@@ -4,7 +4,7 @@ import {
   sanitizePitch, buildPitchPrompt, PITCH_LIMIT,
   sanitizeAdTask, buildKeywordPrompt, parseKeywords, buildAdPrompt, parseAds, DIRECT_LIMITS,
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost, RUBRICS,
-  sanitizeBriefTask, buildBriefPrompt, parseBrief
+  sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -241,6 +241,25 @@ check('ТЗ: чужая роль — первая из списка, часы с
 check('ТЗ: пустые работы и вопросы отброшены', br.items.length === 2 && br.questions.length === 1);
 check('ТЗ: этап — минимум один день', br.plan[0].days === 1);
 check('ТЗ: без работ — понятная ошибка', /не разложила/.test(throws(() => parseBrief('{"items":[]}', bt)) || ''));
+
+// --- голосовые в бриф
+const au = sanitizeAudio({ name: 'audio_2026-10-22.ogg', data: 'T2dnUwACAAAA' });
+check('голосовое: формат по расширению, данные как есть', au.mime === 'audio/ogg' && au.data === 'T2dnUwACAAAA');
+check('голосовое: не аудио — понятная ошибка', /ogg, opus, mp3/.test(throws(() => sanitizeAudio({ name: 'ТЗ.docx', data: 'AAAA' })) || ''));
+check('голосовое: больше 8 МБ — просим разделить', /больше 8 МБ/.test(throws(() => sanitizeAudio({ name: 'a.mp3', data: 'A'.repeat(11_000_000) })) || ''));
+check('голосовое: мусор вместо base64 — ошибка', /не передалось/.test(throws(() => sanitizeAudio({ name: 'a.mp3', data: '<script>' })) || ''));
+const audioReq = audioRequest('gemini-3.5-flash', 'k', '', au);
+check('голосовое: аудио уходит в запрос Gemini вместе с просьбой расшифровать', audioReq.body.contents[0].parts[0].inlineData.mimeType === 'audio/ogg'
+  && /расшифруй/.test(audioReq.body.contents[0].parts[1].text) && audioReq.body.generationConfig.temperature === 0);
+
+// --- пост о готовой работе
+check('кейс: без описания работы — ошибка', /что сделали/.test(throws(() => sanitizeCaseTask({ work: 'ролик' })) || ''));
+const ct1 = sanitizeCaseTask({ network: 'ВКонтакте', client: 'Раздолье', named: true, work: 'Сняли рекламный ролик с дрона, карта маршрута, монтаж 4K', facts: '40 км от Перми' });
+const cp1 = buildCasePrompt(ct1, []);
+check('кейс: структура по образцу владельцев, клиента можно называть', cp1.includes('Что внутри:') && cp1.includes('Клиента можно называть: Раздолье') && cp1.includes('40 км от Перми'));
+const cp2 = buildCasePrompt(sanitizeCaseTask({ network: 'Telegram', client: 'Раздолье', named: false, work: 'Сняли рекламный ролик для базы отдыха' }), []);
+check('кейс: без разрешения клиента не называем; в Telegram — короче', cp2.includes('Клиента НЕ называть') && !cp2.includes('Клиента можно называть') && cp2.includes('короче'));
+check('кейс: пример — только образец, его факты не берём', cp1.includes('его факты не используй'));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);
