@@ -4176,19 +4176,26 @@ function kpPrint(b, html = kpHtml(b)) {
 
 // ---- смета для клиента: работы и цены — без часов и ставок студии.
 // Цена строки — её доля в цене варианта из КП, поэтому строки всегда
-// сходятся с итогом, даже если цену в КП поправили руками.
+// сходятся с итогом, даже если цену в КП поправили руками. Общая работа
+// стоит одинаково в обоих вариантах: разницу несут работы только базового.
 function estimateDoc(b) {
   const k = kpData(b), e = b.estimate || {}, items = e.items || [];
   const two = !!k.base && hasBase(b);
   const weight = it => ((Number(it.min) || 0) + (Number(it.max) || 0)) / 2 * rateOf(it.role);
-  const split = (v, price) => {
-    const list = items.filter(it => inVariant(it, v)), w = list.reduce((n, it) => n + weight(it), 0) || 1;
-    const out = new Map();
+  const split = (list, price, out = new Map()) => {
+    const w = list.reduce((n, it) => n + weight(it), 0) || 1;
     let left = price;
     list.forEach((it, i) => { const p = i === list.length - 1 ? left : Math.round(price * weight(it) / w / 100) * 100; out.set(it, p); left -= p; });
     return out;
   };
-  const full = split('full', k.full), base = two ? split('base', k.base) : new Map();
+  const full = split(items.filter(it => inVariant(it, 'full')), k.full);
+  let base = new Map();
+  if (two) {
+    const shared = items.filter(it => (it.variant || 'both') === 'both'), own = items.filter(it => it.variant === 'base');
+    const rest = k.base - shared.reduce((n, it) => n + full.get(it), 0);
+    // если цену базового сильно урезали руками — делим её заново целиком
+    base = own.length && rest > 0 ? split(own, rest, new Map(shared.map(it => [it, full.get(it)]))) : split(items.filter(it => inVariant(it, 'base')), k.base);
+  }
   const groups = [...new Set(items.map(it => it.group || 'Работы'))].map(g => ({
     name: g, rows: items.filter(it => (it.group || 'Работы') === g && (full.has(it) || base.has(it)))
       .map(it => ({ name: it.name, base: base.has(it) ? base.get(it) : null, full: full.has(it) ? full.get(it) : null }))
@@ -4205,7 +4212,9 @@ function estimateDoc(b) {
 // Смета текстом — вставить в мессенджер или письмо как есть.
 function estimateText(b) {
   const d = estimateDoc(b), money = v => v === null ? '—' : rub(v);
-  const price = r => d.two ? `базовый ${money(r.base)}, полный ${money(r.full)}` : money(r.full);
+  const price = r => !d.two ? money(r.full) : r.base === r.full ? money(r.full)
+    : r.base === null ? `${money(r.full)} (только в полном)` : r.full === null ? `${money(r.base)} (только в базовом)`
+    : `базовый ${money(r.base)}, полный ${money(r.full)}`;
   return [`Смета: ${b.title}`, `Для: ${b.client || '—'}`, '',
     ...d.groups.flatMap(g => [g.name, ...g.rows.map(r => `— ${r.name} — ${price(r)}`), '']),
     d.two ? `Итого: базовый вариант — ${rub(d.k.base)}, полный — ${rub(d.k.full)}` : `Итого: ${rub(d.k.full)}`,
