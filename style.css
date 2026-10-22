@@ -2025,3 +2025,11 @@ dialog textarea.short{min-height:84px}
 .crmpush dd{margin:0;overflow-wrap:anywhere}
 .bfcrmnote{display:flex;gap:6px;align-items:center;margin:-4px 0 10px}
 .bfcrmnote svg{color:var(--tone-green)}
+
+/* --- вшить работу в стоимость ------------------------------------------- */
+.bfrowacts{white-space:nowrap}
+.bftable .fold{width:30px;height:30px;padding:0;display:inline-grid;place-items:center;border-radius:8px;background:transparent;border:1px solid transparent;color:var(--muted)}
+.bftable .fold:hover{color:var(--ink);background:var(--bg)}
+.bftable .fold.on{color:var(--tone-gold);border-color:color-mix(in srgb,var(--tone-gold) 45%,var(--line))}
+.bftable tr.folded td:first-child input{font-style:italic;color:var(--muted)}
+.bftable tr.folded td:first-child::after{content:'вшито в стоимость';display:block;font-size:11px;color:var(--tone-gold);margin-top:2px}
