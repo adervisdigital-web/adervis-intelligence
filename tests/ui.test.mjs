@@ -2086,6 +2086,22 @@ await page.click('[data-action=kpprint]');
 check('«Сохранить PDF» печатает только документ КП', (await page.evaluate(() => window.__printed)).includes('Коммерческое предложение')
   && await page.evaluate(() => document.body.classList.contains('printkp')));
 await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+// смета для клиента: Excel и PDF — работы и цены, без часов и ставок
+const [xdl] = await Promise.all([page.waitForEvent('download'), page.click('.bfkp [data-action=bfxlsx]')]);
+const xpath = path.join(OUT, 'smeta.xlsx');
+await xdl.saveAs(xpath);
+const xtext = fs.readFileSync(xpath).toString('utf8');
+check('смета в Excel: настоящий .xlsx, работы, итог формулой', xdl.suggestedFilename() === 'Смета — Видеодайджест.xlsx' && xtext.startsWith('PK')
+  && xtext.includes('xl/worksheets/sheet1.xml') && xtext.includes('Заставка') && xtext.includes('SUM(D') && xtext.includes('210000'), xdl.suggestedFilename());
+check('смета в Excel: ставок и часов студии нет', !/Моушн-дизайнер|Арт-директор|ч ·|часов/.test(xtext));
+await page.click('[data-action=bftab][data-id=estimate]');
+await page.click('[data-action=bfpdf]');
+const smPrinted = await page.evaluate(() => window.__printed);
+check('смета в PDF: только документ сметы, итог совпадает с КП', smPrinted.includes('Смета') && smPrinted.includes('Итого') && smPrinted.replace(/\s/g, '').includes('210000₽')
+  && !smPrinted.includes('Коммерческое предложение'));
+await page.screenshot({ path: path.join(OUT, 'intel-brief-smeta-btn.png') });
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.click('[data-action=bftab][data-id=kp]');
 await page.click('[data-action=kpsent]');
 await page.waitForFunction(() => window.__STATE__.briefs[0].stage === 'Переговоры');
 stB = await state();
