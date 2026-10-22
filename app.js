@@ -251,6 +251,19 @@ function createApi(cfg) {
       if (paths.length) await sb.storage.from('files').remove(paths);
     },
 
+    // КП-ссылка: картинки и видео примеров — в публичном хранилище kp-media,
+    // снимок КП — в kp_shares под случайным токеном.
+    async uploadKpMedia(briefId, file) {
+      const ext = (file.name.match(/\.[a-z0-9]{1,8}$/i) || [''])[0].toLowerCase();
+      const path = `${briefId}/${crypto.randomUUID()}${ext}`;
+      const { error } = await sb.storage.from('kp-media').upload(path, file, { contentType: file.type || 'application/octet-stream' });
+      if (error) throw error;
+      return { path, url: sb.storage.from('kp-media').getPublicUrl(path).data.publicUrl };
+    },
+    async removeKpMedia(paths) { if (paths.length) await sb.storage.from('kp-media').remove(paths); },
+    async kpShareGet(token) { return must(await sb.from('kp_shares').select('token,views,first_view_at,last_view_at,updated_at').eq('token', token).maybeSingle()); },
+    async kpSharePut(row) { return must(await sb.from('kp_shares').upsert(row).select('token,views,first_view_at,last_view_at,updated_at').single()); },
+
     async insert(table, o) {
       return fromRow(table, must(await sb.from(table).insert(toRow(table, o)).select().single()));
     },
@@ -4202,6 +4215,9 @@ function bfKp(b) {
       <textarea class="input" id="kprefs" data-bf="kp.refs" maxlength="3000" rows="4">${E(k.refs)}</textarea>
       <label for="kpterms">Условия</label><textarea class="input" id="kpterms" data-bf="kp.terms" maxlength="2000" rows="3">${E(k.terms)}</textarea>
       <p class="muted">Подсказка из сметы: полный — ${rub(suggested(b, 'full'))}${hasBase(b) ? `, базовый — ${rub(suggested(b, 'base'))}` : ''} (середина вилки с запасом).</p>
+      <div class="kplinkbox"><div><b>${icon('link', 16)} КП-ссылка</b>
+          <small class="muted">${b.kp?.share_token ? 'Опубликовано — клиент видит страницу с примерами, сметой и сроками' : 'Страница для клиента: примеры, смета, сроки, кнопка «Позвонить». Откроет — придёт уведомление в Telegram'}</small></div>
+        <button class="primary" data-action="bfshare">${b.kp?.share_token ? 'Ссылка и примеры' : 'Сделать КП-ссылку'}</button></div>
       <div class="formactions"><button class="primary" data-action="kpprint">${icon('download', 15)} Сохранить PDF</button>
         <button data-action="bfxlsx">${icon('download', 15)} Смета в Excel</button>
         <button data-action="kpsent" ${b.kp?.sent_on ? 'disabled' : ''}>${b.kp?.sent_on ? `КП отправлено ${E(shortDate(b.kp.sent_on))}` : 'Отметить: КП отправлено'}</button></div></div>
@@ -4485,6 +4501,88 @@ function downloadBlob(blob, name) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+// ---- КП-ссылка: страница для клиента с примерами, сметой и сроками.
+// В kp_shares уходит снимок — только то, что видит клиент (как в смете для
+// клиента: без часов и ставок). Ссылка постоянная: «Обновить» меняет снимок.
+const shareToken = () => [...crypto.getRandomValues(new Uint8Array(24))].map(x => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[x % 62]).join('');
+const kpLink = (token, preview = false) => new URL(`kp.html?t=${token}${preview ? '&p=1' : ''}`, location.href).href;
+
+function kpShareData(b) {
+  const k = kpData(b), d = estimateDoc(b), a = b.analysis || {}, e = b.estimate || {};
+  const groups = [...new Set((e.items || []).map(it => it.group || 'Работы'))];
+  const deliverables = (a.deliverables || []).length ? a.deliverables
+    : groups.map(g => ({ name: g, details: (e.items || []).filter(it => (it.group || 'Работы') === g && inVariant(it, 'full') && !it.fold).map(it => it.name).join('; ') }));
+  const valid = localDate(Date.parse(k.date) + k.valid * 864e5);
+  return {
+    v: 1, title: b.title, client: b.client || '', date: k.date, valid_until: valid, intro: k.intro, style: k.style, concept: k.concept, approach: k.approach,
+    deliverables: deliverables.map(x => ({ name: x.name, details: x.details || '' })),
+    estimate: { two: d.two, subtotals: d.subtotals, base: d.k.base, full: d.k.full,
+      groups: d.groups.map(g => ({ name: g.name, rows: g.rows, sum: g.sum })), options: d.options },
+    terms: d.terms, days: planDays(b),
+    plan: planDates(b, b.kp?.start || dayShift(3)).map(s => ({ stage: s.stage, result: s.result || '', from: s.from, to: s.to })),
+    refs: refLines(k.refs), why: KP_WHY, contact: k.contact, phone: k.phone,
+    media: (b.kp?.media || []).map(m => ({ url: m.url, kind: m.kind, caption: m.caption || '', group: m.group || '' }))
+  };
+}
+
+async function kpShareModal(b) {
+  const kp = (b.kp ||= {}), media = (kp.media ||= []);
+  let info = null;
+  if (kp.share_token) { try { info = await api.kpShareGet(kp.share_token); } catch (e) { info = null; } }
+  const views = info?.views ? `открывали ${info.views} ${plural(info.views, 'раз', 'раза', 'раз')}, последний — ${ago(info.last_view_at)}` : 'ещё не открывали';
+  modal(`<h2>КП-ссылка для клиента</h2>
+    ${kp.share_token ? `<div class="kplinkrow"><input class="input" id="kplink" readonly value="${E(kpLink(kp.share_token))}">
+        <button data-action="kpcopy">${icon('copy', 15)} Скопировать</button>
+        <a class="btnlink" href="${E(kpLink(kp.share_token, true))}" target="_blank" rel="noopener">${icon('external', 15)} Открыть</a></div>
+      <p class="muted">${icon('eye', 14)} Клиент ${E(views)}. Когда откроет — придёт сообщение в Telegram служебного бота.</p>` : ''}
+    <h3>Примеры — картинки и видео</h3>
+    <p class="muted">Стайлфреймы, аниматик, кадры из похожих работ. Подпись — что на кадре; раздел — например, «Направление 1 «Технологичное стекло»». До 50 МБ на файл.</p>
+    <ul class="kpmedia">${media.map((m, i) => `<li>
+      ${m.kind === 'video' ? `<span class="kpthumb">${icon('play', 20)}</span>` : `<img class="kpthumb" src="${E(m.url)}" alt="">`}
+      <span class="kpmeta"><input class="input" data-kpm="${i}" data-k="caption" maxlength="200" value="${E(m.caption || '')}" placeholder="Подпись к кадру">
+        <input class="input" data-kpm="${i}" data-k="group" maxlength="120" value="${E(m.group || '')}" placeholder="Раздел — необязательно"></span>
+      <button class="del" data-action="kpmdel" data-id="${i}" aria-label="Убрать файл">${icon('delete', 15)}</button></li>`).join('')}</ul>
+    <p class="fileadd"><button type="button" id="kpmbtn">${icon('upload', 15)} Добавить картинки и видео</button>
+      <input type="file" id="kpmfile" accept="image/*,video/mp4,video/webm,video/quicktime" multiple hidden> <small class="muted" id="kpmst"></small></p>
+    <p class="muted">На странице: задача, ${media.length ? 'примеры, ' : ''}стиль${kp.concept ? ', концепция' : ''}, что сделаем, смета, этапы, условия, наши работы и кнопка «Позвонить». Часов и ставок студии там нет.</p>
+    <div class="formactions"><button class="primary" id="kppublish">${icon('link', 15)} ${kp.share_token ? 'Обновить страницу' : 'Опубликовать и получить ссылку'}</button></div>`, 'wide');
+  const box = $('#modal');
+  box.querySelectorAll('[data-kpm]').forEach(inp => inp.oninput = () => { media[Number(inp.dataset.kpm)][inp.dataset.k] = inp.value; queueBriefSave(b); });
+  $('#kpmbtn').onclick = () => $('#kpmfile').click();
+  $('#kpmfile').onchange = async e => {
+    const files = [...e.target.files]; e.target.value = '';
+    if (!files.length) return;
+    if (files.some(f => f.size > 50 * 1024 * 1024)) { $('#kpmst').textContent = 'Файл больше 50 МБ — сожмите видео'; return; }
+    $('#kpmst').textContent = `Загружаю ${files.length}…`;
+    try {
+      for (const f of files) {
+        const up = await api.uploadKpMedia(b.id, f);
+        media.push({ ...up, kind: f.type.startsWith('video') ? 'video' : 'image', caption: f.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' '), group: '' });
+      }
+      await saveBriefNow(b, `Добавлено: ${files.length}`);
+      kpShareModal(b);
+    } catch (err) { $('#kpmst').textContent = 'Не загрузилось: ' + (err.message || 'ошибка'); }
+  };
+  box.querySelectorAll('[data-action=kpmdel]').forEach(btn => btn.onclick = async () => {
+    const [m] = media.splice(Number(btn.dataset.id), 1);
+    try { await api.removeKpMedia([m.path]); } catch (e) { /* файл мог быть уже удалён */ }
+    await saveBriefNow(b, 'Файл убран'); kpShareModal(b);
+  });
+  const copy = box.querySelector('[data-action=kpcopy]');
+  if (copy) copy.onclick = () => copyText(kpLink(kp.share_token), 'Ссылка на КП скопирована — отправьте клиенту');
+  $('#kppublish').onclick = async ev => {
+    ev.target.disabled = true;
+    try {
+      flushPendingBrief();
+      kp.share_token ||= shareToken();
+      await api.kpSharePut({ token: kp.share_token, brief_id: b.id, data: kpShareData(b) });
+      await saveBriefNow(b, 'КП-ссылка обновлена');
+      await copyText(kpLink(kp.share_token), 'Ссылка на КП скопирована — отправьте клиенту');
+      kpShareModal(b);
+    } catch (err) { toast('Не опубликовалось: ' + (err.message || 'ошибка'), 7000); ev.target.disabled = false; }
+  };
 }
 
 // ---- бриф со сметой → клиент и сделка в ADERVIS CRM
@@ -4793,6 +4891,7 @@ async function briefAction(btn) {
     case 'bfplandel': b.plan.splice(i, 1); redraw(); break;
     case 'kpprint': flushPendingBrief(); kpPrint(b); break;
     case 'bfcrmpush': flushPendingBrief(); crmPushModal(b); break;
+    case 'bfshare': flushPendingBrief(); kpShareModal(b); break;
     case 'bfxlsx': flushPendingBrief(); downloadBlob(estimateXlsx(b), estimateFile(b, 'xlsx')); toast('Смета скачана'); break;
     case 'bfpdf': flushPendingBrief(); kpPrint(b, estimateHtml(b)); break;
     case 'bftext': flushPendingBrief(); await copyText(estimateText(b), 'Смета скопирована текстом'); break;

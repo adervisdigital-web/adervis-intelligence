@@ -2040,3 +2040,17 @@ dialog textarea.short{min-height:84px}
 .kpdoc ul{margin-bottom:8px}
 .kpdoc li{margin:2px 0}
 .kpdoc h3{font-size:14px;margin:14px 0 6px}
+
+/* --- КП-ссылка ------------------------------------------------------------ */
+.kplinkbox{display:flex;justify-content:space-between;align-items:center;gap:14px;margin:18px 0 6px;padding:14px 16px;border-radius:14px;border:1px solid color-mix(in srgb,var(--tone-gold) 45%,var(--line));background:color-mix(in srgb,var(--tone-gold) 8%,var(--panel))}
+.kplinkbox b{display:flex;gap:6px;align-items:center}
+.kplinkbox small{display:block;margin-top:2px}
+.kplinkbox .primary{flex:none}
+.kplinkrow{display:flex;gap:8px;align-items:center;margin:4px 0 8px}
+.kplinkrow .input{flex:1;min-width:0}
+.kpmedia{list-style:none;padding:0;margin:10px 0;display:grid;gap:8px}
+.kpmedia li{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:12px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:12px}
+.kpthumb{width:96px;height:54px;object-fit:cover;border-radius:8px;display:grid;place-items:center;background:var(--bg)}
+.kpmeta{display:grid;gap:6px}
+.kpmeta .input{padding:7px 10px}
+@media(max-width:720px){.kplinkbox{flex-direction:column;align-items:stretch}.kpmedia li{grid-template-columns:64px minmax(0,1fr) auto}.kpthumb{width:64px;height:40px}}
