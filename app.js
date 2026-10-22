@@ -3789,7 +3789,8 @@ let briefView = { id: '', tab: 'tz', busy: false, error: '' };
 let briefSave = { timer: 0, id: '', busy: false, again: false };
 
 const rub = n => num(Math.round(n)) + ' ₽';
-const roundUp = (n, step) => Math.ceil(n / (step || 1000)) * (step || 1000);
+// до рубля, потом вверх: 1,1 × 100 000 в плавающей точке — чуть больше 110 000
+const roundUp = (n, step) => Math.ceil(Math.round(n) / (step || 1000)) * (step || 1000);
 const rateOf = role => Number(db.studio_rates.find(r => r.id === role)?.rate) || 0;
 const roleName = role => db.studio_rates.find(r => r.id === role)?.name || role;
 const inVariant = (it, v) => (it.variant || 'both') === 'both' || it.variant === v;
@@ -4871,7 +4872,7 @@ function ratesModal() {
 let digestInfo = null;
 
 async function digestModal() {
-  modal(`<h2>Утренняя сводка в Telegram</h2><div id="dgbody"><p class="muted">Проверяю…</p></div>`);
+  modal(`<h2>Служебный бот: сводка и приём заявок</h2><div id="dgbody"><p class="muted">Проверяю…</p></div>`);
   try { digestInfo = (await api.channels({ action: 'status' })).intel || {}; } catch (err) { digestInfo = { error: err.message || 'нет связи' }; }
   paintDigest();
 }
@@ -4883,6 +4884,8 @@ function paintDigest(link) {
   box.innerHTML = `${d.error ? `<div class="notice error">Не удалось проверить: ${E(d.error)}</div>` : ''}
     <p>Каждое утро служебный бот ${d.username ? `<b>@${E(d.username)}</b>` : 'ADERVIS Intelligence'} присылает «На сегодня»: просроченное, дела на сегодня,
       клиентов, которые ждут ответа, и итоги суток. Команда /today — сводка в любой момент.</p>
+    <p><b>Приём заявок.</b> Перешлите этому же боту ТЗ, голосовые, PDF и сообщения клиента и нажмите «🧠 Разобрать» — бот заведёт заявку
+      и бриф с разбором, вопросами и вилкой цены и пришлёт ссылку. Принимает только от подписанных здесь руководителей.</p>
     ${subs.length ? `<table class="table"><thead><tr><th>Кому</th><th>Во сколько (Пермь)</th><th></th></tr></thead><tbody>
       ${subs.map(s => `<tr><td>${E(s.name || 'Telegram ' + s.chat_id)}</td>
         <td><select class="input" data-digesthour="${E(s.chat_id)}" aria-label="Час сводки">${[7, 8, 9, 10, 11].map(h => `<option value="${h}" ${Number(s.hour) === h ? 'selected' : ''}>${h}:00</option>`).join('')}</select></td>
@@ -8111,6 +8114,13 @@ async function enter() {
   $('#myemail').textContent = me.email;
   $('#avatar').textContent = (memberName(me.email)[0] || '?').toUpperCase();
   go('home');
+  // Ссылка из служебного бота …/#brief=<номер> открывает готовый бриф.
+  const briefLinkId = /^#brief=([\w-]{1,80})$/.exec(location.hash)?.[1];
+  if (briefLinkId) {
+    history.replaceState(null, '', location.pathname + location.search);
+    if (db.briefs.some(x => x.id === briefLinkId)) openBrief(briefLinkId);
+    else toast('Бриф не найден — возможно, его удалили');
+  }
   // Ссылка …/#channels-vk или #channels-tg сразу открывает поле ключа канала.
   const deep = /^#channels(?:-(vk|tg))?$/.exec(location.hash);
   if (deep) {
