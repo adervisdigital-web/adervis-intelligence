@@ -397,6 +397,11 @@ const fake = (seedData) => {
           { date: payload.start, network: payload.networks[0], rubric: 'Польза', title: 'Как выбрать формат ролика', brief: '' }
         ], gaps: ['нет свежих кейсов CRM'], model: 'yandexgpt/latest', left: 22 };
       }
+      if (payload.mode === 'transcribe') { window.__VOICE__ = payload.name; return { text: 'Паша, привет. Нужна графика к пятнадцатому ноября.', left: 20 }; }
+      if (payload.mode === 'case') {
+        return { title: 'Кейс: ' + (payload.named ? payload.client : 'база отдыха'), body: (payload.named ? payload.client : 'База отдыха') + '. Минута — и вы уже хотите приехать.\n\nЧто внутри:\n- ' + payload.work,
+          visual: 'Ролик целиком', cta: 'Напишите в сообщения', over: 0, gaps: [], left: 19 };
+      }
       if (payload.mode === 'post') {
         return { title: payload.title, body: 'Готовый текст про ' + payload.title + '. Напишите нам в сообщения.', visual: 'Вертикальный клип: ' + payload.title,
           cta: 'Напишите «смета» в сообщения', over: 0, gaps: [], model: 'yandexgpt/latest', left: 21 };
@@ -1755,6 +1760,18 @@ await page.click('#modal [data-action=close]');
 check('после написания кнопка исчезла, в строке — начало текста', !(await page.$('[data-action=aiwriteall]'))
   && (await page.textContent(`.ptrow[data-p="${planItem.id}"] .ptmain p`)).startsWith('Готовый текст'));
 await page.screenshot({ path: path.join(OUT, 'intel-content-table.png'), fullPage: true });
+// пост о готовой работе: по одному на площадку, клиента без разрешения не называем
+await page.click('[data-action=aicase]');
+await page.fill('#caseclient', 'Раздолье');
+await page.fill('#casework', 'Рекламный ролик 57 секунд в 4K: съёмка с дрона, карта маршрута, монтаж');
+await page.screenshot({ path: path.join(OUT, 'intel-content-case.png') });
+await page.click('#casef button.primary');
+await page.waitForSelector('#pf');
+const cases = (await state()).content.filter(p => p.rubric === 'Кейс' && p.title.startsWith('Кейс: '));
+check('пост о работе: по посту на ВКонтакте и Telegram, черновики, рубрика «Кейс», цель «Доверие»', cases.length === 2
+  && cases.map(p => p.channel).sort().join() === 'Telegram,ВКонтакте' && cases.every(p => p.status === 'Черновик' && p.goal === 'Доверие' && p.visual), JSON.stringify(cases.map(p => p.channel)));
+check('пост о работе: без галочки клиента не называем', (await page.evaluate(() => window.__lastAiPayload)).named === false && cases.every(p => !p.body.includes('Раздолье')));
+await page.keyboard.press('Escape');
 await page.click('[data-action=contentview][data-id="board"]');
 await page.click('[data-action=newp]');
 await page.fill('#pf input[name=title]', 'Смета без сюрпризов');
@@ -2236,6 +2253,12 @@ await page.setInputFiles('#bffile', [{ name: 'ТЗ.txt', mimeType: 'text/plain',
   { name: 'Приложение ЦА.txt', mimeType: 'text/plain', buffer: Buffer.from('Описание аудитории') }]);
 await page.waitForFunction(() => /=== Приложение ЦА\.txt/.test(window.__STATE__.briefs[0].source_text));
 check('несколько файлов ТЗ — склеены с именами файлов', (await state()).briefs[0].source_text.includes('=== ТЗ.txt\nОсновное задание'));
+// голосовое к ТЗ — расшифровка дописывается к тексту
+await page.setInputFiles('#bffile', { name: 'audio_2026-10-22.ogg', mimeType: 'audio/ogg', buffer: Buffer.from('OggS fake voice') });
+await page.waitForFunction(() => /Голосовое \(расшифровка\)/.test(window.__STATE__.briefs[0].source_text));
+const withVoice = (await state()).briefs[0].source_text;
+check('голосовое: расшифровка дописана к ТЗ под именем файла, ТЗ на месте', withVoice.includes('=== audio_2026-10-22.ogg') && withVoice.includes('пятнадцатому ноября')
+  && withVoice.includes('Основное задание') && await page.evaluate(() => window.__VOICE__) === 'audio_2026-10-22.ogg');
 check('в CRM: бриф помнит сделку, кнопка — «Обновить в CRM»', (await page.textContent('[data-action=bfcrmpush]')).includes('Обновить в CRM'));
 
 // --- 5ч. утренняя сводка в Telegram
@@ -2292,7 +2315,7 @@ await page.click('#refresh');
 await nav('settings');
 const rows = await page.$$eval('.card:has(h2:text("Журнал изменений")) .row', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ')));
 check('журнал показывает правку второго руководителя', rows.some(r => /Изменил запись.*Правка Александра для журнала.*Александр/.test(r)), rows[0]);
-check('журнал показывает мои действия', rows.some(r => /Добавил объявление.*Шаблон нужен к вечеру.*Артём/.test(r)), rows.slice(0, 6).join(' | '));
+check('журнал показывает мои действия', rows.some(r => /Удалил задачу.*Посчитать бюджет офиса и найма.*Артём/.test(r)), rows.slice(0, 6).join(' | '));
 check('журнал показывает удаление', rows.some(r => /Удалил задачу.*Посчитать бюджет офиса и найма.*Артём/.test(r)));
 await page.screenshot({ path: path.join(OUT, 'intel-settings.png') });
 

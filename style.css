@@ -2033,3 +2033,6 @@ dialog textarea.short{min-height:84px}
 .bftable .fold.on{color:var(--tone-gold);border-color:color-mix(in srgb,var(--tone-gold) 45%,var(--line))}
 .bftable tr.folded td:first-child input{font-style:italic;color:var(--muted)}
 .bftable tr.folded td:first-child::after{content:'вшито в стоимость';display:block;font-size:11px;color:var(--tone-gold);margin-top:2px}
+
+.caseok{display:flex;gap:8px;align-items:center;margin-top:12px}
+.caseok input{width:18px;height:18px;flex:none}
