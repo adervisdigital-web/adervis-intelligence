@@ -1,5 +1,5 @@
 // Связь с ADERVIS CRM: шаблоны брифов студии и перенос брифа CRM в заявку и бриф.
-import { ADERVIS_TEMPLATES, withTemplates, fromSubmission, briefLink, maskEmail, CRM_TYPES } from '../supabase/functions/_shared/crm.ts';
+import { ADERVIS_TEMPLATES, withTemplates, fromSubmission, briefLink, maskEmail, CRM_TYPES, sanitizePush, withDeal } from '../supabase/functions/_shared/crm.ts';
 
 let fails = 0;
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
@@ -38,6 +38,31 @@ check('без имени — понятная подпись', fromSubmission({ 
 
 check('ссылка на бриф CRM', briefLink('ag-1', 'video') === 'https://app.adervis.ru/?brief=ag-1&type=video' && CRM_TYPES.length === 5);
 check('почта в настройках — скрыта', maskEmail('adervis.digital@gmail.com') === 'ad***@gmail.com');
+
+// бриф со сметой → клиент и сделка в CRM
+const raw = { briefId: 'brief-1', name: 'Два AI-ролика', client: 'ООО «СтройГрупп»', contact: 'Олег Петров', email: 'Petrov.O@pinepark.example',
+  phone: '+7 900 555 0123', status: 'Бриф', notes: 'Из Intelligence', lines: [{ name: 'Сценарий', price: 30000, note: 'Ролик 1' }, { name: 'Генерация', price: 70000, note: 'Ролик 1' }, { name: 'Пусто', price: 0 }] };
+const p = sanitizePush(raw);
+check('отправка: строки без цены отброшены, сумма — по строкам, почта в нижнем регистре', p.lines.length === 2 && p.total === 100000 && p.email === 'petrov.o@pinepark.example');
+check('отправка: без строк — понятная ошибка', /нет строк/.test((() => { try { sanitizePush({ briefId: 'x', lines: [] }); } catch (e) { return e.message; } })()));
+check('отправка: чужой статус заменён на «Бриф»', sanitizePush({ ...raw, status: 'Взлом' }).status === 'Бриф');
+const before = { clients: [{ id: 'c0', name: 'Другой' }], savedProjects: [{ id: 'old', name: 'Старая' }], company: { name: 'ADERVIS' } };
+const r1 = withDeal(before, p, { deal: 'proj_1', client: 'client_1' }, '2026-10-22T10:00:00Z');
+const deal = r1.state.savedProjects[0];
+check('сделка: создана первой, со своей ссылкой на бриф, суммой и статусом', r1.mode === 'created' && deal.id === 'proj_1' && deal.intelBriefId === 'brief-1'
+  && deal.total === 100000 && deal.crmStatus === 'Бриф' && r1.state.savedProjects.length === 2);
+check('сделка: смета — черновиком CRM, CRM развернёт её сама', deal.botEstimate.lines.length === 2 && deal.botEstimate.lines[0].qty === 1
+  && deal.botEstimate.lines[1].price === 70000 && deal.botEstimate.mismatch === 0);
+check('клиент: заведён с контактами и источником, привязан к сделке', r1.clientCreated && r1.state.clients[0].email === 'petrov.o@pinepark.example'
+  && r1.state.clients[0].source === 'ADERVIS Intelligence' && deal.clientId === 'client_1');
+check('остальное состояние CRM не тронуто', r1.state.company.name === 'ADERVIS' && before.savedProjects.length === 1 && before.clients.length === 1);
+const r2 = withDeal(r1.state, { ...p, lines: [{ name: 'Всё', price: 120000, note: '' }], total: 120000 }, { deal: 'proj_2', client: 'client_2' }, '2026-10-23T10:00:00Z', 'proj_1');
+check('повторная отправка обновляет ту же сделку и того же клиента', r2.mode === 'updated' && r2.dealId === 'proj_1' && !r2.clientCreated
+  && r2.state.savedProjects.length === 2 && r2.state.savedProjects[0].total === 120000 && r2.state.clients.length === 2);
+const byPhone = withDeal({ clients: [{ id: 'cp', name: 'Константин', phone: '8 (900) 555-01-23' }] }, { ...p, email: '' }, { deal: 'd', client: 'c' }, 'now');
+check('клиент находится по телефону в любом написании', !byPhone.clientCreated && byPhone.clientId === 'cp');
+const done = { savedProjects: [{ id: 'proj_1', intelBriefId: 'brief-1', snapshot: { selected: { custom_1: { qty: 1 } } } }] };
+check('развёрнутую в CRM смету не трогаем', /уже развёрнута/.test((() => { try { withDeal(done, p, { deal: 'x', client: 'y' }, 'now'); } catch (e) { return e.message; } })()));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

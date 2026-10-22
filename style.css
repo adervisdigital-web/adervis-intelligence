@@ -2017,3 +2017,11 @@ dialog textarea.short{min-height:84px}
 .smtable .smsub td{font-weight:700;border-bottom:1px solid #cfcfcf;padding-bottom:10px}
 .bfsubs{display:flex;gap:8px;align-items:center;margin-top:30px}
 .bfsubs input{width:18px;height:18px;flex:none}
+
+/* --- бриф → ADERVIS CRM -------------------------------------------------- */
+.crmpush{display:grid;gap:10px;margin:6px 0 12px}
+.crmpush>div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px}
+.crmpush dt{color:var(--muted);font-size:12px}
+.crmpush dd{margin:0;overflow-wrap:anywhere}
+.bfcrmnote{display:flex;gap:6px;align-items:center;margin:-4px 0 10px}
+.bfcrmnote svg{color:var(--tone-green)}

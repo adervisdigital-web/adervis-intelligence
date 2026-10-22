@@ -1,13 +1,14 @@
 // Связь с ADERVIS CRM.
 // Из приложения (только для участников): подключить вход в CRM, статус и
-// ссылки на брифы, подтянуть новые брифы, записать шаблоны брифов ADERVIS.
+// ссылки на брифы, подтянуть новые брифы, записать шаблоны брифов ADERVIS,
+// отправить бриф со сметой в CRM — клиентом и сделкой.
 // По расписанию (секрет расписания, как у сводки): подтянуть новые брифы.
 // В CRM ходим входом самой студии — её политика доступа отдаёт только
 // данные этой студии; код CRM не меняем.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { admin, secret, settings, json, CORS, SUPABASE_URL, PUBLIC_KEY, sameSecret, permToday, type Sb } from '../_shared/outreach.ts';
-import { CRM_URL, CRM_KEY, CRM_TYPES, ADERVIS_TEMPLATES, briefLink, withTemplates, fromSubmission, maskEmail } from '../_shared/crm.ts';
+import { CRM_URL, CRM_KEY, CRM_TYPES, ADERVIS_TEMPLATES, briefLink, withTemplates, fromSubmission, maskEmail, sanitizePush, withDeal } from '../_shared/crm.ts';
 import { sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
 
 Deno.serve(async (req) => {
@@ -35,6 +36,7 @@ Deno.serve(async (req) => {
       case 'status': return json(await status(sb));
       case 'sync': return json(await sync(sb));
       case 'templates': return json(await templates(sb));
+      case 'push': return json(await push(sb, body.deal));
       case 'disconnect':
         await sb.from('channel_secrets').delete().in('name', ['crm_email', 'crm_password']);
         await sb.from('outreach_settings').update({ crm_login: '', crm_agency_id: '' }).eq('id', 'main');
@@ -56,7 +58,7 @@ async function session(sb: Sb, email?: string, password?: string) {
   const { data, error } = await crm.auth.signInWithPassword({ email, password });
   if (error || !data.user) throw new Error('CRM не приняла вход: проверьте почту и пароль');
   const { data: profile } = await crm.from('profiles').select('agency_id').eq('id', data.user.id).maybeSingle();
-  return { crm, agency: String(profile?.agency_id || data.user.id) };
+  return { crm, agency: String(profile?.agency_id || data.user.id), token: data.session?.access_token || '' };
 }
 
 async function connect(sb: Sb, email: string, password: string) {
@@ -124,14 +126,49 @@ async function notify(sb: Sb, text: string) {
   for (const s of subs ?? []) await sendDigest(Number(s.chat_id), text);
 }
 
-// Шаблоны брифов ADERVIS — в CRM, рядом со встроенными. Читаем свежее
-// состояние CRM и меняем только свои типы брифов.
+// Состояние CRM меняем «прочитал — изменил — записал, если никто не успел
+// сохранить между делом»: запись идёт с условием на прежнюю метку версии.
+// После записи будим открытые вкладки CRM тем же сигналом, каким CRM будит
+// их сама после сохранения, — они перечитывают облако и не затирают нового.
+// deno-lint-ignore no-explicit-any
+async function changeCrm(sb: Sb, change: (state: any) => any) {
+  const { crm, agency, token } = await session(sb);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data: row, error } = await crm.from('agency_state').select('state_json,updated_at').eq('id', agency).maybeSingle();
+    if (error || !row) throw new Error('Не удалось прочитать данные CRM');
+    const result = change(row.state_json || {});
+    const { data: saved, error: we } = await crm.from('agency_state')
+      .update({ state_json: result.state, updated_at: new Date().toISOString() }).eq('id', agency).eq('updated_at', row.updated_at).select('id');
+    if (we) throw new Error('CRM не сохранила изменения: ' + we.message);
+    if (saved?.length) { await wakeCrmTabs(agency, token); return result; }
+    await new Promise(r => setTimeout(r, 700));
+  }
+  throw new Error('CRM сейчас сохраняет изменения — попробуйте ещё раз через минуту');
+}
+
+async function wakeCrmTabs(agency: string, token: string) {
+  try {
+    await fetch(`${CRM_URL}/realtime/v1/api/broadcast`, {
+      method: 'POST', headers: { apikey: CRM_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ topic: `adervis-crm-${agency}`, event: 'state-sync', payload: { sender: 'ADERVIS Intelligence' } }] })
+    });
+  } catch (e) { console.error('crm wake:', e); }
+}
+
+// Шаблоны брифов ADERVIS — в CRM, рядом со встроенными; меняем только свои типы.
 async function templates(sb: Sb) {
-  const { crm, agency } = await session(sb);
-  const { data: row, error } = await crm.from('agency_state').select('state_json').eq('id', agency).maybeSingle();
-  if (error || !row) throw new Error('Не удалось прочитать настройки CRM');
-  const next = withTemplates(row.state_json);
-  const { error: we } = await crm.from('agency_state').update({ state_json: next, updated_at: new Date().toISOString() }).eq('id', agency);
-  if (we) throw new Error('CRM не сохранила шаблоны: ' + we.message);
-  return { ok: true, installed: ADERVIS_TEMPLATES.filter(t => next.customBriefTypes.some((c: any) => c.id === t.id)).map(t => t.label) };
+  const { state } = await changeCrm(sb, st => ({ state: withTemplates(st) }));
+  return { ok: true, installed: ADERVIS_TEMPLATES.filter(t => state.customBriefTypes.some((c: any) => c.id === t.id)).map(t => t.label) };
+}
+
+// Бриф со сметой → клиент и сделка в CRM; повторная отправка обновляет ту же сделку.
+const uid = (prefix: string) => `${prefix}_${crypto.randomUUID().replace(/-/g, '')}`;
+async function push(sb: Sb, raw: unknown) {
+  const p = sanitizePush(raw);
+  const { data: brief } = await sb.from('briefs').select('id,crm_deal_id').eq('id', p.briefId).maybeSingle();
+  if (!brief) throw new Error('Бриф не найден');
+  const now = new Date().toISOString();
+  const r = await changeCrm(sb, st => withDeal(st, p, { deal: uid('proj'), client: uid('client') }, now, brief.crm_deal_id || ''));
+  await sb.from('briefs').update({ crm_deal_id: r.dealId, crm_pushed_at: now }).eq('id', p.briefId);
+  return { ok: true, dealId: r.dealId, mode: r.mode, clientCreated: r.clientCreated, lines: p.lines.length, total: p.total };
 }
