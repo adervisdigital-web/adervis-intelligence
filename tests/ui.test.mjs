@@ -2104,6 +2104,16 @@ await page.click('[data-action=bftext]');
 const smText = await page.evaluate(() => navigator.clipboard.readText());
 check('смета текстом: разделы, строки с ценами, итог как в КП, без часов', smText.startsWith('Смета: Видеодайджест') && /— Заставка 10–15 с — базовый/.test(smText) && /— 3D-студия, 3 плана — [\d\s]+₽ \(только в полном\)/.test(smText)
   && smText.replace(/\s/g, '').includes('полный—210000₽') && !/ч ·|Моушн-дизайнер/.test(smText), smText.slice(0, 300));
+// итоги по разделам — например, цена каждого ролика отдельно
+await page.check('.bfsubs input');
+await page.waitForFunction(() => window.__STATE__.briefs[0].estimate.subtotals === true);
+await page.click('[data-action=bftext]');
+const subText = await page.evaluate(() => navigator.clipboard.readText());
+const subFull = [...subText.matchAll(/^Итого «[^»]+»: базовый [\d\s]+₽, полный ([\d\s]+)₽$/gm)].map(m => Number(m[1].replace(/\s/g, '')));
+check('итоги по разделам: у каждого раздела, круглые, в сумме — цена КП', subFull.length === 3 && subFull.every(v => v % 5000 === 0)
+  && subFull.reduce((a, x) => a + x, 0) === 210000, JSON.stringify(subFull));
+await page.uncheck('.bfsubs input');
+await page.waitForFunction(() => window.__STATE__.briefs[0].estimate.subtotals === false);
 await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 await page.click('[data-action=bftab][data-id=kp]');
 await page.click('[data-action=kpsent]');
