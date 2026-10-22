@@ -292,6 +292,12 @@ const fake = (seedData) => {
       }
       if (payload.action === 'templates') { window.__CRMTPL__ = true; return { ok: true, installed: ['Моушн и графика', 'Сайт'] }; }
       if (payload.action === 'disconnect') { Object.assign(o, { crm_agency_id: '', crm_login: '' }); return { ok: true }; }
+      if (payload.action === 'push') {
+        const b = state.briefs.find(x => x.id === payload.deal.briefId), mode = b.crm_deal_id ? 'updated' : 'created';
+        window.__PUSHED__ = clone(payload.deal);
+        Object.assign(b, { crm_deal_id: b.crm_deal_id || 'proj_test', crm_pushed_at: now() });
+        return { ok: true, dealId: b.crm_deal_id, mode, clientCreated: mode === 'created', lines: payload.deal.lines.length, total: payload.deal.lines.reduce((n, l) => n + l.price, 0) };
+      }
       throw new Error('Неизвестное действие');
     },
     async user() { return session ? { email: session } : null; },
@@ -2200,6 +2206,20 @@ await page.click('[data-brief="crm-s1"]');
 check('CRM: в брифе — метка «из CRM»', await page.isVisible('.crmtag'));
 await nav('home');
 check('CRM: бриф из CRM — в «На сегодня»', (await page.textContent('.todaycard')).includes('Пекарня'));
+// бриф со сметой → клиент и сделка в CRM
+await nav('briefs');
+await page.click(`[data-brief="${stB.briefs[0].id}"]`);
+await page.click('[data-action=bfcrmpush]');
+check('в CRM: перед отправкой видно клиента, сделку и сумму сметы', (await page.textContent('.crmpush')).includes('Уралхим')
+  && (await page.textContent('.crmpush')).replace(/\s/g, '').includes('210000₽'));
+await page.screenshot({ path: path.join(OUT, 'intel-crm-push.png') });
+await page.click('#crmpushgo');
+await page.waitForFunction(() => window.__PUSHED__);
+const pushed = await page.evaluate(() => window.__PUSHED__);
+check('в CRM: ушли строки полной сметы, их сумма — цена КП, статус по шагу брифа', pushed.lines.reduce((n, l) => n + l.price, 0) === 210000
+  && pushed.lines.every(l => l.note) && pushed.status === 'Согласование' && pushed.client === 'Уралхим', JSON.stringify(pushed).slice(0, 300));
+await page.waitForSelector('.bfcrmnote');
+check('в CRM: бриф помнит сделку, кнопка — «Обновить в CRM»', (await page.textContent('[data-action=bfcrmpush]')).includes('Обновить в CRM'));
 
 // --- 5ч. утренняя сводка в Telegram
 await nav('settings');

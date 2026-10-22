@@ -131,3 +131,63 @@ export function fromSubmission(sub: Row, today: string) {
 }
 
 export const maskEmail = (e: string) => String(e || '').replace(/^(.{2}).*(@.*)$/, '$1***$2');
+
+// ------------------------------------------------- бриф Intelligence → сделка CRM
+// Клиент и сделка ложатся в состояние CRM так же, как их кладёт бот CRM:
+// смета — черновиком botEstimate. Строку сметы собирает сама CRM кнопкой
+// «Развернуть смету»: у неё своя математика, вторая копия разошлась бы молча.
+export const CRM_STATUSES = ['Лид', 'Бриф', 'КП отправлено', 'Согласование', 'Договор', 'Предоплата', 'В работе', 'Сдано', 'Оплата', 'Завершённые'];
+export type PushLine = { name: string; price: number; note: string };
+export type PushDeal = { briefId: string; name: string; client: string; contact: string; phone: string; email: string; status: string; total: number; notes: string; lines: PushLine[] };
+
+const str = (v: unknown, n: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+export function sanitizePush(raw: unknown): PushDeal {
+  const o = (raw ?? {}) as Row;
+  const lines = (Array.isArray(o.lines) ? o.lines : []).slice(0, 80)
+    .map((l: Row) => ({ name: str(l?.name, 120), price: Math.max(0, Math.round(Number(l?.price) || 0)), note: str(l?.note, 200) }))
+    .filter((l: PushLine) => l.name && l.price > 0);
+  if (!lines.length) throw new Error('В смете нет строк с ценой — сначала посчитайте смету');
+  const briefId = str(o.briefId, 80);
+  if (!briefId) throw new Error('Не указан бриф');
+  return {
+    briefId, lines,
+    name: str(o.name, 120) || 'Сделка из Intelligence', client: str(o.client, 120) || 'Новый клиент', contact: str(o.contact, 120),
+    phone: str(o.phone, 40), email: str(o.email, 120).toLowerCase(), status: CRM_STATUSES.includes(String(o.status)) ? String(o.status) : 'Бриф',
+    total: lines.reduce((n: number, l: PushLine) => n + l.price, 0), notes: String(o.notes ?? '').trim().slice(0, 2000)
+  };
+}
+
+const digits = (s: string) => String(s || '').replace(/\D/g, '').slice(-10);
+// Смета сделки уже развёрнута в CRM — её строки правят там, мы их не трогаем.
+const expanded = (d: Row) => Object.keys(d?.snapshot?.selected || d?.selected || {}).length > 0;
+
+export function withDeal(state: Row, p: PushDeal, ids: { deal: string; client: string }, now: string, knownDealId = '') {
+  const s = { ...(state || {}) };
+  const clients: Row[] = Array.isArray(s.clients) ? [...s.clients] : [];
+  const projects: Row[] = Array.isArray(s.savedProjects) ? [...s.savedProjects] : [];
+  let client = clients.find(c => (p.email && String(c.email || '').toLowerCase() === p.email)
+    || (digits(p.phone).length === 10 && digits(c.phone) === digits(p.phone))
+    || String(c.name || '').toLowerCase() === p.client.toLowerCase());
+  const clientCreated = !client;
+  if (!client) {
+    client = { id: ids.client, name: p.client, company: '', phone: p.phone, email: p.email, city: '', social: '', contactPerson: p.contact,
+      source: 'ADERVIS Intelligence', note: '', requisites: '', status: 'new', createdAt: now, updatedAt: now };
+    clients.unshift(client);
+  }
+  const draft = { source: 'intelligence', createdAt: now, lines: p.lines.map(l => ({ name: l.name, qty: 1, price: l.price, note: l.note })),
+    statedTotal: p.total, mismatch: 0, openItems: [] };
+  const i = projects.findIndex(d => (knownDealId && d.id === knownDealId) || d.intelBriefId === p.briefId);
+  let dealId = ids.deal, mode: 'created' | 'updated' = 'created';
+  if (i >= 0) {
+    const d = projects[i];
+    if (expanded(d)) throw new Error('Смета этой сделки уже развёрнута в CRM — правьте её там');
+    dealId = d.id; mode = 'updated';
+    projects[i] = { ...d, name: p.name, client: p.client, clientId: client.id, total: p.total, notes: p.notes, botEstimate: draft, intelBriefId: p.briefId, updatedAt: now };
+  } else {
+    projects.unshift({ id: dealId, name: p.name, client: p.client, clientId: client.id, crmStatus: p.status, total: p.total, paid: 0,
+      deadline: '', lines: [], payments: [], expenses: [], tasks: [], team: [], notes: p.notes, botEstimate: draft, intelBriefId: p.briefId,
+      createdAt: now, updatedAt: now });
+  }
+  s.clients = clients; s.savedProjects = projects;
+  return { state: s, dealId, mode, clientCreated, clientId: client.id as string };
+}

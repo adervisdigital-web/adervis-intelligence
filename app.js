@@ -84,7 +84,7 @@ const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 // Эти поля ведёт сервер — бот и переписка. Приложение их показывает, но не
 // отправляет обратно: иначе сохранение карточки затёрло бы сообщение,
 // пришедшее, пока она была открыта.
-const SERVER_FIELDS = { briefs: ['crm_id'], prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction', 'elsewhere'] };
+const SERVER_FIELDS = { briefs: ['crm_id', 'crm_deal_id', 'crm_pushed_at'], prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction', 'elsewhere'] };
 
 function toRow(table, o) {
   const row = {};
@@ -3935,7 +3935,9 @@ function renderBrief(b) {
       <p class="muted">${lead ? `Заявка: <button class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button>` : 'Без заявки в воронке'}
       ${chat ? ` · <button class="linkbtn" data-action="bfchat">${icon('chat', 14)} переписка</button>` : ''}
       · <small id="bfsaved" class="muted" aria-live="polite"></small></p></div>
-      <div class="headactions"><button data-action="bfedit">Изменить</button></div></div>
+      <div class="headactions"><button class="${b.crm_deal_id ? '' : 'primary'}" data-action="bfcrmpush">${icon('upload', 15)} ${b.crm_deal_id ? 'Обновить в CRM' : 'В ADERVIS CRM'}</button>
+        <button data-action="bfedit">Изменить</button></div></div>
+    ${b.crm_deal_id ? `<p class="muted bfcrmnote">${icon('check', 14)} Сделка в ADERVIS CRM${b.crm_pushed_at ? ` — отправлено ${E(ago(b.crm_pushed_at))}` : ''}. Откройте её в CRM и нажмите «Развернуть смету».</p>` : ''}
     <div class="bfstages" role="group" aria-label="Шаг работы с заявкой">${BRIEF_STAGES.map(s =>
       `<button class="chip${b.stage === s ? ' on' : ''}" data-action="bfstage" data-id="${E(s)}" aria-pressed="${b.stage === s}">${s}</button>`).join('')}
       <button class="chip${b.stage === 'Отказ' ? ' on' : ''}" data-action="bfstage" data-id="Отказ" aria-pressed="${b.stage === 'Отказ'}">Отказ</button></div>
@@ -4375,6 +4377,57 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
+// ---- бриф со сметой → клиент и сделка в ADERVIS CRM
+// Строки — та же смета, что уходит клиенту (полный вариант). Смета ложится в
+// сделку черновиком, CRM разворачивает её своей кнопкой.
+const CRM_STATUS_OF = { 'Разбор': 'Бриф', 'Вопросы': 'Бриф', 'Расчёт': 'Бриф', 'КП': 'Бриф', 'Переговоры': 'Согласование', 'Сделка': 'Договор', 'Отказ': 'Лид' };
+function crmPushPayload(b) {
+  const d = estimateDoc(b), lead = briefLead(b);
+  const text = `${lead?.note || ''}\n${String(b.source_text || '').slice(0, 4000)}`;
+  const email = (text.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/) || [''])[0];
+  const phone = (text.match(/(\+7|8)[\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}/) || [''])[0];
+  const status = b.kp?.sent_on && ['Расчёт', 'КП'].includes(b.stage) ? 'КП отправлено' : b.kp?.sent_on && b.stage === 'Переговоры' ? 'Согласование' : CRM_STATUS_OF[b.stage] || 'Бриф';
+  return {
+    briefId: b.id, name: b.title, client: b.client || lead?.name || 'Новый клиент',
+    // контакт — часть названия заявки, похожая на имя и фамилию: «ДСК ГРУПП — Константин Лебедев»
+    contact: (lead?.name || '').split('—').map(x => x.trim()).find(x => /^[А-ЯЁ][а-яё]+(\s[А-ЯЁ][а-яё]+){1,2}$/.test(x)) || '', email, phone, status,
+    lines: d.groups.flatMap(g => g.rows.filter(r => r.full !== null).map(r => ({ name: r.name, price: r.full, note: g.name }))),
+    notes: [`Из ADERVIS Intelligence — бриф «${b.title}».`, d.two ? `В смете — полный вариант ${rub(d.k.full)}; базовый — ${rub(d.k.base)}.` : '',
+      lead?.request || '', b.next_step ? `Следующий шаг: ${b.next_step}` : ''].filter(Boolean).join('\n')
+  };
+}
+
+function crmPushModal(b) {
+  if (!db.outreach.crm_agency_id) {
+    modal(`<h2>ADERVIS CRM не подключена</h2><p>Чтобы отправлять клиентов со сметами в CRM, один раз войдите в CRM — тем же входом, что на app.adervis.ru.</p>
+      <div class="formactions"><button class="primary" data-action="crm">Подключить CRM</button></div>`);
+    return;
+  }
+  const p = crmPushPayload(b), total = p.lines.reduce((n, l) => n + l.price, 0);
+  if (!p.lines.length) { toast('Сначала посчитайте смету — в ней нет строк с ценой'); return; }
+  modal(`<h2>${b.crm_deal_id ? 'Обновить сделку в CRM' : 'Отправить в ADERVIS CRM'}</h2>
+    <dl class="crmpush">
+      <div><dt>Клиент</dt><dd><b>${E(p.client)}</b>${p.contact ? `<br>${E(p.contact)}` : ''}${p.email || p.phone ? `<br><small class="muted">${E([p.phone, p.email].filter(Boolean).join(' · '))}</small>` : ''}</dd></div>
+      <div><dt>Сделка</dt><dd>${E(p.name)}<br><small class="muted">статус в CRM: ${E(p.status)}</small></dd></div>
+      <div><dt>Смета</dt><dd><b>${rub(total)}</b> · ${p.lines.length} ${plural(p.lines.length, 'позиция', 'позиции', 'позиций')}</dd></div>
+    </dl>
+    <p class="muted">${b.crm_deal_id ? 'Обновим ту же сделку: название, сумму и черновик сметы. Если смету в CRM уже развернули — её не тронем.'
+      : 'Клиента найдём в CRM по почте, телефону или названию — или заведём. Сделка появится с черновиком сметы: откройте её в CRM и нажмите «Развернуть смету».'}
+      Открытые вкладки CRM подтянут изменения сами.</p>
+    <p class="muted" id="crmpusherr" role="alert"></p>
+    <div class="formactions"><button class="primary" id="crmpushgo">${icon('upload', 15)} ${b.crm_deal_id ? 'Обновить в CRM' : 'Отправить в CRM'}</button></div>`);
+  $('#crmpushgo').onclick = async e => {
+    e.target.disabled = true; $('#crmpusherr').textContent = 'Отправляю в CRM…';
+    try {
+      const r = await api.crm({ action: 'push', deal: p });
+      await reload();
+      $('#modal').close();
+      render();
+      toast(r.mode === 'updated' ? 'Сделка в CRM обновлена' : `В CRM: сделка${r.clientCreated ? ' и новый клиент' : ''} на ${rub(r.total)}. Откройте её и нажмите «Развернуть смету»`, 8000);
+    } catch (err) { $('#crmpusherr').textContent = 'Не отправилось: ' + (err.message || 'ошибка сервера'); e.target.disabled = false; }
+  };
+}
+
 // ---- как вести диалог: сообщение на каждый шаг, с данными брифа
 function talkSteps(b) {
   const k = kpData(b), lead = briefLead(b);
@@ -4628,6 +4681,7 @@ async function briefAction(btn) {
     case 'bfplanadd': (b.plan ||= []).push({ stage: 'Новый этап', days: 1, result: '' }); redraw(); break;
     case 'bfplandel': b.plan.splice(i, 1); redraw(); break;
     case 'kpprint': flushPendingBrief(); kpPrint(b); break;
+    case 'bfcrmpush': flushPendingBrief(); crmPushModal(b); break;
     case 'bfxlsx': flushPendingBrief(); downloadBlob(estimateXlsx(b), estimateFile(b, 'xlsx')); toast('Смета скачана'); break;
     case 'bfpdf': flushPendingBrief(); kpPrint(b, estimateHtml(b)); break;
     case 'bftext': flushPendingBrief(); await copyText(estimateText(b), 'Смета скопирована текстом'); break;
