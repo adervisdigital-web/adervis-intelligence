@@ -2096,6 +2096,12 @@ const kp = norm(await page.textContent('.kppreview'));
 check('КП: клиент, состав, цены вариантов, опции, этапы, условия', kp.includes('Химпром') && kp.includes('Заставка') && kp.includes('Базовый вариант')
   && kp.includes('Звуковое оформление') && kp.includes('Концепция') && kp.includes('Предоплата 50%') && kp.includes('2 круга правок'), kp.slice(0, 300));
 check('КП: условия самозанятых, обещания из анкеты, портфолио', kp.includes('без НДС') && kp.includes('Не попали в задачу — переделаем') && kp.includes('behance.net/adervisdigital'));
+await page.fill('#kpconcept', '## Ролик 1 — «Обычный четверг»\n**Идея.** Обычный день семьи\n\n1. Утро\n2. Финал\n- <b>не тег</b>');
+await page.waitForFunction(() => document.querySelector('.kppreview')?.textContent.includes('Концепция и сюжет'));
+check('КП: концепция с подзаголовком, шагами и списком; HTML из текста не исполняется', await page.$eval('.kppreview', d =>
+  d.querySelector('h3')?.textContent === 'Ролик 1 — «Обычный четверг»' && d.querySelectorAll('ol li').length >= 2
+  && [...d.querySelectorAll('ul li')].some(li => li.textContent === '<b>не тег</b>') && [...d.querySelectorAll('b')].some(b => b.textContent === 'Идея.')));
+await page.fill('#kpconcept', '');
 await page.fill('#kpstyle', 'Направление 1: стекло и фирменный синий');
 await page.fill('#kprefs', 'Интро для «Лукойла» — https://adervis.ru/cases/lukoil-ai/\nhttp://небезопасно.рф');
 await page.waitForFunction(() => document.querySelector('.kppreview').textContent.includes('Как видим оформление'));
@@ -2173,6 +2179,13 @@ await page.click('[data-action=todayopen][data-id^="br:"]');
 await page.waitForSelector('.bftabs');
 check('из «На сегодня» — сразу в бриф', (await page.textContent('h1')) === 'Видеодайджест');
 await nav('home');
+// иконка быстрого действия при наведении видна и в тёмной теме
+const themeBefore = await page.evaluate(() => { const t = document.documentElement.dataset.theme; document.documentElement.dataset.theme = 'dark'; return t || ''; });
+await page.hover('.quickacts .quickact');
+const qaColors = await page.$eval('.quickacts .quickact i', i => [getComputedStyle(i).color, getComputedStyle(i).backgroundColor]);
+check('быстрое действие: при наведении иконка не сливается с плашкой', qaColors[0] !== qaColors[1], qaColors.join(' / '));
+await page.mouse.move(0, 0);
+await page.evaluate(t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }, themeBefore);
 check('главная: приветствие и быстрые действия', /Доброе утро|Добрый день|Добрый вечер|Доброй ночи/.test(await page.textContent('.homehero h1'))
   && (await page.$$('.quickacts .quickact')).length === 6);
 await page.click('[data-action=snooze][data-id^="br:"]');

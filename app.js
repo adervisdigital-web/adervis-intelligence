@@ -4171,7 +4171,8 @@ function kpData(b) {
     base: Number(kp.price_base ?? (hasBase(b) ? suggested(b, 'base') : 0)) || 0,
     prepay: Number(kp.prepay ?? 50), revisions: Number(kp.revisions ?? 2), valid: Number(kp.valid_days ?? 14),
     terms: kp.terms ?? KP_DEFAULT_TERMS, contact: kp.contact ?? '', phone: kp.phone ?? '+7 922 301-88-80 · +7 995 926-54-20', date: kp.date || today(),
-    style: kp.style ?? '', refs: kp.refs ?? 'Портфолио — https://www.behance.net/adervisdigital'
+    style: kp.style ?? '', refs: kp.refs ?? 'Портфолио — https://www.behance.net/adervisdigital',
+    concept: kp.concept ?? '', approach: kp.approach ?? ''
   };
 }
 
@@ -4192,6 +4193,11 @@ function bfKp(b) {
       </div>
       <label for="kpstyle">Как видим оформление — направления стиля словами</label>
       <textarea class="input" id="kpstyle" data-bf="kp.style" maxlength="3000" rows="4" placeholder="Направление 1: … Направление 2: …">${E(k.style)}</textarea>
+      <label for="kpconcept">Концепция и сюжет — для тендеров и роликов с историей, необязательно</label>
+      <textarea class="input" id="kpconcept" data-bf="kp.concept" maxlength="20000" rows="6" placeholder="## Ролик 1 — название&#10;Идея: …&#10;1. Начало…&#10;- пункт списка">${E(k.concept)}</textarea>
+      <label for="kpapproach">Как будем делать — подход, команда, допущения цены, необязательно</label>
+      <textarea class="input" id="kpapproach" data-bf="kp.approach" maxlength="12000" rows="5">${E(k.approach)}</textarea>
+      <p class="muted">В этих полях: «## » — подзаголовок, «- » — пункт списка, «1. » — шаг, «**слово**» — жирный, пустая строка — новый абзац.</p>
       <label for="kprefs">Наши работы и референсы — по одной в строке: «название — ссылка»</label>
       <textarea class="input" id="kprefs" data-bf="kp.refs" maxlength="3000" rows="4">${E(k.refs)}</textarea>
       <label for="kpterms">Условия</label><textarea class="input" id="kpterms" data-bf="kp.terms" maxlength="2000" rows="3">${E(k.terms)}</textarea>
@@ -4218,6 +4224,8 @@ function kpHtml(b) {
     <p class="kpfor">Для: <b>${E(b.client || '—')}</b></p>
     ${k.intro ? `<section><h2>Задача</h2><p>${E(k.intro)}</p></section>` : ''}
     ${k.style ? `<section><h2>Как видим оформление</h2>${k.style.split(/\n+/).filter(Boolean).map(x => `<p>${E(x)}</p>`).join('')}</section>` : ''}
+    ${k.concept ? `<section><h2>Концепция и сюжет</h2>${richText(k.concept)}</section>` : ''}
+    ${k.approach ? `<section><h2>Как будем делать</h2>${richText(k.approach)}</section>` : ''}
     ${deliver.length ? `<section><h2>Что сделаем</h2><ul>${deliver.map(d => `<li><b>${E(d.name)}</b>${d.details ? ` — ${E(d.details)}` : ''}</li>`).join('')}</ul></section>` : ''}
     <section><h2>Стоимость</h2><table class="kptable"><tbody>
       <tr><td><b>Полный вариант — всё по ТЗ</b></td><td class="kpprice">${rub(k.full)}</td></tr>
@@ -4236,6 +4244,25 @@ function kpHtml(b) {
     <section><h2>Почему ADERVIS</h2><ul>${KP_WHY.map(x => `<li>${E(x)}</li>`).join('')}</ul></section>
     <footer class="kpfoot"><b>${k.contact ? `${E(k.contact)}, ` : ''}ADERVIS</b><span>adervis.ru${k.phone ? ` · ${E(k.phone)}` : ''}</span>
       <small>Предложение действует до ${E(valid.toLocaleDateString('ru', { day: 'numeric', month: 'long' }))}.</small></footer>`;
+}
+
+// Простой текст КП → разметка: «## » подзаголовок, «- »/«— » пункт, «1. » шаг,
+// «**…**» жирный, пустая строка — новый абзац. Сначала экранируем, потом размечаем.
+function richText(text) {
+  const inline = x => E(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  return String(text || '').split(/\n{2,}/).map(block => {
+    const out = [];
+    let list = null;
+    const close = () => { if (list) { out.push(`<${list.tag}>${list.items.map(i => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`); list = null; } };
+    for (const l of block.split('\n').map(x => x.trim()).filter(Boolean)) {
+      const ul = /^[-—•]\s+(.*)$/.exec(l), ol = /^\d+[.)]\s+(.*)$/.exec(l), h = /^#{2,3}\s+(.*)$/.exec(l);
+      if (h) { close(); out.push(`<h3>${inline(h[1])}</h3>`); }
+      else if (ul || ol) { const tag = ul ? 'ul' : 'ol'; if (list?.tag !== tag) { close(); list = { tag, items: [] }; } list.items.push((ul || ol)[1]); }
+      else { close(); out.push(`<p>${inline(l)}</p>`); }
+    }
+    close();
+    return out.join('');
+  }).join('');
 }
 
 // «Название — ссылка» по строке; ссылка — только https, остальное — текстом.
