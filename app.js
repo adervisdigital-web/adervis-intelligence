@@ -4888,7 +4888,7 @@ function paintDigest(link) {
       и бриф с разбором, вопросами и вилкой цены и пришлёт ссылку. Принимает только от подписанных здесь руководителей.</p>
     ${subs.length ? `<table class="table"><thead><tr><th>Кому</th><th>Во сколько (Пермь)</th><th></th></tr></thead><tbody>
       ${subs.map(s => `<tr><td>${E(s.name || 'Telegram ' + s.chat_id)}</td>
-        <td><select class="input" data-digesthour="${E(s.chat_id)}" aria-label="Час сводки">${[7, 8, 9, 10, 11].map(h => `<option value="${h}" ${Number(s.hour) === h ? 'selected' : ''}>${h}:00</option>`).join('')}</select></td>
+        <td><select class="input" data-digesthour="${E(s.chat_id)}" aria-label="Час сводки">${Array.from({ length: 15 }, (_, i) => i + 7).map(h => `<option value="${h}" ${Number(s.hour) === h ? 'selected' : ''}>${h}:00</option>`).join('')}</select></td>
         <td><button class="chip" data-action="digestdrop" data-id="${E(s.chat_id)}">Отписать</button></td></tr>`).join('')}</tbody></table>`
       : '<p class="muted">Пока никто не подписан.</p>'}
     ${link ? `<p><a class="btnlink" href="${E(link)}" target="_blank" rel="noopener noreferrer">${icon('telegram', 15)} Открыть бота и подписаться</a></p>
