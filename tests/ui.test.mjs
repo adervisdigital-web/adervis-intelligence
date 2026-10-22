@@ -2100,6 +2100,10 @@ const smPrinted = await page.evaluate(() => window.__printed);
 check('смета в PDF: только документ сметы, итог совпадает с КП', smPrinted.includes('Смета') && smPrinted.includes('Итого') && smPrinted.replace(/\s/g, '').includes('210000₽')
   && !smPrinted.includes('Коммерческое предложение'));
 await page.screenshot({ path: path.join(OUT, 'intel-brief-smeta-btn.png') });
+await page.click('[data-action=bftext]');
+const smText = await page.evaluate(() => navigator.clipboard.readText());
+check('смета текстом: разделы, строки с ценами, итог как в КП, без часов', smText.startsWith('Смета: Видеодайджест') && /— Заставка 10–15 с — базовый/.test(smText)
+  && smText.replace(/\s/g, '').includes('полный—210000₽') && !/ч ·|Моушн-дизайнер/.test(smText), smText.slice(0, 300));
 await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 await page.click('[data-action=bftab][data-id=kp]');
 await page.click('[data-action=kpsent]');

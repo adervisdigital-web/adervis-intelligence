@@ -4021,7 +4021,8 @@ function bfEstimate(b) {
     <td><button class="del" data-action="bfitemdel" data-id="${i}" aria-label="Удалить работу">${icon('close', 15)}</button></td></tr>`).join('')).join('');
   return `<div class="card"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Смета</h2>
       <div class="headactions">${items.length ? `<span class="dlpair"><button class="primary" data-action="bfxlsx">${icon('download', 15)} Скачать смету</button>
-        <button data-action="bfpdf" title="Смета в PDF" aria-label="Скачать смету в PDF">PDF</button></span>` : ''}
+        <button data-action="bfpdf" title="Смета в PDF" aria-label="Скачать смету в PDF">PDF</button></span>
+        <button data-action="bftext">${icon('copy', 15)} Скопировать текстом</button>` : ''}
         <button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button></div></div>
     <p class="muted">Часы — вилкой: от и до. Сумма = часы × ставка роли + запас. «Только полный» — работа, которой нет в облегчённом варианте; «Только базовый» — её замена подешевле.</p>
     ${items.length ? `<div class="tablewrap"><table class="table bftable"><thead><tr><th>Работа</th><th>Роль</th><th>Часов от</th><th>до</th><th>Сумма</th><th>Вариант</th><th></th></tr></thead>
@@ -4200,6 +4201,16 @@ function estimateDoc(b) {
       k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок входят в стоимость.` : '',
       k.terms, `Смета действует до ${valid}.`].filter(Boolean)
   };
+}
+// Смета текстом — вставить в мессенджер или письмо как есть.
+function estimateText(b) {
+  const d = estimateDoc(b), money = v => v === null ? '—' : rub(v);
+  const price = r => d.two ? `базовый ${money(r.base)}, полный ${money(r.full)}` : money(r.full);
+  return [`Смета: ${b.title}`, `Для: ${b.client || '—'}`, '',
+    ...d.groups.flatMap(g => [g.name, ...g.rows.map(r => `— ${r.name} — ${price(r)}`), '']),
+    d.two ? `Итого: базовый вариант — ${rub(d.k.base)}, полный — ${rub(d.k.full)}` : `Итого: ${rub(d.k.full)}`,
+    ...(d.options.length ? ['', 'Дополнительно, по желанию:', ...d.options.map(o => `— ${o.name} — + ${rub(o.price)}`)] : []),
+    '', 'Условия:', ...d.terms.map(t => `— ${t}`)].join('\n');
 }
 const estimateFile = (b, ext) => `Смета — ${b.title}`.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 120) + '.' + ext;
 
@@ -4588,6 +4599,7 @@ async function briefAction(btn) {
     case 'kpprint': flushPendingBrief(); kpPrint(b); break;
     case 'bfxlsx': flushPendingBrief(); downloadBlob(estimateXlsx(b), estimateFile(b, 'xlsx')); toast('Смета скачана'); break;
     case 'bfpdf': flushPendingBrief(); kpPrint(b, estimateHtml(b)); break;
+    case 'bftext': flushPendingBrief(); await copyText(estimateText(b), 'Смета скопирована текстом'); break;
     case 'kpsent': await kpSent(b); break;
     case 'bftalkcopy': await copyText(talkSteps(b)[i][3]); break;
     case 'bftalkchat': toChat(b, talkSteps(b)[i][3]); break;
