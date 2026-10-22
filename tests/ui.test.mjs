@@ -2043,7 +2043,8 @@ check('после разбора — шаг «Вопросы», следующи
 await page.click('[data-action=bftab][data-id=questions]');
 await page.click('[data-action=bfqcopy]');
 const qmsg = await page.evaluate(() => navigator.clipboard.readText());
-check('вопросы — одним сообщением, пронумерованы', qmsg.includes('1. Какой срок запуска?') && qmsg.includes('3. Есть ли лицензия') && qmsg.includes('Видеодайджест'));
+check('вопросы — коротким сообщением, пронумерованы', qmsg.includes('1. Какой срок запуска?') && qmsg.includes('3. Есть ли лицензия') && qmsg.includes('Изучили ТЗ, есть несколько вопросов')
+  && /добрый день!/.test(qmsg) && !qmsg.includes('в течение рабочего дня'), qmsg.slice(0, 200));
 await page.waitForFunction(() => window.__STATE__.briefs[0].questions.every(q => q.status === 'задан'));
 check('скопированные вопросы отмечены «задан»', true);
 await page.click('[data-action=bfqstatus][data-id="0"]');
@@ -2110,6 +2111,16 @@ await page.click('[data-action=bftext]');
 const smText = await page.evaluate(() => navigator.clipboard.readText());
 check('смета текстом: разделы, строки с ценами, итог как в КП, без часов', smText.startsWith('Смета: Видеодайджест') && /— Заставка 10–15 с — базовый/.test(smText) && /— 3D-студия, 3 плана — [\d\s]+₽ \(только в полном\)/.test(smText)
   && smText.replace(/\s/g, '').includes('полный—210000₽') && !/ч ·|Моушн-дизайнер/.test(smText), smText.slice(0, 300));
+// «вшить в стоимость»: строка не видна клиенту, итог тот же
+const foldRow = await page.$$eval('.bftable tbody tr', rs => rs.find(r => r.querySelector('input')?.value.startsWith('Мастер-отбивка'))?.querySelector('[data-action=bfitemfold]').dataset.id);
+await page.click(`[data-action=bfitemfold][data-id="${foldRow}"]`);
+await page.waitForFunction(i => window.__STATE__.briefs[0].estimate.items[i]?.fold === true, foldRow);
+await page.click('[data-action=bftext]');
+const foldText = await page.evaluate(() => navigator.clipboard.readText());
+check('вшитая работа: в смете для клиента строки нет, итог прежний', !foldText.includes('Мастер-отбивка') && foldText.replace(/\s/g, '').includes('полный—210000₽')
+  && await page.isVisible('.bftable tr.folded'), foldText.slice(0, 200));
+await page.click(`[data-action=bfitemfold][data-id="${foldRow}"]`);
+await page.waitForFunction(i => !window.__STATE__.briefs[0].estimate.items[i]?.fold, foldRow);
 // итоги по разделам — например, цена каждого ролика отдельно
 await page.check('.bfsubs input');
 await page.waitForFunction(() => window.__STATE__.briefs[0].estimate.subtotals === true);
@@ -2219,6 +2230,12 @@ const pushed = await page.evaluate(() => window.__PUSHED__);
 check('в CRM: ушли строки полной сметы, их сумма — цена КП, статус по шагу брифа', pushed.lines.reduce((n, l) => n + l.price, 0) === 210000
   && pushed.lines.every(l => l.note) && pushed.status === 'Согласование' && pushed.client === 'Уралхим', JSON.stringify(pushed).slice(0, 300));
 await page.waitForSelector('.bfcrmnote');
+// ТЗ и приложение к нему — одним текстом, каждый файл под своим именем
+await page.click('[data-action=bftab][data-id=tz]');
+await page.setInputFiles('#bffile', [{ name: 'ТЗ.txt', mimeType: 'text/plain', buffer: Buffer.from('Основное задание') },
+  { name: 'Приложение ЦА.txt', mimeType: 'text/plain', buffer: Buffer.from('Описание аудитории') }]);
+await page.waitForFunction(() => /=== Приложение ЦА\.txt/.test(window.__STATE__.briefs[0].source_text));
+check('несколько файлов ТЗ — склеены с именами файлов', (await state()).briefs[0].source_text.includes('=== ТЗ.txt\nОсновное задание'));
 check('в CRM: бриф помнит сделку, кнопка — «Обновить в CRM»', (await page.textContent('[data-action=bfcrmpush]')).includes('Обновить в CRM'));
 
 // --- 5ч. утренняя сводка в Telegram

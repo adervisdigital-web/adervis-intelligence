@@ -3818,6 +3818,15 @@ function wordXmlText(xml) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Несколько файлов (ТЗ и приложения) — одним текстом, каждый под своим именем.
+async function filesText(files) {
+  const list = [...files];
+  if (list.length === 1) return fileText(list[0]);
+  const parts = [];
+  for (const f of list) parts.push(`=== ${f.name}\n${(await fileText(f)).trim()}`);
+  return parts.join('\n\n');
+}
+
 async function fileText(file) {
   if (/\.docx$/i.test(file.name)) return docxText(file);
   if (/\.(txt|md)$/i.test(file.name) || file.type.startsWith('text/')) return file.text();
@@ -3959,7 +3968,7 @@ function tabBadge(b, k) {
 
 function bfTz(b) {
   return `<div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">ТЗ клиента</h2>
-      <span><button data-action="bffile">${icon('upload', 15)} Загрузить .docx</button><input type="file" id="bffile" accept=".docx,.txt,.md" hidden></span></div>
+      <span><button data-action="bffile">${icon('upload', 15)} Загрузить .docx</button><input type="file" id="bffile" accept=".docx,.txt,.md" multiple hidden></span></div>
     <textarea class="input bftext" data-bf="source_text" maxlength="60000" aria-label="Текст ТЗ" placeholder="Вставьте текст ТЗ или брифа клиента">${E(b.source_text)}</textarea>
     <p class="muted">${(b.source_text || '').length} знаков. Для разбора текст ТЗ уходит в ИИ; ставки и суммы студии — нет.</p>
     <div class="formactions"><button class="primary" data-action="bfai" ${briefView.busy ? 'disabled' : ''}>${icon('ai', 15)} ${briefView.busy ? 'Разбираю ТЗ… до минуты' : b.analysis?.summary ? 'Разобрать заново' : 'Разобрать ТЗ с ИИ'}</button></div>
@@ -3981,14 +3990,16 @@ function bfAnalysis(b) {
   </div>`;
 }
 
+// Имя контакта — из заявки вида «ДСК ГРУПП — Константин Лебедев»; приветствие
+// по имени, как пишут владельцы: «Константин, добрый день!»
+const briefPerson = b => (briefLead(b)?.name || '').split(/[—,]/).map(x => x.trim()).find(x => /^[А-ЯЁ][а-яё]+(\s[А-ЯЁ][а-яё]+){0,2}$/.test(x)) || '';
+const briefHi = b => { const first = briefPerson(b).split(' ')[0]; return first ? `${first}, добрый день!` : 'Добрый день!'; };
+
+// Вопросы — отдельным коротким сообщением, только те, что меняют цену и срок.
 function questionsMessage(b, onlyNew) {
-  const lead = briefLead(b);
   const qs = (b.questions || []).filter(q => q.q && (!onlyNew || q.status === 'новый'));
-  const who = (lead?.name || '').split(/[—,]/)[0].trim();
-  return [`Здравствуйте${who && !/\s/.test(who) ? ', ' + who : ''}! Спасибо за ТЗ «${b.title}» — изучили его и материалы по ссылкам.`,
-    'Чтобы точно посчитать стоимость и сроки, уточните, пожалуйста:', '',
-    ...qs.map((q, i) => `${i + 1}. ${q.q}`), '',
-    'После ответов пришлём КП с расчётом, этапами и сроками в течение рабочего дня.'].join('\n');
+  return [briefHi(b), '', qs.length === 1 ? 'Изучили ТЗ, есть вопрос:' : 'Изучили ТЗ, есть несколько вопросов:', '',
+    ...qs.map((q, i) => qs.length === 1 ? q.q : `${i + 1}. ${q.q}`), '', 'После ответов подготовим КП.'].join('\n');
 }
 
 function bfQuestions(b) {
@@ -4013,20 +4024,24 @@ function bfEstimate(b) {
   const roles = db.studio_rates;
   const roleSel = (path, v) => `<select class="input" data-bf="${path}" aria-label="Роль">${roles.map(r => `<option value="${E(r.id)}" ${r.id === v ? 'selected' : ''}>${E(r.name)}</option>`).join('')}</select>`;
   const groups = [...new Set(items.map(it => it.group || 'Работы'))];
-  const rows = groups.map(g => `<tr class="bfgroup"><th colspan="7">${E(g)}</th></tr>` + items.map((it, i) => (it.group || 'Работы') !== g ? '' : `<tr>
+  const rows = groups.map(g => `<tr class="bfgroup"><th colspan="7">${E(g)}</th></tr>` + items.map((it, i) => (it.group || 'Работы') !== g ? '' : `<tr class="${it.fold ? 'folded' : ''}">
     <td><input class="input" data-bf="estimate.items.${i}.name" maxlength="200" value="${E(it.name)}" aria-label="Работа"></td>
     <td>${roleSel(`estimate.items.${i}.role`, it.role)}</td>
     <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.min" value="${E(it.min)}" aria-label="Часов от"></td>
     <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.max" value="${E(it.max)}" aria-label="Часов до"></td>
     <td class="bfsum" data-sum="${i}">${rub(it.min * rateOf(it.role))} – ${rub(it.max * rateOf(it.role))}</td>
     <td><select class="input" data-bf="estimate.items.${i}.variant" aria-label="Вариант">${VARIANTS.map(([k, t]) => `<option value="${k}" ${(it.variant || 'both') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
-    <td><button class="del" data-action="bfitemdel" data-id="${i}" aria-label="Удалить работу">${icon('close', 15)}</button></td></tr>`).join('')).join('');
+    <td class="bfrowacts"><button class="fold${it.fold ? ' on' : ''}" data-action="bfitemfold" data-id="${i}" aria-pressed="${!!it.fold}"
+        title="${it.fold ? 'Вшито в стоимость: клиент не видит строку, её доля — в других работах' : 'Вшить в стоимость — не показывать клиенту отдельной строкой'}"
+        aria-label="Вшить «${E(it.name)}» в стоимость работ">${icon(it.fold ? 'hidden' : 'eye', 15)}</button>
+      <button class="del" data-action="bfitemdel" data-id="${i}" aria-label="Удалить работу">${icon('close', 15)}</button></td></tr>`).join('')).join('');
   return `<div class="card"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Смета</h2>
       <div class="headactions">${items.length ? `<span class="dlpair"><button class="primary" data-action="bfxlsx">${icon('download', 15)} Скачать смету</button>
         <button data-action="bfpdf" title="Смета в PDF" aria-label="Скачать смету в PDF">PDF</button></span>
         <button data-action="bftext">${icon('copy', 15)} Скопировать текстом</button>` : ''}
         <button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button></div></div>
-    <p class="muted">Часы — вилкой: от и до. Сумма = часы × ставка роли + запас. «Только полный» — работа, которой нет в облегчённом варианте; «Только базовый» — её замена подешевле.</p>
+    <p class="muted">Часы — вилкой: от и до. Сумма = часы × ставка роли + запас. «Только полный» — работа, которой нет в облегчённом варианте; «Только базовый» — её замена подешевле.
+      ${icon('eye', 13)} — вшить работу в стоимость: клиент не увидит её отдельной строкой (ведение, правки, разбор ТЗ), её доля разойдётся по остальным работам.</p>
     ${items.length ? `<div class="tablewrap"><table class="table bftable"><thead><tr><th>Работа</th><th>Роль</th><th>Часов от</th><th>до</th><th>Сумма</th><th>Вариант</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div>` : '<p class="muted">Работ пока нет — разберите ТЗ с ИИ или добавьте вручную.</p>'}
     <div class="formactions"><button data-action="bfitemadd">+ Работа</button></div>
@@ -4182,7 +4197,10 @@ function kpPrint(b, html = kpHtml(b)) {
 // сходятся с итогом, даже если цену в КП поправили руками. Общая работа
 // стоит одинаково в обоих вариантах: разницу несут работы только базового.
 function estimateDoc(b) {
-  const k = kpData(b), e = b.estimate || {}, items = e.items || [];
+  const k = kpData(b), e = b.estimate || {}, all = e.items || [];
+  // «вшитые» работы (ведение, правки…) клиент не видит отдельной строкой:
+  // их доля уходит в остальные работы, итог не меняется
+  const items = all.some(it => !it.fold) ? all.filter(it => !it.fold) : all;
   const two = !!k.base && hasBase(b);
   const weight = it => ((Number(it.min) || 0) + (Number(it.max) || 0)) / 2 * rateOf(it.role);
   const split = (list, price, out = new Map()) => {
@@ -4430,13 +4448,12 @@ function crmPushModal(b) {
 
 // ---- как вести диалог: сообщение на каждый шаг, с данными брифа
 function talkSteps(b) {
-  const k = kpData(b), lead = briefLead(b);
-  const who = (lead?.name || '').split(/[—,]/)[0].trim();
-  const hi = `Здравствуйте${who && !/\s/.test(who) ? ', ' + who : ''}!`;
+  const k = kpData(b);
+  const hi = briefHi(b);
   const days = planDays(b);
   return [
-    ['Разбор', 'Первый ответ — в течение двух часов', 'Подтвердите, что ТЗ получено, и назовите срок КП. Человек выбирает того, кто ответил первым и по делу.',
-      `${hi} Получили ТЗ «${b.title}», спасибо. Изучаем ТЗ и материалы по ссылкам — сегодня пришлём несколько уточняющих вопросов, а после ответов — КП с расчётом и сроками.`],
+    ['Разбор', 'Первый ответ — в тот же день, коротко', 'Только подтвердите, что ТЗ получено. Без вопросов, условий и ссылок — вопросы следующим сообщением.',
+      `${hi}\nСпасибо за запрос, ТЗ получили, изучаем. Напишем вопросы, которые возникнут, и подготовим КП.`],
     ['Вопросы', 'Вопросы по ТЗ', 'Одним сообщением, пронумерованными. Не больше 10 — остальное спросите на созвоне.', questionsMessage(b, false)],
     ['Расчёт', 'Если ответы затянулись', 'Через день без ответа — мягко напомнить и предложить созвон на 15 минут вместо переписки.',
       `${hi} Подскажите, удалось посмотреть вопросы по «${b.title}»? Если удобнее голосом — давайте созвонимся на 15 минут, пройдёмся по ТЗ и сразу назову вилку по бюджету.`],
@@ -4542,7 +4559,7 @@ function editBrief(id, preset = {}) {
       ${leads.map(l => `<option value="${E(l.id)}" ${l.id === b.lead_id ? 'selected' : ''}>${E(l.name)} · ${E(l.status)}</option>`).join('')}</select>
     ${exists ? '' : `<div class="bfnewlead"><label for="bfsrc">Откуда пришла заявка</label><select id="bfsrc" name="source">${opts(LEAD_SOURCES, preset.source || 'Не знаем')}</select></div>
     <label for="bfsrcf">ТЗ клиента</label>
-    <p class="fileadd"><button type="button" id="bfsrcbtn">${icon('upload', 15)} Загрузить .docx или .txt</button><input type="file" id="bfsrcf" accept=".docx,.txt,.md" hidden>
+    <p class="fileadd"><button type="button" id="bfsrcbtn">${icon('upload', 15)} Загрузить .docx или .txt — можно несколько</button><input type="file" id="bfsrcf" accept=".docx,.txt,.md" multiple hidden>
       <small class="muted" id="bfsrcst"></small></p>
     <textarea name="source_text" maxlength="60000" style="min-height:140px" placeholder="Или вставьте текст ТЗ">${E(b.source_text)}</textarea>`}
     <div class="formactions"><button class="primary">${exists ? 'Сохранить' : 'Создать'}</button>
@@ -4554,12 +4571,12 @@ function editBrief(id, preset = {}) {
   if (upBtn) {
     upBtn.onclick = () => $('#bfsrcf').click();
     $('#bfsrcf').onchange = async e => {
-      const file = e.target.files[0];
+      const files = [...e.target.files], file = files[0];
       e.target.value = '';
       if (!file) return;
       try {
-        f.elements.source_text.value = (await fileText(file)).slice(0, 60000);
-        $('#bfsrcst').textContent = `${file.name}: ${f.elements.source_text.value.length} знаков`;
+        f.elements.source_text.value = (await filesText(files)).slice(0, 60000);
+        $('#bfsrcst').textContent = `${files.length > 1 ? `${files.length} файла` : file.name}: ${f.elements.source_text.value.length} знаков`;
         if (!f.elements.title.value) f.elements.title.value = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 200);
       } catch (err) { $('#bfsrcst').textContent = 'Не прочитался: ' + err.message; }
     };
@@ -4676,6 +4693,7 @@ async function briefAction(btn) {
       b.estimate.edited = true; redraw(); break;
     }
     case 'bfitemdel': b.estimate.items.splice(i, 1); b.estimate.edited = true; redraw(); break;
+    case 'bfitemfold': { const it = b.estimate.items[i]; it.fold = !it.fold; b.estimate.edited = true; redraw(); toast(it.fold ? 'Вшито в стоимость — в смете для клиента строки нет' : 'Строка снова видна клиенту'); break; }
     case 'bfoptadd': ((b.estimate ||= {}).options ||= []).push({ name: 'Дополнительная работа', why: '', role: db.studio_rates[0]?.id || 'motion', min: 1, max: 2 }); redraw(); break;
     case 'bfoptdel': b.estimate.options.splice(i, 1); redraw(); break;
     case 'bfplanadd': (b.plan ||= []).push({ stage: 'Новый этап', days: 1, result: '' }); redraw(); break;
@@ -6563,10 +6581,10 @@ function render() {
   if (keep) wireDialogs(keep);
   const bff = $('#bffile');
   if (bff) bff.onchange = async e => {
-    const file = e.target.files[0], b = db.briefs.find(x => x.id === briefView.id);
+    const files = [...e.target.files], b = db.briefs.find(x => x.id === briefView.id);
     e.target.value = '';
-    if (!file || !b) return;
-    try { b.source_text = (await fileText(file)).slice(0, 60000); await saveBriefNow(b, `ТЗ загружено: ${file.name}`); }
+    if (!files.length || !b) return;
+    try { b.source_text = (await filesText(files)).slice(0, 60000); await saveBriefNow(b, files.length > 1 ? `ТЗ загружено: ${files.length} файла` : `ТЗ загружено: ${files[0].name}`); }
     catch (err) { toast('Файл не прочитался: ' + err.message, 6000); }
   };
   if (page === 'brand' && deck.on) bindDeckSwipe();
