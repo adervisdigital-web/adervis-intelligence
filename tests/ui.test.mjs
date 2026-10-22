@@ -3049,6 +3049,17 @@ check('ссылка #channels-vk после входа открывает пол
   && await m.evaluate(() => document.activeElement?.id === 'vkkey' && !location.hash));
 await m.click('#modal [data-action=close]');
 
+// ссылка из служебного бота …#brief=<номер> открывает бриф сразу после входа
+await m.goto(BASE + 'index.html#brief=tg-from-bot');
+await m.evaluate(() => window.__STATE__.briefs.push({ id: 'tg-from-bot', title: 'Заявка из бота', client: 'СтройГрупп', stage: 'Вопросы', source_text: '=== ТЗ.docx\nДва ролика',
+  analysis: { summary: 'Два ролика' }, questions: [], estimate: { reserve: 10, round: 5000, items: [], options: [] }, plan: [], kp: {}, next_step: '', next_on: null, lead_id: null,
+  _at: new Date().toISOString(), _by: 'artem@adervis.ru' }));
+await m.fill('#gate-email', 'alex@adervis.ru');
+await m.fill('#gate-pass', 'secret');
+await m.click('#gatebtn');
+await m.waitForSelector('.bftabs');
+check('ссылка из бота #brief=… после входа открывает бриф', (await m.textContent('h1')) === 'Заявка из бота' && await m.evaluate(() => !location.hash));
+
 // диалоги на телефоне: список и переписка — по очереди
 await m.evaluate(() => document.body.classList.remove('menu'));
 await m.evaluate(() => window.__seedDialogs());
