@@ -2102,7 +2102,7 @@ check('смета в PDF: только документ сметы, итог с�
 await page.screenshot({ path: path.join(OUT, 'intel-brief-smeta-btn.png') });
 await page.click('[data-action=bftext]');
 const smText = await page.evaluate(() => navigator.clipboard.readText());
-check('смета текстом: разделы, строки с ценами, итог как в КП, без часов', smText.startsWith('Смета: Видеодайджест') && /— Заставка 10–15 с — базовый/.test(smText)
+check('смета текстом: разделы, строки с ценами, итог как в КП, без часов', smText.startsWith('Смета: Видеодайджест') && /— Заставка 10–15 с — базовый/.test(smText) && /— 3D-студия, 3 плана — [\d\s]+₽ \(только в полном\)/.test(smText)
   && smText.replace(/\s/g, '').includes('полный—210000₽') && !/ч ·|Моушн-дизайнер/.test(smText), smText.slice(0, 300));
 await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
 await page.click('[data-action=bftab][data-id=kp]');
