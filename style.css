@@ -1692,7 +1692,7 @@ button.danger{display:inline-flex;align-items:center;gap:7px}
 .quickact i{width:32px;height:32px;flex:none;display:grid;place-items:center;border-radius:9px;background:color-mix(in srgb,var(--acc) 15%,transparent);color:color-mix(in srgb,var(--acc) 80%,var(--ink))}
 html[data-theme=dark] .quickact i{color:var(--acc)}
 .quickact:hover{border-color:color-mix(in srgb,var(--acc) 55%,var(--line))}
-.quickact:hover i{background:var(--acc);color:#141414}
+.quickact:hover i,html[data-theme=dark] .quickact:hover i{background:var(--acc);color:#141414}
 .metric .metrichead{display:flex;align-items:center;gap:10px;color:var(--muted)}
 .metric .metrichead .mlabel{flex:1;font-size:13px;font-weight:600;color:var(--ink)}
 .metric .metrichead > svg{opacity:.45;transition:opacity .15s}
@@ -2036,3 +2036,7 @@ dialog textarea.short{min-height:84px}
 
 .caseok{display:flex;gap:8px;align-items:center;margin-top:12px}
 .caseok input{width:18px;height:18px;flex:none}
+.kpdoc ol{margin:0 0 8px;padding-left:20px}
+.kpdoc ul{margin-bottom:8px}
+.kpdoc li{margin:2px 0}
+.kpdoc h3{font-size:14px;margin:14px 0 6px}
