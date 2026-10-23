@@ -4627,9 +4627,9 @@ async function kpShareModal(b) {
       ${m.kind === 'video' ? `<span class="kpthumb">${icon('play', 20)}</span>` : `<img class="kpthumb" src="${E(m.url)}" alt="">`}
       <span class="kpmeta"><input class="input" data-kpm="${i}" data-k="caption" maxlength="200" value="${E(m.caption || '')}" placeholder="Подпись к кадру">
         <input class="input" data-kpm="${i}" data-k="group" maxlength="120" value="${E(m.group || '')}" placeholder="Раздел — необязательно"></span>
-      ${(m.kind === 'video' ? m.poster : m.url) ? `<button class="kpmcover${kp.cover && kp.cover === (m.kind === 'video' ? m.poster : m.url) ? ' on' : ''}" data-action="kpmcover" data-id="${i}"
+      <span class="kpmacts">${(m.kind === 'video' ? m.poster : m.url) ? `<button class="kpmcover${kp.cover && kp.cover === (m.kind === 'video' ? m.poster : m.url) ? ' on' : ''}" data-action="kpmcover" data-id="${i}"
         aria-pressed="${!!kp.cover && kp.cover === (m.kind === 'video' ? m.poster : m.url)}" title="Сделать фоном шапки КП (лучше кадр без надписей)">${icon('photo', 15)}</button>` : ''}
-      <button class="del" data-action="kpmdel" data-id="${i}" aria-label="Убрать файл">${icon('delete', 15)}</button></li>`).join('')}</ul>
+      <button class="del" data-action="kpmdel" data-id="${i}" aria-label="Убрать файл">${icon('delete', 15)}</button></span></li>`).join('')}</ul>
     <p class="fileadd"><button type="button" id="kpmbtn">${icon('upload', 15)} Добавить картинки и видео</button>
       <input type="file" id="kpmfile" accept="image/*,video/mp4,video/webm,video/quicktime" multiple hidden> <small class="muted" id="kpmst"></small></p>
     <p class="muted">На странице: задача, ${media.length ? 'примеры, ' : ''}стиль${kp.concept ? ', концепция' : ''}, что сделаем, смета, этапы, условия, наши работы и кнопка «Позвонить». Часов и ставок студии там нет.</p>
