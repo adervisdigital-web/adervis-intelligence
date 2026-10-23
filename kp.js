@@ -129,7 +129,7 @@
       ${d.client ? `<p class="for">Для: <b>${E(d.client)}</b></p>` : ''}
       <div class="facts">
         <div><small>Стоимость</small><b class="gold">${E(price)}</b></div>
-        <div><small>Срок</small><b>${d.days ? `${d.days} ${plural(d.days, 'рабочий день', 'рабочих дня', 'рабочих дней')}` : 'по плану'}</b></div>
+        <div><small>Срок</small><b>${d.days ? `~${d.days} ${plural(d.days, 'рабочий день', 'рабочих дня', 'рабочих дней')}` : 'по плану'}</b></div>
         ${d.prepay ? `<div><small>Оплата</small><b>${d.prepay}% + ${100 - d.prepay}%</b><small class="sub">до старта и после сдачи</small></div>` : ''}
       </div>
       ${d.intro ? `<p class="intro">${E(d.intro)}</p>` : ''}

@@ -5,7 +5,7 @@ import { digestText, permNow } from './digest.ts';
 
 // Ключ служебного бота — секрет проекта; им же функция publish пишет в канал.
 export const INTEL_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
-export const APP_URL = 'https://adervisdigital-web.github.io/adervis-intelligence/';
+export const APP_URL = 'https://hub.adervis.ru/';
 
 export async function buildDigest(sb: Sb): Promise<string> {
   const now = Date.now(), { date } = permNow(now);

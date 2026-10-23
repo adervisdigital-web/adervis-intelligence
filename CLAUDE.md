@@ -1,4 +1,6 @@
-# ADERVIS Intelligence — карта проекта
+# Hub ADERVIS (бывший ADERVIS Intelligence) — карта проекта
+
+Адрес: https://hub.adervis.ru (GitHub Pages, домен в reg.ru: CNAME hub → adervisdigital-web.github.io).
 
 Рабочая программа студии ADERVIS: заявки, брифы и КП, диалоги с ботом продаж, поиск клиентов, реклама, контент-план, метрики, база знаний. Интерфейс по-русски. Сайт — GitHub Pages из `main` (публичный репозиторий: внутренних данных студии в коде и тестах нет). Сервер — Supabase (база, edge-функции, pg_cron).
 
