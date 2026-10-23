@@ -70,6 +70,7 @@ section li{margin:4px 0}
 .variants button{font:inherit;color:var(--ink);text-align:left;display:flex;flex-direction:column;gap:4px;padding:16px 20px;border-radius:16px;border:1px solid var(--line);background:var(--card);cursor:pointer;transition:border-color .15s,box-shadow .15s}
 .variants button span{font-size:14px;color:var(--muted)}
 .variants button b{font:700 clamp(20px,2.4vw,26px)/1.2 var(--display)}
+.variants button small{font-size:13px;color:var(--muted);line-height:1.35}
 .variants button:hover{border-color:#b9bec7}
 .variants button[aria-checked=true]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
 .variants button[aria-checked=true] span::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);margin-right:8px;vertical-align:1px}
