@@ -40,7 +40,7 @@
     }
     return `<section><div class="wrap"><h2>Как видим оформление</h2>${groups.map(g => `${g.name ? `<p class="group-title">${E(g.name)}</p>` : ''}
       <div class="gallery">${g.items.map((m, i) => `<figure class="${m.kind === 'video' || (g.items.length % 2 && i === 0) ? 'wide' : ''}">
-        ${m.kind === 'video' ? `<video src="${E(m.url)}" controls playsinline muted loop preload="metadata"></video>` : `<img src="${E(m.url)}" alt="${E(m.caption || '')}" loading="lazy">`}
+        ${m.kind === 'video' ? `<video src="${E(m.url)}"${safeUrl(m.poster) ? ` poster="${E(m.poster)}"` : ''} controls playsinline muted loop preload="metadata"></video>` : `<img src="${E(m.url)}" alt="${E(m.caption || '')}" loading="lazy">`}
         ${m.caption ? `<figcaption>${E(m.caption)}</figcaption>` : ''}</figure>`).join('')}</div>`).join('')}</div></section>`;
   }
 

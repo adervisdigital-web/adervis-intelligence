@@ -4523,7 +4523,7 @@ function kpShareData(b) {
     terms: d.terms, days: planDays(b),
     plan: planDates(b, b.kp?.start || dayShift(3)).map(s => ({ stage: s.stage, result: s.result || '', from: s.from, to: s.to })),
     refs: refLines(k.refs), why: KP_WHY, contact: k.contact, phone: k.phone,
-    media: (b.kp?.media || []).map(m => ({ url: m.url, kind: m.kind, caption: m.caption || '', group: m.group || '' }))
+    media: (b.kp?.media || []).map(m => ({ url: m.url, kind: m.kind, caption: m.caption || '', group: m.group || '', ...(m.poster ? { poster: m.poster } : {}) }))
   };
 }
 
