@@ -1,4 +1,4 @@
-/* ADERVIS Intelligence — общая база знаний компании.
+/* Hub ADERVIS (бывший ADERVIS Intelligence) — общая база знаний компании.
    Данные хранятся в Supabase, здесь только интерфейс и обращения к базе.
    Доступ решает сама база: пользователь видит данные, только если его почта
    есть в таблице members. */
@@ -1167,7 +1167,7 @@ function slideHtml(sl, i, total) {
     return `<div class="slidecover">
       <img class="coverlogo mark" src="brand/icon.svg" alt="">
       <h1 class="covertitle">adervis.ru</h1>
-      <p class="coversub">Вопросы по стилю и свежая версия брендбука — в ADERVIS Intelligence</p>
+      <p class="coversub">Вопросы по стилю и свежая версия брендбука — в Hub ADERVIS</p>
     </div>${foot}`;
   }
   return head(sl.title) + `<div class="slidebody">
@@ -4600,7 +4600,7 @@ function crmPushPayload(b) {
     // контакт — часть названия заявки, похожая на имя и фамилию: «ДСК ГРУПП — Константин Лебедев»
     contact: (lead?.name || '').split('—').map(x => x.trim()).find(x => /^[А-ЯЁ][а-яё]+(\s[А-ЯЁ][а-яё]+){1,2}$/.test(x)) || '', email, phone, status,
     lines: d.groups.flatMap(g => g.rows.filter(r => r.full !== null).map(r => ({ name: r.name, price: r.full, note: g.name }))),
-    notes: [`Из ADERVIS Intelligence — бриф «${b.title}».`, d.two ? `В смете — полный вариант ${rub(d.k.full)}; базовый — ${rub(d.k.base)}.` : '',
+    notes: [`Из Hub ADERVIS: бриф «${b.title}».`, d.two ? `В смете — полный вариант ${rub(d.k.full)}; базовый — ${rub(d.k.base)}.` : '',
       lead?.request || '', b.next_step ? `Следующий шаг: ${b.next_step}` : ''].filter(Boolean).join('\n')
   };
 }
@@ -4921,7 +4921,7 @@ function paintCrm(note = '') {
         <div><label for="crmemail">Почта в CRM</label><input id="crmemail" type="email" autocomplete="off" required maxlength="120"></div>
         <div><label for="crmpass">Пароль в CRM</label><input id="crmpass" type="text" class="secretfield" autocomplete="off" data-lpignore="true" data-1p-ignore required maxlength="200"></div>
       </div>
-      <p class="muted">Пароль хранится на сервере Intelligence и в браузер не возвращается. Им читаются только брифы вашей студии; данные и код CRM не меняются.</p>
+      <p class="muted">Пароль хранится на сервере Hub ADERVIS и в браузер не возвращается. Им читаются только брифы вашей студии; данные и код CRM не меняются.</p>
       <p class="muted" id="crmerr" role="alert"></p>
       <div class="formactions"><button class="primary">Подключить CRM</button></div></form>`;
     $('#crmf').onsubmit = async e => {
@@ -5008,7 +5008,7 @@ function paintDigest(link) {
   if (!box) return;
   const d = digestInfo || {}, subs = d.subscribers || [];
   box.innerHTML = `${d.error ? `<div class="notice error">Не удалось проверить: ${E(d.error)}</div>` : ''}
-    <p>Каждое утро служебный бот ${d.username ? `<b>@${E(d.username)}</b>` : 'ADERVIS Intelligence'} присылает «На сегодня»: просроченное, дела на сегодня,
+    <p>Каждое утро служебный бот ${d.username ? `<b>@${E(d.username)}</b>` : 'Hub ADERVIS'} присылает «На сегодня»: просроченное, дела на сегодня,
       клиентов, которые ждут ответа, и итоги суток. Команда /today — сводка в любой момент.</p>
     <p><b>Приём заявок.</b> Перешлите этому же боту ТЗ, голосовые, PDF и сообщения клиента и нажмите «🧠 Разобрать» — бот заведёт заявку
       и бриф с разбором, вопросами и вилкой цены и пришлёт ссылку. Принимает только от подписанных здесь руководителей.</p>

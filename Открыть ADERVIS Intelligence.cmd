@@ -1,6 +1,6 @@
 @echo off
 rem Starts the local server and opens the browser. Close this window to stop.
-title ADERVIS Intelligence
+title Hub ADERVIS
 cd /d "%~dp0"
 where node >nul 2>nul
 if errorlevel 1 (

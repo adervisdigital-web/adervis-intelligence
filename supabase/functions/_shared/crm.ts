@@ -151,7 +151,7 @@ export function sanitizePush(raw: unknown): PushDeal {
   if (!briefId) throw new Error('Не указан бриф');
   return {
     briefId, lines,
-    name: str(o.name, 120) || 'Сделка из Intelligence', client: str(o.client, 120) || 'Новый клиент', contact: str(o.contact, 120),
+    name: str(o.name, 120) || 'Сделка из Hub ADERVIS', client: str(o.client, 120) || 'Новый клиент', contact: str(o.contact, 120),
     phone: str(o.phone, 40), email: str(o.email, 120).toLowerCase(), status: CRM_STATUSES.includes(String(o.status)) ? String(o.status) : 'Бриф',
     total: lines.reduce((n: number, l: PushLine) => n + l.price, 0), notes: String(o.notes ?? '').trim().slice(0, 2000)
   };
@@ -171,7 +171,7 @@ export function withDeal(state: Row, p: PushDeal, ids: { deal: string; client: s
   const clientCreated = !client;
   if (!client) {
     client = { id: ids.client, name: p.client, company: '', phone: p.phone, email: p.email, city: '', social: '', contactPerson: p.contact,
-      source: 'ADERVIS Intelligence', note: '', requisites: '', status: 'new', createdAt: now, updatedAt: now };
+      source: 'Hub ADERVIS', note: '', requisites: '', status: 'new', createdAt: now, updatedAt: now };
     clients.unshift(client);
   }
   const draft = { source: 'intelligence', createdAt: now, lines: p.lines.map(l => ({ name: l.name, qty: 1, price: l.price, note: l.note })),

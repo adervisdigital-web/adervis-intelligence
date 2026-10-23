@@ -54,7 +54,7 @@ check('сделка: создана первой, со своей ссылкой
 check('сделка: смета — черновиком CRM, CRM развернёт её сама', deal.botEstimate.lines.length === 2 && deal.botEstimate.lines[0].qty === 1
   && deal.botEstimate.lines[1].price === 70000 && deal.botEstimate.mismatch === 0);
 check('клиент: заведён с контактами и источником, привязан к сделке', r1.clientCreated && r1.state.clients[0].email === 'lebedev.k@papushevo.ru'
-  && r1.state.clients[0].source === 'ADERVIS Intelligence' && deal.clientId === 'client_1');
+  && r1.state.clients[0].source === 'Hub ADERVIS' && deal.clientId === 'client_1');
 check('остальное состояние CRM не тронуто', r1.state.company.name === 'ADERVIS' && before.savedProjects.length === 1 && before.clients.length === 1);
 const r2 = withDeal(r1.state, { ...p, lines: [{ name: 'Всё', price: 120000, note: '' }], total: 120000 }, { deal: 'proj_2', client: 'client_2' }, '2026-10-23T10:00:00Z', 'proj_1');
 check('повторная отправка обновляет ту же сделку и того же клиента', r2.mode === 'updated' && r2.dealId === 'proj_1' && !r2.clientCreated

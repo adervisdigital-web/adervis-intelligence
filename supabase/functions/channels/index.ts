@@ -123,10 +123,10 @@ async function vkConnect(sb: Sb) {
   const { items } = await vkServers(tok, gid);
   let serverId = items.find((x: any) => x.url === VK_URL)?.id;
   if (serverId) {
-    const r = await vkApi(tok, 'groups.editCallbackServer', { group_id: gid, server_id: serverId, url: VK_URL, title: 'Intelligence', secret_key: vkSecret });
+    const r = await vkApi(tok, 'groups.editCallbackServer', { group_id: gid, server_id: serverId, url: VK_URL, title: 'Hub ADERVIS', secret_key: vkSecret });
     if (r?.error) throw new Error(vkErr(r, NO_MANAGE));
   } else {
-    const r = await vkApi(tok, 'groups.addCallbackServer', { group_id: gid, url: VK_URL, title: 'Intelligence', secret_key: vkSecret });
+    const r = await vkApi(tok, 'groups.addCallbackServer', { group_id: gid, url: VK_URL, title: 'Hub ADERVIS', secret_key: vkSecret });
     serverId = r?.response?.server_id;
     if (!serverId) throw new Error(vkErr(r, NO_MANAGE));
   }
