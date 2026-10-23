@@ -3820,6 +3820,10 @@ const rub = n => num(Math.round(n)) + ' ₽';
 // до рубля, потом вверх: 1,1 × 100 000 в плавающей точке — чуть больше 110 000
 const roundUp = (n, step) => Math.ceil(Math.round(n) / (step || 1000)) * (step || 1000);
 const rateOf = role => Number(db.studio_rates.find(r => r.id === role)?.rate) || 0;
+// Ставка в смете конкретного брифа: «ставки для этого клиента» (например,
+// региональные −20%) меняют час работы, но не расходы — подписки и лицензии.
+const RATE_K = [[100, 'Стандартные'], [90, 'Минус 10%'], [80, 'Региональные, минус 20%'], [70, 'Минус 30%']];
+const rateIn = (b, role) => rateOf(role) * (role === 'cost' ? 1 : (Number(b?.estimate?.rate_k) || 100) / 100);
 const roleName = role => db.studio_rates.find(r => r.id === role)?.name || role;
 const inVariant = (it, v) => (it.variant || 'both') === 'both' || it.variant === v;
 
@@ -3827,11 +3831,11 @@ const inVariant = (it, v) => (it.variant || 'both') === 'both' || it.variant ===
 function briefTotals(b, variant) {
   const e = b.estimate || {}, k = 1 + (Number(e.reserve) || 0) / 100;
   const items = (e.items || []).filter(it => inVariant(it, variant));
-  const sum = f => items.reduce((n, it) => n + (Number(it[f]) || 0) * rateOf(it.role), 0) * k;
+  const sum = f => items.reduce((n, it) => n + (Number(it[f]) || 0) * rateIn(b, it.role), 0) * k;
   const hours = f => items.reduce((n, it) => n + (Number(it[f]) || 0), 0);
   return { min: sum('min'), max: sum('max'), hmin: hours('min'), hmax: hours('max'), count: items.length };
 }
-const optionPrice = (b, o) => roundUp(((Number(o.min) + Number(o.max)) / 2) * rateOf(o.role) * (1 + (Number(b.estimate?.reserve) || 0) / 100), b.estimate?.round || 1000);
+const optionPrice = (b, o) => roundUp(((Number(o.min) + Number(o.max)) / 2) * rateIn(b, o.role) * (1 + (Number(b.estimate?.reserve) || 0) / 100), b.estimate?.round || 1000);
 const suggested = (b, v) => { const t = briefTotals(b, v); return t.count ? roundUp((t.min + t.max) / 2, b.estimate?.round || 1000) : 0; };
 const hasBase = b => (b.estimate?.items || []).some(it => it.variant === 'base' || it.variant === 'full');
 const briefLead = b => b.lead_id && db.leads.find(l => l.id === b.lead_id);
@@ -4147,7 +4151,7 @@ function bfEstimate(b) {
     <td>${roleSel(`estimate.items.${i}.role`, it.role)}</td>
     <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.min" value="${E(it.min)}" aria-label="Часов от"></td>
     <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.max" value="${E(it.max)}" aria-label="Часов до"></td>
-    <td class="bfsum" data-sum="${i}">${rub(it.min * rateOf(it.role))} – ${rub(it.max * rateOf(it.role))}</td>
+    <td class="bfsum" data-sum="${i}">${rub(it.min * rateIn(b, it.role))} – ${rub(it.max * rateIn(b, it.role))}</td>
     <td><select class="input" data-bf="estimate.items.${i}.variant" aria-label="Вариант">${VARIANTS.map(([k, t]) => `<option value="${k}" ${(it.variant || 'both') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
     <td class="bfrowacts"><button class="fold${it.fold ? ' on' : ''}" data-action="bfitemfold" data-id="${i}" aria-pressed="${!!it.fold}"
         title="${it.fold ? 'Вшито в стоимость: клиент не видит строку, её доля — в других работах' : 'Вшить в стоимость — не показывать клиенту отдельной строкой'}"
@@ -4164,6 +4168,8 @@ function bfEstimate(b) {
       <tbody>${rows}</tbody></table></div>` : '<p class="muted">Работ пока нет — разберите ТЗ с ИИ или добавьте вручную.</p>'}
     <div class="formactions"><button data-action="bfitemadd">+ Работа</button></div>
     <div class="formgrid bfset">
+      <div><label for="bfratek">Ставки для этого клиента</label><select class="input" id="bfratek" data-bf="estimate.rate_k">${RATE_K.map(([k, t]) => `<option value="${k}" ${Number(e.rate_k || 100) === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <small class="muted">Расходы (подписки, лицензии) не меняются. Цены в КП пересчитаются.</small></div>
       <div><label for="bfreserve">Запас на правки и ведение, %</label><input class="input" id="bfreserve" type="number" min="0" max="100" data-bf="estimate.reserve" value="${E(e.reserve ?? 10)}"></div>
       <div><label class="checkitem bfsubs"><input type="checkbox" data-bf="estimate.subtotals" ${e.subtotals ? 'checked' : ''}><span>Итоги по разделам в смете для клиента — например, цена каждого ролика</span></label></div>
       <div><label for="bfround">Округлять цену до, ₽</label><select class="input" id="bfround" data-bf="estimate.round">${[1000, 5000, 10000].map(n => `<option value="${n}" ${Number(e.round || 1000) === n ? 'selected' : ''}>${num(n)}</option>`).join('')}</select></div>
@@ -4348,7 +4354,7 @@ function estimateDoc(b) {
   // их доля уходит в остальные работы, итог не меняется
   const items = all.some(it => !it.fold) ? all.filter(it => !it.fold) : all;
   const two = !!k.base && hasBase(b);
-  const weight = it => ((Number(it.min) || 0) + (Number(it.max) || 0)) / 2 * rateOf(it.role);
+  const weight = it => ((Number(it.min) || 0) + (Number(it.max) || 0)) / 2 * rateIn(b, it.role);
   const split = (list, price, out = new Map()) => {
     const w = list.reduce((n, it) => n + weight(it), 0) || 1;
     let left = price;
@@ -4731,15 +4737,22 @@ function onBriefInput(e) {
   const b = db.briefs.find(x => x.id === briefView.id);
   if (!el || !b) return;
   const v = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? 0 : Number(el.value)) : el.type === 'date' ? (el.value || null)
-    : el.dataset.bf === 'estimate.round' ? Number(el.value) : el.value;
+    : ['estimate.round', 'estimate.rate_k'].includes(el.dataset.bf) ? Number(el.value) : el.value;
   setPath(b, el.dataset.bf, v);
+  // сменили ставки для клиента — цены в КП идут за сметой, иначе КП останется по старым
+  if (el.dataset.bf === 'estimate.rate_k') {
+    const kp = (b.kp ||= {});
+    kp.price_full = suggested(b, 'full');
+    if (Number(kp.price_base) > 0 || (kp.price_base === undefined && hasBase(b))) kp.price_base = suggested(b, 'base');
+    toast(`Цены в КП: ${kp.price_base ? `базовый ${rub(kp.price_base)}, ` : ''}полный ${rub(kp.price_full)}`);
+  }
   if (el.dataset.bf.startsWith('estimate.')) b.estimate.edited = true;
   // суммы, даты и цифры пересчитываются на месте
   const totals = $('#bftotals');
   if (totals) totals.innerHTML = totalsHtml(b);
   document.querySelectorAll('[data-sum]').forEach(td => {
     const it = b.estimate.items[Number(td.dataset.sum)];
-    if (it) td.textContent = `${rub(it.min * rateOf(it.role))} – ${rub(it.max * rateOf(it.role))}`;
+    if (it) td.textContent = `${rub(it.min * rateIn(b, it.role))} – ${rub(it.max * rateIn(b, it.role))}`;
   });
   document.querySelectorAll('[data-opt]').forEach(td => { const o = b.estimate.options[Number(td.dataset.opt)]; if (o) td.textContent = rub(optionPrice(b, o)); });
   if (el.dataset.bf.startsWith('plan.') || el.dataset.bf === 'kp.start') {
