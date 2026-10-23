@@ -75,7 +75,8 @@
     const st = { v: 'full', opts: new Set(), form: false, sent: null };
     const pick = () => {
       const v = e.two ? st.v : 'full', opts = [...st.opts].sort((a, b) => a - b);
-      const what = [e.two ? (v === 'base' ? 'Базовый вариант' : 'Полный вариант') : 'Смета', ...opts.map(i => e.options[i].name)];
+      // в кнопке и подтверждении — короткое название опции: до двоеточия
+      const what = [e.two ? (v === 'base' ? 'Базовый вариант' : 'Полный вариант') : 'Смета', ...opts.map(i => String(e.options[i].name).split(':')[0].trim())];
       return { v, opts, what, total: (v === 'base' ? e.base : e.full) + opts.reduce((n, i) => n + (Number(e.options[i].price) || 0), 0) };
     };
     // «Выбрать этот вариант»: клиент подтверждает выбор, мы получаем его в Telegram

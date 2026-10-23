@@ -100,6 +100,7 @@ section li{margin:4px 0}
 
 /* выбор клиента: кнопка под сметой, короткая форма, подтверждение */
 .choose{margin:22px 0 0;padding:20px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.choose .btn{border:0;font:inherit;font-weight:600;font-size:17px;cursor:pointer}
 .choose>.btn{margin:0 0 10px;white-space:normal;text-align:left}
 .choose>small{display:block;color:var(--muted);font-size:14px}
 .chooseform p{margin:0 0 10px}
@@ -108,7 +109,7 @@ section li{margin:4px 0}
 .chooseform textarea:focus{outline:3px solid var(--gold);outline-offset:1px}
 .chooseacts{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
 .chooseacts .btn{margin:0}
-.choose .btn.ghost{color:var(--ink);border-color:var(--line)}
+.choose .btn.ghost{color:var(--ink);border:1px solid var(--line)}
 .chooseerr{color:#b42318;font-size:14px;margin:8px 0 0}
 .chosen{margin:0;color:var(--ink)}
 .chosen b{color:#1f7a3a}
