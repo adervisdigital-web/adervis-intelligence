@@ -149,7 +149,7 @@
       };
       box.innerHTML = `
         ${e.two ? `<div class="variants" role="radiogroup" aria-label="Вариант сметы">
-          ${[['base', 'Базовый', e.base], ['full', 'Полный', e.full]].map(([k, t, p]) => `<button type="button" role="radio" aria-checked="${v === k}" data-v="${k}"><span>${t} вариант</span><b>${rub(p)}</b></button>`).join('')}
+          ${[['base', 'Базовый', e.base], ['full', 'Полный', e.full]].map(([k, t, p]) => `<button type="button" role="radio" aria-checked="${v === k}" data-v="${k}"><span>${t} вариант</span><b>${rub(p)}</b>${e.labels?.[k] ? `<small>${E(e.labels[k])}</small>` : ''}</button>`).join('')}
         </div>` : ''}
         ${hints ? '<p class="esthelp">Наведите на строку или нажмите на неё: появится пояснение, что входит в работу.</p>' : ''}
         <table class="est"><thead><tr><th>Работа</th><th class="num">Стоимость</th></tr></thead><tbody>

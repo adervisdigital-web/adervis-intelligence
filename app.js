@@ -4245,6 +4245,8 @@ function bfKp(b) {
       <div class="formgrid">
         <div><label for="kpfull">Цена полного варианта, ₽</label><input class="input" id="kpfull" type="number" min="0" step="1000" data-bf="kp.price_full" value="${E(k.full)}"></div>
         <div><label for="kpbase">Цена базового, ₽ (0 — не показывать)</label><input class="input" id="kpbase" type="number" min="0" step="1000" data-bf="kp.price_base" value="${E(k.base)}"></div>
+        <div><label for="kplabfull">Полный вариант — коротко, что в нём</label><input class="input" id="kplabfull" data-bf="kp.label_full" maxlength="80" value="${E(b.kp?.label_full || '')}" placeholder="Например, 3D-студия и 4K"></div>
+        <div><label for="kplabbase">Базовый — коротко, чем проще</label><input class="input" id="kplabbase" data-bf="kp.label_base" maxlength="80" value="${E(b.kp?.label_base || '')}" placeholder="Например, студия в 2.5D"></div>
         <div><label for="kpprepay">Предоплата, %</label><input class="input" id="kpprepay" type="number" min="0" max="100" data-bf="kp.prepay" value="${E(k.prepay)}"></div>
         <div><label for="kprev">Кругов правок</label><input class="input" id="kprev" type="number" min="0" max="10" data-bf="kp.revisions" value="${E(k.revisions)}"></div>
         <div><label for="kpcontact">Контактное лицо</label><input class="input" id="kpcontact" data-bf="kp.contact" maxlength="80" value="${E(k.contact)}" placeholder="Имя и фамилия"></div>
@@ -4289,8 +4291,8 @@ function kpHtml(b) {
     ${k.approach ? `<section><h2>Как будем делать</h2>${richText(k.approach)}</section>` : ''}
     ${deliver.length ? `<section><h2>Что сделаем</h2><ul>${deliver.map(d => `<li><b>${E(d.name)}</b>${d.details ? `: ${E(d.details)}` : ''}</li>`).join('')}</ul></section>` : ''}
     <section><h2>Стоимость</h2><table class="kptable"><tbody>
-      <tr><td><b>Полный вариант, всё по ТЗ</b></td><td class="kpprice">${rub(k.full)}</td></tr>
-      ${k.base ? `<tr><td><b>Базовый вариант</b>${onlyFull.length ? `<br><small>Без: ${E(onlyFull.join('; '))}${onlyBase.length ? `. Вместо этого: ${E(onlyBase.join('; '))}` : ''}</small>` : ''}</td><td class="kpprice">${rub(k.base)}</td></tr>` : ''}
+      <tr><td><b>Полный вариант${b.kp?.label_full ? `: ${E(b.kp.label_full)}` : ', всё по ТЗ'}</b></td><td class="kpprice">${rub(k.full)}</td></tr>
+      ${k.base ? `<tr><td><b>Базовый вариант${b.kp?.label_base ? `: ${E(b.kp.label_base)}` : ''}</b>${onlyFull.length ? `<br><small>Без: ${E(onlyFull.join('; '))}${onlyBase.length ? `. Вместо этого: ${E(onlyBase.join('; '))}` : ''}</small>` : ''}</td><td class="kpprice">${rub(k.base)}</td></tr>` : ''}
       ${(e.options || []).filter(o => o.name).map(o => `<tr><td>Дополнительно: ${E(o.name)}${o.why ? `<br><small>${E(o.why)}</small>` : ''}</td><td class="kpprice">+ ${rub(optionPrice(b, o))}</td></tr>`).join('')}
     </tbody></table></section>
     ${dates.length ? `<section><h2>Этапы и сроки</h2><table class="kptable"><tbody>${dates.map((s, i) => `<tr><td><b>${i + 1}. ${E(s.stage)}</b>${s.result ? `<br><small>${E(s.result)}</small>` : ''}</td>
@@ -4550,7 +4552,7 @@ function downloadBlob(blob, name) {
 // В kp_shares уходит снимок — только то, что видит клиент (как в смете для
 // клиента: без часов и ставок). Ссылка постоянная: «Обновить» меняет снимок.
 const shareToken = () => [...crypto.getRandomValues(new Uint8Array(24))].map(x => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[x % 62]).join('');
-const KP_SHARE_V = 2;
+const KP_SHARE_V = 3;
 const kpLink = (token, preview = false) => new URL(`kp.html?t=${token}${preview ? '&p=1' : ''}`, location.href).href;
 
 function kpShareData(b) {
@@ -4563,7 +4565,7 @@ function kpShareData(b) {
   return {
     v: KP_SHARE_V, title: b.title, client: b.client || '', date: k.date, prepay: k.prepay, intro: k.intro, style: k.style, concept: k.concept, approach: k.approach,
     deliverables: deliverables.map(x => ({ name: x.name, details: x.details || '' })),
-    estimate: { two: d.two, subtotals: d.subtotals, base: d.k.base, full: d.k.full,
+    estimate: { two: d.two, subtotals: d.subtotals, base: d.k.base, full: d.k.full, labels: { base: b.kp?.label_base || '', full: b.kp?.label_full || '' },
       groups: d.groups.map(g => ({ name: g.name, rows: g.rows, sum: g.sum })), options: d.options },
     terms: d.terms, days: planDays(b),
     plan: planDates(b, b.kp?.start || dayShift(3)).map(s => ({ stage: s.stage, result: s.result || '', days: Number(s.days) || 0, from: s.from, to: s.to })),
@@ -4617,7 +4619,7 @@ function kpMessage(b, link) {
   const lines = [
     `${first ? `${first}, добрый` : 'Добрый'} день!`, '',
     `Подготовили предложение: ${d.title}. Всё собрали на одной странице: ${d.media?.length ? 'примеры, ' : ''}смету, этапы и сроки.`, link, '',
-    (e.two ? `Посчитали два варианта: ${rub(e.base)} и ${rub(e.full)}. Чем они отличаются, расписали на странице` : `Стоимость ${rub(e.full)}, смета по строкам на странице`)
+    (e.two ? `Посчитали два варианта: ${rub(e.base)}${e.labels?.base ? ` (${e.labels.base})` : ''} и ${rub(e.full)}${e.labels?.full ? ` (${e.labels.full})` : ''}. Чем они отличаются, расписали на странице` : `Стоимость ${rub(e.full)}, смета по строкам на странице`)
       + (hinted ? ', а у каждой строки сметы есть пояснение.' : '.'),
     ...(qs.length ? ['', 'Чтобы точнее спланировать работу, подскажите, пожалуйста:', ...qs.map((q, i) => `${i + 1}. ${q}`)] : []),
     '', 'Если удобнее обсудить голосом, давайте созвонимся.'

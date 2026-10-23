@@ -2112,6 +2112,8 @@ await page.click('[data-action=bftab][data-id=estimate]');
 await page.fill('.bfhint >> nth=0', 'Короткая анимация в начале выпуска, по ней узнают дайджест');
 await page.click('[data-action=bftab][data-id=kp]');
 await page.fill('#kpintro', 'Задача — сделать дайджест для сотрудников');
+await page.fill('#kplabbase', 'студия в 2.5D');
+await page.fill('#kplabfull', '3D-студия и 4K');
 await page.click('[data-action=bfshare]');
 // проверка перед отправкой: тире замечено и убирается одной кнопкой
 check('КП-ссылка: проверка перед отправкой видит длинное тире', (await page.textContent('.kpchecks')).includes('Длинные тире'));
@@ -2133,13 +2135,13 @@ const share = Object.values(await page.evaluate(() => window.__KPSHARES__))[0];
 const shareJson = JSON.stringify(share.data);
 check('КП-ссылка: снимок — смета как у клиента, пример, сроки', share.data.estimate.full === 205000 && share.data.media.length === 1
   && share.data.media[0].group.startsWith('Направление 1') && share.data.plan.length > 0 && share.data.title === 'Видеодайджест', JSON.stringify({ full: share.data.estimate.full, media: share.data.media, plan: share.data.plan?.length }));
-check('КП-ссылка: снимок версии 2, пояснение к строке, предоплата, без срока действия', share.data.v === 2 && share.data.prepay === 50 && !('valid_until' in share.data)
+check('КП-ссылка: снимок версии 3, пояснение к строке, предоплата, без срока действия', share.data.v === 3 && share.data.prepay === 50 && !('valid_until' in share.data)
   && share.data.estimate.groups.some(g => g.rows.some(r => r.hint.startsWith('Короткая анимация'))) && !share.data.terms.some(t => /действует/.test(t)), JSON.stringify(share.data.terms));
 check('КП-ссылка: часов и ставок студии в снимке нет', !/"min"|"max"|"role"|Моушн-дизайнер|Арт-директор/.test(shareJson));
 check('КП-ссылка: ссылка скопирована и видна в окне', /kp\.html\?t=[A-Za-z0-9]{24}$/.test(await page.evaluate(() => navigator.clipboard.readText()))
   && (await page.inputValue('#kplink')).includes(share.token));
 const kpMsg = await page.inputValue('#kpmsg');
-check('КП-ссылка: сообщение клиенту — ссылка, оба варианта, вопросы, без длинных тире', kpMsg.includes(share.token) && /Посчитали два варианта: 95\s000 ₽ и 205\s000 ₽/.test(kpMsg)
+check('КП-ссылка: сообщение клиенту — ссылка, оба варианта с описаниями, вопросы, без длинных тире', kpMsg.includes(share.token) && /Посчитали два варианта: 95\s000 ₽ \(студия в 2\.5D\) и 205\s000 ₽ \(3D-студия и 4K\)/.test(kpMsg)
   && kpMsg.includes('подскажите, пожалуйста') && !kpMsg.includes('—') && kpMsg.endsWith('давайте созвонимся.'), kpMsg.slice(0, 400));
 await page.click('[data-action=kpmsgcopy]');
 check('КП-ссылка: «Скопировать сообщение» кладёт текст в буфер', (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r/g, '') === kpMsg.replace(/\r/g, ''));
@@ -2193,6 +2195,7 @@ check('страница КП: открыл сотрудник (входили в
 check('страница КП: срок действия нигде не показан', !kpText.includes('действует'));
 check('страница КП: этапы в рабочих днях, внизу итог', /^\d+ рабоч(ий день|их дня|их дней)$/.test(await kpPage.textContent('.plan li small'))
   && (await kpPage.textContent('.plantotal')).startsWith('Итого: около'), await kpPage.textContent('.plan li small'));
+check('страница КП: у вариантов короткие описания', (await kpPage.textContent('[data-v=base] small')) === 'студия в 2.5D' && share.data.v === 3);
 check('страница КП: по умолчанию полный вариант', (await estTotal()) === '205000₽' && (await kpPage.getAttribute('[data-v=full]', 'aria-checked')) === 'true');
 await kpPage.click('[data-v=base]');
 check('страница КП: «Базовый» пересчитывает итог, строки не из варианта помечены', (await estTotal()) === '95000₽' && (await kpPage.$$('.est tr.off')).length > 0
