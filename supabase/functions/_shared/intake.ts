@@ -13,6 +13,7 @@ export const NO_KEYBOARD = { remove_keyboard: true };
 export const SOURCE_LIMIT = 60000;
 
 const AUDIO: Record<string, string> = { ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', aac: 'audio/aac', webm: 'audio/webm' };
+const IMAGE: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic' };
 
 // Кто автор пересланного сообщения — так в брифе видно, где клиент, а где мы.
 export function senderOf(msg: Row): string {
@@ -39,9 +40,14 @@ export function pieceOf(msg: Row): Piece | null {
     if (['txt', 'md', 'csv'].includes(e)) return { kind: 'plain', name: n, fileId: msg.document.file_id, size, text: caption };
     if (e === 'pdf') return { kind: 'pdf', name: n, fileId: msg.document.file_id, mime: 'application/pdf', size, text: caption };
     if (AUDIO[e]) return { kind: 'audio', name: n, fileId: msg.document.file_id, mime: AUDIO[e], size };
+    if (IMAGE[e]) return { kind: 'photo', name: n, fileId: msg.document.file_id, mime: IMAGE[e], size, text: caption };
     return { kind: 'other', name: n, size, text: caption };
   }
-  if (msg?.photo) return { kind: 'photo', name: 'фото', text: caption };
+  // скриншот переписки или ТЗ: берём самый крупный размер, текст с него читает ИИ
+  if (msg?.photo) {
+    const p = Array.isArray(msg.photo) && msg.photo.length ? msg.photo[msg.photo.length - 1] : {};
+    return { kind: 'photo', name: 'скриншот', fileId: p.file_id, mime: 'image/jpeg', size: p.file_size, text: caption };
+  }
   if (msg?.video || msg?.video_note) return { kind: 'video', name: msg.video_note ? 'видеосообщение' : String(msg.video?.file_name || 'видео'), text: caption };
   if (typeof msg?.text === 'string' && msg.text.trim()) return { kind: 'text', name: 'сообщение', text: msg.text.trim() };
   return null;

@@ -10,7 +10,7 @@ import { buildDigest, sendDigest, INTEL_TOKEN, APP_URL } from '../_shared/digest
 import { GO, CANCEL, KEYBOARD, NO_KEYBOARD, senderOf, pieceOf, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, type Item } from '../_shared/intake.ts';
 import { analyzeBrief, readWithAi } from '../_shared/brief-ai.ts';
 
-const HELP = 'Перешлите сюда ТЗ, голосовые, PDF и сообщения клиента — я соберу их в бриф с разбором и сметой. Когда всё прислали — «🧠 Разобрать».\n\n' +
+const HELP = 'Перешлите сюда ТЗ, голосовые, PDF, скриншоты переписки и сообщения клиента — я соберу их в бриф с разбором и сметой. Когда всё прислали — «🧠 Разобрать».\n\n' +
   'Команды:\n/today — сводка «На сегодня» сейчас\n/new — начать новую заявку\n/stop — не присылать утреннюю сводку';
 
 // Тяжёлую работу (скачать, расшифровать, разобрать) делаем после ответа
@@ -77,12 +77,12 @@ async function collect(sb: Sb, chat: number, msg: any) {
   if (!piece) return;
   let text = piece.text || '', note = '';
   try {
-    if (piece.fileId && ['docx', 'plain', 'audio', 'pdf'].includes(piece.kind)) {
+    if (piece.fileId && ['docx', 'plain', 'audio', 'pdf', 'photo'].includes(piece.kind)) {
       if ((piece.size || 0) > 20_000_000) throw new Error('файл больше 20 МБ — Telegram не отдаёт такие ботам');
       const bytes = await download(piece.fileId);
       const read = piece.kind === 'docx' ? await docxText(bytes) : piece.kind === 'plain' ? new TextDecoder().decode(bytes) : await readWithAi(bytes, piece.mime || 'application/octet-stream');
       text = [read.trim(), text ? `Подпись: ${text}` : ''].filter(Boolean).join('\n\n');
-    } else if (piece.kind === 'photo' || piece.kind === 'video' || piece.kind === 'other') {
+    } else if (piece.kind === 'photo' || piece.kind === 'video' || piece.kind === 'other') {   // фото без файла
       note = piece.kind === 'other' ? ' — этот формат не читаю, сохранил только подпись' : ' — содержимое не читаю, сохранил подпись';
       text = text || `(${piece.name} без подписи)`;
     }
