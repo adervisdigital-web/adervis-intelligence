@@ -98,6 +98,22 @@ section li{margin:4px 0}
 .deliver li{margin:0 0 10px}
 .deliver li span{display:block;color:var(--muted);font-size:15px}
 
+/* выбор клиента: кнопка под сметой, короткая форма, подтверждение */
+.choose{margin:22px 0 0;padding:20px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.choose>.btn{margin:0 0 10px;white-space:normal;text-align:left}
+.choose>small{display:block;color:var(--muted);font-size:14px}
+.chooseform p{margin:0 0 10px}
+.chooseform label{display:block;font-size:14px;color:var(--muted);margin:0 0 6px}
+.chooseform textarea{width:100%;font:inherit;font-size:15px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;resize:vertical}
+.chooseform textarea:focus{outline:3px solid var(--gold);outline-offset:1px}
+.chooseacts{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+.chooseacts .btn{margin:0}
+.choose .btn.ghost{color:var(--ink);border-color:var(--line)}
+.chooseerr{color:#b42318;font-size:14px;margin:8px 0 0}
+.chosen{margin:0;color:var(--ink)}
+.chosen b{color:#1f7a3a}
+.cta button.btn{font:inherit;font-weight:600;font-size:17px;cursor:pointer}
+
 /* этапы */
 .plan{list-style:none;padding:0;margin:0;counter-reset:st}
 .plan li{position:relative;padding:0 0 22px 52px;margin:0;counter-increment:st}
@@ -132,4 +148,4 @@ section li{margin:4px 0}
   .teamnote{bottom:84px;right:50%;transform:translateX(50%);font-size:12px}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
-@media print{.bar,.cta .btn{display:none}.hero{background:#121316;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media print{.bar,.cta .btn,.choose,.teamnote,.esthelp,.shield{display:none}.est tr.has .nm{text-decoration:none}.hero{background:#121316;-webkit-print-color-adjust:exact;print-color-adjust:exact}}

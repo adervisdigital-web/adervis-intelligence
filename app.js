@@ -261,7 +261,7 @@ function createApi(cfg) {
       return { path, url: sb.storage.from('kp-media').getPublicUrl(path).data.publicUrl };
     },
     async removeKpMedia(paths) { if (paths.length) await sb.storage.from('kp-media').remove(paths); },
-    async kpShareGet(token) { return must(await sb.from('kp_shares').select('token,views,first_view_at,last_view_at,updated_at').eq('token', token).maybeSingle()); },
+    async kpShareGet(token) { return must(await sb.from('kp_shares').select('token,views,first_view_at,last_view_at,updated_at,choice,chosen_at').eq('token', token).maybeSingle()); },
     async kpSharePut(row) { return must(await sb.from('kp_shares').upsert(row).select('token,views,first_view_at,last_view_at,updated_at').single()); },
 
     async insert(table, o) {
@@ -4550,7 +4550,8 @@ async function kpShareModal(b) {
     ${kp.share_token ? `<div class="kplinkrow"><input class="input" id="kplink" readonly value="${E(kpLink(kp.share_token))}">
         <button data-action="kpcopy">${icon('copy', 15)} Скопировать</button>
         <a class="btnlink" href="${E(kpLink(kp.share_token, true))}" target="_blank" rel="noopener">${icon('external', 15)} Открыть</a></div>
-      <p class="muted">${icon('eye', 14)} Клиент ${E(views)}. Когда откроет — придёт сообщение в Telegram служебного бота.</p>` : ''}
+      <p class="muted">${icon('eye', 14)} Клиент ${E(views)}. Когда откроет, придёт сообщение в Telegram служебного бота.</p>
+      ${info?.choice ? `<div class="notice kpchoice"><b>${icon('check', 15)} Клиент выбрал ${E(ago(info.chosen_at))}:</b> ${E([info.choice.label, ...(info.choice.options || []).map(o => o.name)].join(' + '))}, ${rub(info.choice.total)}${info.choice.comment ? `<br>Комментарий: «${E(info.choice.comment)}»` : ''}</div>` : ''}` : ''}
     <h3>Примеры — картинки и видео</h3>
     <p class="muted">Стайлфреймы, аниматик, кадры из похожих работ. Подпись — что на кадре; раздел — например, «Направление 1 «Технологичное стекло»». До 50 МБ на файл.</p>
     <ul class="kpmedia">${media.map((m, i) => `<li>
