@@ -878,6 +878,20 @@ const FIGURES = {
       на котором работают. Капсула всегда золотая: градиент #f6bd3a → #c8901f.</div>`;
   },
 
+  hublogo: () => {
+    const v = [
+      ['hub-logo-on-dark.svg', '#141414', 'Для тёмного фона', 'светлые буквы'],
+      ['hub-logo-on-light.svg', '#f4f4f2', 'Для светлого фона', 'тёмные буквы'],
+      ['hub-mark-gold.svg', '#141414', 'Знак на золоте', 'аватар, иконка приложения'],
+      ['hub-favicon.svg', '#f4f4f2', 'Знак, фавикон', 'капсула на тёмной плашке']
+    ];
+    return `<div class="logogrid">${v.map(([file, bg, name, note]) => `<figure class="logoitem">
+      <a class="logoplate" href="brand/hub/${file}" download="adervis-${file}" style="background:${bg}"
+        title="Скачать: ${E(name)}"><img src="brand/hub/${file}" alt="Hub ADERVIS — ${E(name)}"></a>
+      <figcaption><b>${E(name)}</b><span class="muted">${E(note)}</span></figcaption></figure>`).join('')}</div>
+      <div class="notice">Собрано скриптом <code>tools/hub-logo.py</code> из шрифта Eurostile Extended Black: правки — там, не руками в файлах.</div>`;
+  },
+
   // Комплект для соцсетей: всё собрано из элементов этого брендбука
   // генератором tools/social/build.mjs, цены и описания — с сайта.
   social: () => {
