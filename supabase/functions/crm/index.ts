@@ -114,7 +114,7 @@ async function sync(sb: Sb) {
     const { error: be } = await sb.from('briefs').insert(brief);
     if (be) { console.error('crm brief:', be.message); continue; }
     imported++;
-    await notify(sb, `📋 Новый бриф из CRM: ${brief.title}\n${lead.note}\nОткрыть: «Брифы и КП» в Intelligence`);
+    await notify(sb, `📋 Новый бриф из CRM: ${brief.title}\n${lead.note}\nОткрыть: «Брифы и КП» в Hub ADERVIS`);
   }
   await sb.from('outreach_settings').update({ crm_last_sync: new Date().toISOString() }).eq('id', 'main');
   return { ok: true, imported, total: subs?.length ?? 0 };

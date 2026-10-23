@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       await reply(await buildDigest(sb));
     } else if (!sub) {
       // Чужим — ни сводки, ни приёма заявок: в бриф попадает только то, что прислали руководители.
-      await reply('Это служебный бот ADERVIS Intelligence. Подключить утреннюю сводку: в приложении «Настройки» → «Утренняя сводка».');
+      await reply('Это служебный бот Hub ADERVIS. Подключить утреннюю сводку: в приложении «Настройки» → «Утренняя сводка».');
     } else if (/^\/today/.test(text)) {
       await reply(await buildDigest(sb));
     } else if (/^\/stop/.test(text)) {
