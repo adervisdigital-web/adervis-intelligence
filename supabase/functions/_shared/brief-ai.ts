@@ -37,16 +37,17 @@ export async function analyzeBrief(sb: Sb, text: string, client: string) {
 }
 
 // Голосовое или PDF → текст: Gemini принимает файл прямо в запросе.
+const IMAGE_PROMPT = 'На картинке скриншот переписки или документа. Перепиши весь текст дословно, сохранив порядок. В переписке каждое сообщение с новой строки в виде «Отправитель: текст»; для пересланных укажи, от кого переслано. Ссылки и цифры не меняй, от себя ничего не добавляй. Если текста нет, одной фразой опиши, что изображено.';
 const PDF_PROMPT = 'Перепиши текст документа как есть, по-русски, сохранив порядок, списки и таблицы (ячейки через « | »). Без пояснений.';
 export async function readWithAi(bytes: Uint8Array, mime: string): Promise<string> {
-  if (PROVIDER !== 'gemini' || !AI_KEY) throw new Error('голос и PDF читает Gemini, а он сейчас не подключён');
+  if (PROVIDER !== 'gemini' || !AI_KEY) throw new Error('голос, PDF и скриншоты читает Gemini, а он сейчас не подключён');
   if (bytes.length > 8_000_000) throw new Error('файл больше 8 МБ');
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   const base = AI_BASE || 'https://generativelanguage.googleapis.com/v1beta';
   const resp = await fetch(`${base}/models/${MODEL}:generateContent?key=${encodeURIComponent(AI_KEY)}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(90_000),
-    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: mime, data: btoa(bin) } }, { text: mime === 'application/pdf' ? PDF_PROMPT : TRANSCRIBE_PROMPT }] }],
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: mime, data: btoa(bin) } }, { text: mime === 'application/pdf' ? PDF_PROMPT : mime.startsWith('image/') ? IMAGE_PROMPT : TRANSCRIBE_PROMPT }] }],
       generationConfig: { temperature: 0, maxOutputTokens: 8192 } })
   });
   if (!resp.ok) throw new Error(`не прочиталось (ошибка ${resp.status})`);

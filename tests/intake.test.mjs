@@ -16,6 +16,12 @@ check('голосовое — расшифровать', pieceOf({ voice: { file
 check('docx, pdf, m4a как файл — читаем, у каждого свой способ', pieceOf({ document: { file_id: 'd', file_name: 'ТЗ Монави.docx' } }).kind === 'docx'
   && pieceOf({ document: { file_id: 'p', file_name: 'Бриф.PDF' } }).kind === 'pdf' && pieceOf({ document: { file_id: 'a', file_name: 'запись.m4a' } }).mime === 'audio/mp4');
 check('фото — берём подпись', pieceOf({ photo: [{}], caption: 'референс' }).kind === 'photo' && pieceOf({ photo: [{}], caption: 'референс' }).text === 'референс');
+{
+  const shot = pieceOf({ photo: [{ file_id: 'small', file_size: 900 }, { file_id: 'big', file_size: 90000 }] });
+  check('скриншот — берём самый крупный размер, читаем как картинку', shot.kind === 'photo' && shot.fileId === 'big' && shot.mime === 'image/jpeg' && shot.name === 'скриншот');
+  const png = pieceOf({ document: { file_name: 'Переписка.PNG', file_id: 'f1', file_size: 500 } });
+  check('скриншот файлом (png) — тоже картинка', png.kind === 'photo' && png.mime === 'image/png' && png.fileId === 'f1');
+}
 check('текст — как есть; пустое — ничего', pieceOf({ text: ' нужен ролик ' }).text === 'нужен ролик' && pieceOf({ sticker: {} }) === null);
 
 // Word: абзацы, списки, таблицы — без DOM
