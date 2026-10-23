@@ -2054,3 +2054,6 @@ dialog textarea.short{min-height:84px}
 .kpmeta{display:grid;gap:6px}
 .kpmeta .input{padding:7px 10px}
 @media(max-width:720px){.kplinkbox{flex-direction:column;align-items:stretch}.kpmedia li{grid-template-columns:64px minmax(0,1fr) auto}.kpthumb{width:64px;height:40px}}
+
+/* пояснение к строке сметы: клиент видит его на странице КП */
+.bftable .bfhint{margin-top:6px;font-size:13px;color:var(--muted)}

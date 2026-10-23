@@ -4103,7 +4103,8 @@ function bfEstimate(b) {
   const roleSel = (path, v) => `<select class="input" data-bf="${path}" aria-label="Роль">${roles.map(r => `<option value="${E(r.id)}" ${r.id === v ? 'selected' : ''}>${E(r.name)}</option>`).join('')}</select>`;
   const groups = [...new Set(items.map(it => it.group || 'Работы'))];
   const rows = groups.map(g => `<tr class="bfgroup"><th colspan="7">${E(g)}</th></tr>` + items.map((it, i) => (it.group || 'Работы') !== g ? '' : `<tr class="${it.fold ? 'folded' : ''}">
-    <td><input class="input" data-bf="estimate.items.${i}.name" maxlength="200" value="${E(it.name)}" aria-label="Работа"></td>
+    <td><input class="input" data-bf="estimate.items.${i}.name" maxlength="200" value="${E(it.name)}" aria-label="Работа">
+      <input class="input bfhint" data-bf="estimate.items.${i}.hint" maxlength="400" value="${E(it.hint || '')}" placeholder="Пояснение для клиента: что это и зачем" aria-label="Пояснение для клиента"></td>
     <td>${roleSel(`estimate.items.${i}.role`, it.role)}</td>
     <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.min" value="${E(it.min)}" aria-label="Часов от"></td>
     <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.max" value="${E(it.max)}" aria-label="Часов до"></td>
@@ -4168,10 +4169,10 @@ function bfPlan(b) {
 
 // ---- КП: те же данные, собранные в документ для клиента
 // Тексты для клиента: живым языком и без длинных тире (просьба владельцев).
-const KP_DEFAULT_TERMS = 'Работаем по этапам: показываем результат, вы согласуете, и только потом идём дальше. Сроки считаем с момента предоплаты и получения материалов. Исходники и шаблоны передаём после оплаты. Работаем как самозанятые: договор и чек «Мой налог», без НДС.';
+const KP_DEFAULT_TERMS = 'Работаем по этапам: показываем результат, вы согласуете, и только потом идём дальше. Сроки считаем с момента предоплаты и получения материалов. Исходники и шаблоны передаём после оплаты. Работаем как самозанятые: договор и чек «Мой налог», без НДС. Можем рассмотреть и другие варианты, как вам будет удобнее.';
 // Что студия обещает всегда: из анкеты владельцев, а не из головы.
 const KP_WHY = [
-  'Проект ведут руководители студии, без стажёров. Вы общаетесь напрямую с тем, кто делает работу.',
+  'Проект ведут руководители студии, без стажёров. Руководитель на связи весь проект.',
   'Сроки фиксируем в договоре. В смете нет скрытых платежей.',
   'Если результат не попадёт в задачу, переделаем.',
   'Моушн, 3D, видео и дизайн в одной команде. С 2017 года делаем видео и графику «Битвы роботов», которая выросла в международный проект.'
@@ -4201,7 +4202,6 @@ function bfKp(b) {
         <div><label for="kpbase">Цена базового, ₽ (0 — не показывать)</label><input class="input" id="kpbase" type="number" min="0" step="1000" data-bf="kp.price_base" value="${E(k.base)}"></div>
         <div><label for="kpprepay">Предоплата, %</label><input class="input" id="kpprepay" type="number" min="0" max="100" data-bf="kp.prepay" value="${E(k.prepay)}"></div>
         <div><label for="kprev">Кругов правок</label><input class="input" id="kprev" type="number" min="0" max="10" data-bf="kp.revisions" value="${E(k.revisions)}"></div>
-        <div><label for="kpvalid">КП действует, дней</label><input class="input" id="kpvalid" type="number" min="1" max="90" data-bf="kp.valid_days" value="${E(k.valid)}"></div>
         <div><label for="kpcontact">Контактное лицо</label><input class="input" id="kpcontact" data-bf="kp.contact" maxlength="80" value="${E(k.contact)}" placeholder="Имя и фамилия"></div>
         <div><label for="kpphone">Телефоны в КП</label><input class="input" id="kpphone" data-bf="kp.phone" maxlength="120" value="${E(k.phone)}"></div>
       </div>
@@ -4235,7 +4235,6 @@ function kpHtml(b) {
   const onlyFull = (e.items || []).filter(it => it.variant === 'full').map(it => it.name);
   const onlyBase = (e.items || []).filter(it => it.variant === 'base').map(it => it.name);
   const dates = planDates(b, b.kp?.start || dayShift(3));
-  const valid = new Date(Date.parse(k.date) + k.valid * 864e5);
   return `<header class="kptop"><img src="brand/logoB.svg" alt="ADERVIS"><div><b>Коммерческое предложение</b><span>${E(new Date(k.date + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' }))}</span></div></header>
     <h1 class="kptitle">${E(b.title)}</h1>
     <p class="kpfor">Для: <b>${E(b.client || '—')}</b></p>
@@ -4259,8 +4258,7 @@ function kpHtml(b) {
     ${refLines(k.refs).length ? `<section><h2>Наши работы и референсы</h2><ul>${refLines(k.refs).map(r => `<li>${r.name ? `${E(r.name)}: ` : ''}${r.url
       ? `<a href="${E(r.url)}" target="_blank" rel="noopener noreferrer">${E(r.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a>` : ''}</li>`).join('')}</ul></section>` : ''}
     <section><h2>Почему ADERVIS</h2><ul>${KP_WHY.map(x => `<li>${E(x)}</li>`).join('')}</ul></section>
-    <footer class="kpfoot"><b>${k.contact ? `${E(k.contact)}, ` : ''}ADERVIS</b><span>adervis.ru${k.phone ? ` · ${E(k.phone)}` : ''}</span>
-      <small>Предложение действует до ${E(valid.toLocaleDateString('ru', { day: 'numeric', month: 'long' }))}.</small></footer>`;
+    <footer class="kpfoot"><b>${k.contact ? `${E(k.contact)}, ` : ''}ADERVIS</b><span>adervis.ru${k.phone ? ` · ${E(k.phone)}` : ''}</span></footer>`;
 }
 
 // Простой текст КП → разметка: «## » подзаголовок, «- »/«— » пункт, «1. » шаг,
@@ -4339,15 +4337,14 @@ function estimateDoc(b) {
   }
   const groups = [...new Set(items.map(it => it.group || 'Работы'))].map(g => ({
     name: g, rows: items.filter(it => (it.group || 'Работы') === g && (full.has(it) || base.has(it)))
-      .map(it => ({ name: it.name, base: base.has(it) ? base.get(it) : null, full: full.has(it) ? full.get(it) : null }))
+      .map(it => ({ name: it.name, hint: it.hint || '', base: base.has(it) ? base.get(it) : null, full: full.has(it) ? full.get(it) : null }))
   })).filter(g => g.rows.length).map(g => ({ ...g, sum: { base: g.rows.reduce((n, r) => n + (r.base || 0), 0), full: g.rows.reduce((n, r) => n + (r.full || 0), 0) } }));
-  const valid = new Date(Date.parse(k.date) + k.valid * 864e5).toLocaleDateString('ru', { day: 'numeric', month: 'long' });
   return {
     k, two, groups, subtotals: !!e.subtotals, date: new Date(k.date + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' }),
     options: (e.options || []).filter(o => o.name).map(o => ({ name: o.name, why: o.why || '', price: optionPrice(b, o) })),
     terms: [`Предоплата ${k.prepay}%, остаток после сдачи.`,
       k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок входят в стоимость.` : '',
-      k.terms, `Смета действует до ${valid}.`].filter(Boolean)
+      k.terms].filter(Boolean)
   };
 }
 // Смета текстом: вставить в мессенджер или письмо как есть.
@@ -4508,6 +4505,7 @@ function downloadBlob(blob, name) {
 // В kp_shares уходит снимок — только то, что видит клиент (как в смете для
 // клиента: без часов и ставок). Ссылка постоянная: «Обновить» меняет снимок.
 const shareToken = () => [...crypto.getRandomValues(new Uint8Array(24))].map(x => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[x % 62]).join('');
+const KP_SHARE_V = 2;
 const kpLink = (token, preview = false) => new URL(`kp.html?t=${token}${preview ? '&p=1' : ''}`, location.href).href;
 
 function kpShareData(b) {
@@ -4515,9 +4513,10 @@ function kpShareData(b) {
   const groups = [...new Set((e.items || []).map(it => it.group || 'Работы'))];
   const deliverables = (a.deliverables || []).length ? a.deliverables
     : groups.map(g => ({ name: g, details: (e.items || []).filter(it => (it.group || 'Работы') === g && inVariant(it, 'full') && !it.fold).map(it => it.name).join('; ') }));
-  const valid = localDate(Date.parse(k.date) + k.valid * 864e5);
+  // v растёт, когда меняется состав снимка: база не даёт старой вкладке
+  // программы перезаписать страницу более старым снимком (kp_shares_version)
   return {
-    v: 1, title: b.title, client: b.client || '', date: k.date, valid_until: valid, intro: k.intro, style: k.style, concept: k.concept, approach: k.approach,
+    v: KP_SHARE_V, title: b.title, client: b.client || '', date: k.date, prepay: k.prepay, intro: k.intro, style: k.style, concept: k.concept, approach: k.approach,
     deliverables: deliverables.map(x => ({ name: x.name, details: x.details || '' })),
     estimate: { two: d.two, subtotals: d.subtotals, base: d.k.base, full: d.k.full,
       groups: d.groups.map(g => ({ name: g.name, rows: g.rows, sum: g.sum })), options: d.options },

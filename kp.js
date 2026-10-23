@@ -36,6 +36,8 @@
     }).join('');
   }
 
+  // Примеры: без кнопки «скачать», без перетаскивания и меню по правой кнопке.
+  // Полностью защитить файл в браузере нельзя, но случайно сохранить не выйдет.
   function gallery(media) {
     if (!media?.length) return '';
     const groups = [];
@@ -46,21 +48,64 @@
     }
     return `<section><div class="wrap"><h2>Как видим оформление</h2>${groups.map(g => `${g.name ? `<p class="group-title">${E(g.name)}</p>` : ''}
       <div class="gallery">${g.items.map((m, i) => `<figure class="${m.kind === 'video' || (g.items.length % 2 && i === 0) ? 'wide' : ''}">
-        ${m.kind === 'video' ? `<video src="${E(m.url)}"${safeUrl(m.poster) ? ` poster="${E(m.poster)}"` : ''} controls playsinline muted loop preload="metadata"></video>` : `<img src="${E(m.url)}" alt="${E(m.caption || '')}" loading="lazy">`}
+        ${m.kind === 'video'
+          ? `<video src="${E(m.url)}"${safeUrl(m.poster) ? ` poster="${E(m.poster)}"` : ''} controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture disableremoteplayback playsinline muted loop preload="metadata"></video>`
+          : `<div class="shot"><img src="${E(m.url)}" alt="${E(m.caption || '')}" loading="lazy" draggable="false"><span class="shield" aria-hidden="true"></span></div>`}
         ${m.caption ? `<figcaption>${E(m.caption)}</figcaption>` : ''}</figure>`).join('')}</div>`).join('')}</div></section>`;
   }
 
+  // Смета для клиента: переключатель «базовый / полный», галочки у
+  // дополнительных работ пересчитывают итог, у строк есть пояснения:
+  // на компьютере при наведении, на телефоне по нажатию.
   function estimate(e) {
     if (!e?.groups?.length) return '';
-    const two = !!e.two, cols = two ? 3 : 2, money = v => v === null || v === undefined ? '<span class="off">не входит</span>' : rub(v);
-    const rows = e.groups.map(g => `<tr class="grp"><td colspan="${cols}">${E(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${E(r.name)}</td>
-        ${two ? `<td class="num">${money(r.base)}</td>` : ''}<td class="num">${money(r.full)}</td></tr>`).join('')
-      + (e.subtotals ? `<tr class="sub"><td>Итого «${E(g.name)}»</td>${two ? `<td class="num">${rub(g.sum?.base)}</td>` : ''}<td class="num">${rub(g.sum?.full)}</td></tr>` : '')).join('');
-    return `<section><div class="read"><h2>Стоимость</h2>
-      <div class="est-wrap"><table class="est"><thead><tr><th>Работа</th>${two ? '<th class="num">Базовый</th><th class="num">Полный</th>' : '<th class="num">Стоимость</th>'}</tr></thead>
-      <tbody>${rows}</tbody><tfoot><tr><td>Итого</td>${two ? `<td class="num">${rub(e.base)}</td>` : ''}<td class="num">${rub(e.full)}</td></tr></tfoot></table></div>
-      ${e.options?.length ? `<h3>Дополнительно, по желанию</h3><ul class="opts">${e.options.map(o => `<li><span>${E(o.name)}${o.why ? `<small>${E(o.why)}</small>` : ''}</span><b class="num">+ ${rub(o.price)}</b></li>`).join('')}</ul>` : ''}
-    </div></section>`;
+    return `<section id="price"><div class="read"><h2>Стоимость</h2><div id="est"></div></div></section>`;
+  }
+
+  function mountEstimate(e) {
+    const box = document.getElementById('est');
+    if (!box) return;
+    const st = { v: 'full', opts: new Set() };
+    const hints = e.groups.some(g => g.rows.some(r => r.hint));
+    const draw = focus => {
+      const v = e.two ? st.v : 'full';
+      const extra = [...st.opts].reduce((n, i) => n + (Number(e.options?.[i]?.price) || 0), 0);
+      const total = (v === 'base' ? e.base : e.full) + extra;
+      const row = r => {
+        const p = r[v], off = p === null || p === undefined;
+        return `<tr class="${off ? 'off' : ''}${r.hint ? ' has' : ''}"${r.hint ? ' tabindex="0"' : ''}>
+          <td><span class="nm">${E(r.name)}</span>${r.hint ? `<span class="tip">${E(r.hint)}</span>` : ''}</td>
+          <td class="num">${off ? '<span class="offl">не входит</span>' : rub(p)}</td></tr>`;
+      };
+      box.innerHTML = `
+        ${e.two ? `<div class="variants" role="radiogroup" aria-label="Вариант сметы">
+          ${[['base', 'Базовый', e.base], ['full', 'Полный', e.full]].map(([k, t, p]) => `<button type="button" role="radio" aria-checked="${v === k}" data-v="${k}"><span>${t} вариант</span><b>${rub(p)}</b></button>`).join('')}
+        </div>` : ''}
+        ${hints ? '<p class="esthelp">Наведите на строку или нажмите на неё: появится пояснение, что входит в работу.</p>' : ''}
+        <table class="est"><thead><tr><th>Работа</th><th class="num">Стоимость</th></tr></thead><tbody>
+          ${e.groups.map(g => `<tr class="grp"><td colspan="2">${E(g.name)}</td></tr>${g.rows.map(row).join('')}
+            ${e.subtotals ? `<tr class="sub"><td>Итого «${E(g.name)}»</td><td class="num">${rub(g.sum?.[v])}</td></tr>` : ''}`).join('')}
+        </tbody><tfoot><tr><td>Итого${extra ? '<small>с дополнительными работами</small>' : ''}</td><td class="num">${rub(total)}</td></tr></tfoot></table>
+        ${e.options?.length ? `<h3>Дополнительно, по желанию</h3><p class="esthelp">Отметьте, что хотите добавить, и итог пересчитается.</p>
+          <ul class="opts">${e.options.map((o, i) => `<li><label><input type="checkbox" data-o="${i}"${st.opts.has(i) ? ' checked' : ''}>
+            <span>${E(o.name)}${o.why ? `<small>${E(o.why)}</small>` : ''}</span><b class="num">+ ${rub(o.price)}</b></label></li>`).join('')}</ul>` : ''}`;
+      if (focus) box.querySelector(focus)?.focus();
+    };
+    box.addEventListener('click', ev => {
+      const vb = ev.target.closest('[data-v]');
+      if (vb) { st.v = vb.dataset.v; draw(`[data-v=${st.v}]`); return; }
+      ev.target.closest('tr.has')?.classList.toggle('open');
+    });
+    box.addEventListener('keydown', ev => {
+      if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches('tr.has')) { ev.preventDefault(); ev.target.classList.toggle('open'); }
+    });
+    box.addEventListener('change', ev => {
+      const i = ev.target.dataset?.o;
+      if (i === undefined) return;
+      ev.target.checked ? st.opts.add(Number(i)) : st.opts.delete(Number(i));
+      draw(`[data-o="${i}"]`);
+    });
+    draw();
   }
 
   function render(d) {
@@ -78,7 +123,7 @@
       <div class="facts">
         <div><small>Стоимость</small><b class="gold">${E(price)}</b></div>
         <div><small>Срок</small><b>${d.days ? `${d.days} ${plural(d.days, 'рабочий день', 'рабочих дня', 'рабочих дней')}` : 'по плану'}</b></div>
-        <div><small>Предложение действует до</small><b>${E(day(d.valid_until))}</b></div>
+        ${d.prepay ? `<div><small>Оплата</small><b>${d.prepay}% + ${100 - d.prepay}%</b><small class="sub">до старта и после сдачи</small></div>` : ''}
       </div>
       ${d.intro ? `<p class="intro">${E(d.intro)}</p>` : ''}
     </div></header>
@@ -98,9 +143,13 @@
       <p>${d.contact ? `${E(d.contact)}, ADERVIS. ` : ''}Ответим на вопросы и покажем, как начнём работу.</p>
       ${tel ? `<a class="btn" href="tel:${E(tel)}">Позвонить ${E(phone)}</a>` : ''}
       <a class="btn ghost" href="https://adervis.ru" target="_blank" rel="noopener noreferrer">adervis.ru</a>
-      <p class="valid">Предложение действует до ${E(day(d.valid_until))}.</p>
     </div></footer>
     ${tel ? `<div class="bar"><a class="btn" href="tel:${E(tel)}">Позвонить</a></div>` : ''}`;
+    mountEstimate(e);
+    root.querySelectorAll('.gallery img, .gallery video, .gallery .shield').forEach(el => {
+      el.addEventListener('contextmenu', ev => ev.preventDefault());
+      el.addEventListener('dragstart', ev => ev.preventDefault());
+    });
   }
 
   async function load() {
