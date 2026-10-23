@@ -8,7 +8,8 @@ type Row = Record<string, any>;
 
 export const GO = '🧠 Разобрать';
 export const CANCEL = '✖ Отмена';
-export const KEYBOARD = { keyboard: [[{ text: GO }, { text: CANCEL }]], resize_keyboard: true, is_persistent: true };
+// «Ответы к брифу» — текст кнопки из answers.ts, здесь без импорта, чтобы модуль оставался чистым
+export const KEYBOARD = { keyboard: [[{ text: GO }, { text: '📝 Ответы к брифу' }], [{ text: CANCEL }]], resize_keyboard: true, is_persistent: true };
 export const NO_KEYBOARD = { remove_keyboard: true };
 export const SOURCE_LIMIT = 60000;
 

@@ -1,6 +1,7 @@
 // Приём заявок через служебного бота: что пришло, как читается, во что складывается.
 import zlib from 'node:zlib';
 import { choiceOf, budgetOf } from '../supabase/functions/_shared/kp-choice.ts';
+import { ANSWERS, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../supabase/functions/_shared/answers.ts';
 import { senderOf, pieceOf, wordXmlText, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, GO, CANCEL, KEYBOARD } from '../supabase/functions/_shared/intake.ts';
 
 let fails = 0;
@@ -81,7 +82,28 @@ check('вилка: часы × ставки + 10%, вверх до 5 000', range
 const msg = summaryText({ title: 'Два AI-ролика', client: 'ДСК ГРУПП', analysis: b.analysis, questions: b.questions, range, link: 'https://app/#brief=x', parts: 3, model: 'Claude' });
 check('сообщение: суть, вилка, вопросы, ссылка на бриф', msg.includes('Бриф готов: Два AI-ролика — ДСК ГРУПП') && msg.includes('110 000 ₽ – 155 000 ₽')
   && msg.includes('1. Вертикальные') && msg.includes('#brief=x'), msg);
-check('кнопки: «Разобрать» и «Отмена»', KEYBOARD.keyboard[0].map(x => x.text).join() === [GO, CANCEL].join());
+check('кнопки: «Разобрать», «Ответы к брифу», «Отмена»', KEYBOARD.keyboard.flat().map(x => x.text).join() === [GO, ANSWERS, CANCEL].join());
+{
+  // ответы клиента к брифу
+  const briefs = [{ id: 'u', title: 'Оформление видеодайджеста «PRO Уралхим» для сотрудников группы', client: 'Уралхим', lead_id: 'l1' },
+    { id: 'd', title: 'Два AI-ролика', client: 'ДСК ГРУПП', lead_id: 'l2' }];
+  const leads = [{ id: 'l1', name: 'Уралхим — Анастасия Шерстобитова' }, { id: 'l2', name: 'ДСК ГРУПП — Константин Лебедев' }];
+  check('ответы: бриф угадан по фамилии отправителя', guessBrief('Анастасия Шерстобитова', briefs, leads)?.id === 'u' && guessBrief('Вася', briefs, leads) === null);
+  const kb = briefKeyboard(briefs, briefs[1], CANCEL);
+  check('ответы: угаданный бриф первой кнопкой, «Отмена» последней, выбор по кнопке', kb.keyboard[0][0].text.includes('Два AI-ролика') && kb.keyboard.at(-1)[0].text === CANCEL
+    && pickBrief(kb.keyboard[1][0].text, briefs)?.id === 'u' && pickBrief('Два AI-ролика', briefs) === null);
+  const prompt = buildAnswersPrompt(['Какие сроки?', 'Хромакей или LED?'], 'Анастасия: снимаем на хромакее, старт в декабре');
+  check('ответы: в запросе вопросы по номерам и переписка', prompt.includes('1. Какие сроки?') && prompt.includes('снимаем на хромакее'));
+  const parsed = parseAnswers('```json\n{"answers":[{"n":2,"answer":"Хромакей"},{"n":9,"answer":"лишний"},{"n":1,"answer":""}],"other":"Старт в декабре"}\n```', 2);
+  check('ответы: разбор JSON — лишние номера и пустые ответы отброшены', parsed.answers.size === 1 && parsed.answers.get(2) === 'Хромакей' && parsed.other === 'Старт в декабре');
+  const upd = applyAnswers({ questions: [{ q: 'Какие сроки?', status: 'задан' }, { q: 'Хромакей или LED?', status: 'задан' }], source_text: 'ТЗ' }, parsed, 'Анастасия: хромакей', '2026-10-24');
+  check('ответы: в бриф — ответ и статус, переписка в конец ТЗ, следующий шаг', upd.questions[1].answer === 'Хромакей' && upd.questions[1].status === 'ответ' && upd.questions[0].status === 'задан'
+    && upd.source_text.endsWith('=== Ответ клиента (2026-10-24)\nАнастасия: хромакей') && upd.next_step.includes('осталось вопросов: 1') && JSON.stringify(upd.open) === '[1]');
+  const msg = answersText('Дайджест', upd.questions, upd.got, upd.open, parsed.other, 'https://hub.adervis.ru/#brief=u');
+  check('ответы: сообщение бота — что записано, что без ответа, ссылка', msg.includes('1 из 2') && msg.includes('✓ 2. Хромакей или LED?') && msg.includes('Без ответа: 1') && msg.includes('Старт в декабре'));
+  let bad = false; try { parseAnswers('не json', 2); } catch { bad = true; }
+  check('ответы: модель ответила не JSON — понятная ошибка', bad);
+}
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

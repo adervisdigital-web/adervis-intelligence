@@ -36,6 +36,18 @@ export async function analyzeBrief(sb: Sb, text: string, client: string) {
   return { ...parsed, model: claude ? `Claude (${model})` : model, rates: rates ?? [] };
 }
 
+// Короткий запрос к модели (разложить ответы клиента и т. п.): Claude, если
+// подключён ключ разбора ТЗ, иначе основная модель приложения.
+export async function askModel(sb: Sb, prompt: string, actor = 'intel-bot'): Promise<string> {
+  const claude = !!BRIEF_KEY, provider = claude ? BRIEF_PROVIDER : PROVIDER, model = claude ? BRIEF_MODEL : MODEL;
+  const req = claude ? providerRequest(BRIEF_PROVIDER, BRIEF_MODEL, BRIEF_KEY, BRIEF_BASE, prompt) : providerRequest(PROVIDER, MODEL, AI_KEY, AI_BASE, prompt, FOLDER);
+  const resp = await fetch(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body), signal: AbortSignal.timeout(120_000) });
+  if (!resp.ok) throw new Error(resp.status === 429 || resp.status === 503 ? 'модель перегружена — попробуйте через минуту' : `модель ответила ошибкой ${resp.status}`);
+  const out = providerText(provider, await resp.json());
+  await sb.from('ai_usage').insert({ actor, model: `${provider}/${model}`, drafts: 0, chars: out.length });
+  return out;
+}
+
 // Голосовое или PDF → текст: Gemini принимает файл прямо в запросе.
 const IMAGE_PROMPT = 'На картинке скриншот переписки или документа. Перепиши весь текст дословно, сохранив порядок. В переписке каждое сообщение с новой строки в виде «Отправитель: текст»; для пересланных укажи, от кого переслано. Ссылки и цифры не меняй, от себя ничего не добавляй. Если текста нет, одной фразой опиши, что изображено.';
 const PDF_PROMPT = 'Перепиши текст документа как есть, по-русски, сохранив порядок, списки и таблицы (ячейки через « | »). Без пояснений.';
