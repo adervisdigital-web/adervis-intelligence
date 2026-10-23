@@ -18,6 +18,8 @@
     const [x, y] = [new Date(a + 'T00:00:00'), new Date(b + 'T00:00:00')];
     return x.getMonth() === y.getMonth() ? `${x.getDate()}–${day(b)}` : `${day(a)} – ${day(b)}`;
   };
+  // срок этапа в рабочих днях: «2 рабочих дня»; после «около» — «около 28 рабочих дней»
+  const workdays = (n, about = false) => `${n} ${about ? plural(n, 'рабочего дня', 'рабочих дней', 'рабочих дней') : plural(n, 'рабочий день', 'рабочих дня', 'рабочих дней')}`;
   const plural = (n, a, b, c) => n % 10 === 1 && n % 100 !== 11 ? a : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? b : c;
 
   // «## » подзаголовок, «- » пункт, «1. » шаг, «**…**» жирный, пустая строка: абзац
@@ -134,7 +136,8 @@
     ${d.approach ? `<section><div class="read"><h2>Как будем делать</h2>${richText(d.approach)}</div></section>` : ''}
     ${estimate(e)}
     ${d.plan?.length ? `<section><div class="read"><h2>Этапы и сроки</h2><ol class="plan">${d.plan.map(s => `<li><b>${E(s.stage)}</b>
-      <small>${E(range(s.from, s.to))}</small>${s.result ? `<span>${E(s.result)}</span>` : ''}</li>`).join('')}</ol></div></section>` : ''}
+      <small>${s.days ? E(workdays(s.days)) : E(range(s.from, s.to))}</small>${s.result ? `<span>${E(s.result)}</span>` : ''}</li>`).join('')}</ol>
+      ${d.days ? `<p class="plantotal">Итого: около ${E(workdays(d.days, true))}</p>` : ''}</div></section>` : ''}
     ${d.terms?.length ? `<section><div class="read"><h2>Условия</h2><ul>${d.terms.map(t => `<li>${E(t)}</li>`).join('')}</ul></div></section>` : ''}
     ${d.refs?.length ? `<section><div class="read"><h2>Наши работы</h2><ul>${d.refs.map(r => safeUrl(r.url) ? `<li><a href="${E(r.url)}" target="_blank" rel="noopener noreferrer">${E(r.name || r.url)}</a></li>` : `<li>${E(r.name)}</li>`).join('')}</ul></div></section>` : ''}
     ${d.why?.length ? `<section><div class="read"><h2>Почему ADERVIS</h2><ul>${d.why.map(w => `<li>${E(w)}</li>`).join('')}</ul></div></section>` : ''}

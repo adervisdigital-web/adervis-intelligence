@@ -4249,8 +4249,8 @@ function kpHtml(b) {
       ${(e.options || []).filter(o => o.name).map(o => `<tr><td>Дополнительно: ${E(o.name)}${o.why ? `<br><small>${E(o.why)}</small>` : ''}</td><td class="kpprice">+ ${rub(optionPrice(b, o))}</td></tr>`).join('')}
     </tbody></table></section>
     ${dates.length ? `<section><h2>Этапы и сроки</h2><table class="kptable"><tbody>${dates.map((s, i) => `<tr><td><b>${i + 1}. ${E(s.stage)}</b>${s.result ? `<br><small>${E(s.result)}</small>` : ''}</td>
-      <td class="kpprice">${E(shortDate(s.from))} – ${E(shortDate(s.to))}</td></tr>`).join('')}</tbody></table>
-      <p>Всего около ${planDays(b)} рабочих дней.</p></section>` : ''}
+      <td class="kpprice">${s.days ? `${s.days} ${plural(Number(s.days), 'рабочий день', 'рабочих дня', 'рабочих дней')}` : ''}</td></tr>`).join('')}</tbody></table>
+      <p><b>Итого: около ${planDays(b)} ${plural(planDays(b), 'рабочего дня', 'рабочих дней', 'рабочих дней')}</b></p></section>` : ''}
     <section><h2>Условия</h2><ul>
       <li>Предоплата ${k.prepay}%, остаток после сдачи.</li>
       <li>${k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок по каждому блоку входят в стоимость.` : 'Правки обсуждаем отдельно.'}</li>
@@ -4521,7 +4521,7 @@ function kpShareData(b) {
     estimate: { two: d.two, subtotals: d.subtotals, base: d.k.base, full: d.k.full,
       groups: d.groups.map(g => ({ name: g.name, rows: g.rows, sum: g.sum })), options: d.options },
     terms: d.terms, days: planDays(b),
-    plan: planDates(b, b.kp?.start || dayShift(3)).map(s => ({ stage: s.stage, result: s.result || '', from: s.from, to: s.to })),
+    plan: planDates(b, b.kp?.start || dayShift(3)).map(s => ({ stage: s.stage, result: s.result || '', days: Number(s.days) || 0, from: s.from, to: s.to })),
     refs: refLines(k.refs), why: KP_WHY, contact: k.contact, phone: k.phone,
     media: (b.kp?.media || []).map(m => ({ url: m.url, kind: m.kind, caption: m.caption || '', group: m.group || '', ...(m.poster ? { poster: m.poster } : {}) }))
   };
