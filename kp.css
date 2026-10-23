@@ -13,7 +13,7 @@
 :root{--graphite:#121316;--graphite2:#1b1d22;--paper:#f3f4f6;--ink:#16181d;--muted:#5d6470;--line:#e1e3e8;--gold:#f6bd3a;--card:#fff;
   --display:'Unbounded',system-ui,sans-serif;--text:'Golos Text',system-ui,sans-serif}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 var(--text)}
 a{color:inherit}
 img,video{display:block;max-width:100%}
@@ -29,6 +29,15 @@ img,video{display:block;max-width:100%}
 .top span{color:#a9adb6;font-size:14px}
 .hero h1{font:700 clamp(30px,5.4vw,64px)/1.08 var(--display);letter-spacing:-.02em;margin:64px 0 14px;max-width:16ch}
 .hero .for{font-size:19px;color:#c9ccd3;margin:0}
+/* шапка с обложкой: название слева, кадр первого примера справа */
+.herogrid.withcover{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:48px;align-items:end}
+.herogrid.withcover h1{max-width:none}
+.cover{position:relative;display:block;border-radius:22px;overflow:hidden;border:1px solid #2c2f36;box-shadow:0 30px 80px rgba(0,0,0,.45);transform:rotate(1.2deg);transition:transform .25s ease;text-decoration:none;-webkit-touch-callout:none}
+.cover:hover{transform:rotate(0) translateY(-4px)}
+.cover img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;-webkit-user-drag:none;user-select:none}
+.cover span{position:absolute;left:14px;bottom:14px;padding:8px 14px;border-radius:999px;background:rgba(18,19,22,.78);backdrop-filter:blur(6px);color:#fff;font-size:14px;font-weight:600}
+.cover:focus-visible{outline:3px solid var(--gold);outline-offset:4px}
+@media(prefers-reduced-motion:reduce){.cover,.cover:hover{transform:none;transition:none}}
 .hero .for b{color:#fff;font-weight:600}
 .facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:#2c2f36;border:1px solid #2c2f36;border-radius:18px;overflow:hidden;margin-top:40px}
 .facts div{background:var(--graphite2);padding:18px 22px}
@@ -145,9 +154,11 @@ section li{margin:4px 0}
   .variants button b{font-size:19px}
   .est th,.est td{padding:10px 12px}
   .hero h1{margin-top:44px}
+  .herogrid.withcover{grid-template-columns:1fr;gap:24px}
+  .cover{transform:none}
   .bar{display:flex;position:sticky;bottom:0;gap:8px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:rgba(18,19,22,.94);backdrop-filter:blur(8px)}
   .bar .btn{flex:1;justify-content:center;margin:0;padding:12px}
   .teamnote{bottom:84px;right:50%;transform:translateX(50%);font-size:12px}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
-@media print{.bar,.cta .btn,.choose,.teamnote,.esthelp,.shield{display:none}.est tr.has .nm{text-decoration:none}.hero{background:#121316;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media print{.cover,.bar,.cta .btn,.choose,.teamnote,.esthelp,.shield{display:none}.est tr.has .nm{text-decoration:none}.hero{background:#121316;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
