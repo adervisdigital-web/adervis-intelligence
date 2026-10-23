@@ -186,17 +186,14 @@
     const phone = String(d.phone || '').split(/[·,;]/)[0].trim();
     const tel = phone.replace(/[^\d+]/g, '');
     const media = d.media || [];
-    // обложка в шапке: кадр первого примера (обложка видео или картинка)
+    // фон шапки: кадр первого примера (обложка видео или картинка), полупрозрачно
     const first = media.find(m => safeUrl(m.kind === 'video' ? m.poster : m.url));
     const cover = first ? { src: safeUrl(first.kind === 'video' ? first.poster : first.url), video: first.kind === 'video' } : null;
     root.innerHTML = `
-    <header class="hero"><div class="wrap">
+    <header class="hero">${cover ? `<div class="herobg" aria-hidden="true"><img src="${E(cover.src)}" alt="" draggable="false"></div>` : ''}<div class="wrap">
       <div class="top"><img src="brand/logo.svg" alt="ADERVIS"><span>Коммерческое предложение · ${E(day(d.date, { day: 'numeric', month: 'long', year: 'numeric' }))}</span></div>
-      <div class="herogrid${cover ? ' withcover' : ''}"><div class="herotext">
       <h1>${E(d.title)}</h1>
-      ${d.client ? `<p class="for">Для: <b>${E(d.client)}</b></p>` : ''}</div>
-      ${cover ? `<a class="cover" href="#examples" aria-label="Смотреть примеры оформления"><img src="${E(cover.src)}" alt="" draggable="false">
-        <span>${cover.video ? '▶ ' : ''}Смотреть примеры</span></a>` : ''}</div>
+      ${d.client ? `<p class="for">Для: <b>${E(d.client)}</b></p>` : ''}
       <div class="facts">
         <div><small>Стоимость</small><b class="gold">${E(price)}</b></div>
         <div><small>Срок</small><b>${d.days ? `~${d.days} ${plural(d.days, 'рабочий день', 'рабочих дня', 'рабочих дней')}` : 'по плану'}</b></div>
@@ -226,8 +223,16 @@
     ${tel ? `<div class="bar"><a class="btn" href="tel:${E(tel)}">Позвонить</a></div>` : ''}`;
     if (preview) root.insertAdjacentHTML('afterbegin', '<p class="teamnote">Просмотр команды: клиенту не засчитан, уведомление не придёт</p>');
     mountEstimate(e, d);
+    // параллакс фона шапки: при прокрутке кадр уходит медленнее текста
+    const bg = root.querySelector('.herobg img');
+    if (bg && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      let ticking = false;
+      const move = () => { ticking = false; const y = Math.min(window.scrollY, 900); bg.style.transform = `translate3d(0, ${y * 0.35}px, 0) scale(1.08)`; };
+      window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(move); } }, { passive: true });
+      move();
+    }
     document.getElementById('pdfbtn')?.addEventListener('click', () => window.print());
-    root.querySelectorAll('.gallery img, .gallery video, .gallery .shield, .cover img').forEach(el => {
+    root.querySelectorAll('.gallery img, .gallery video, .gallery .shield, .herobg img').forEach(el => {
       el.addEventListener('contextmenu', ev => ev.preventDefault());
       el.addEventListener('dragstart', ev => ev.preventDefault());
     });
