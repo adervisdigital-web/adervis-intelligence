@@ -2384,6 +2384,18 @@ const withVoice = (await state()).briefs[0].source_text;
 check('голосовое: расшифровка дописана к ТЗ под именем файла, ТЗ на месте', withVoice.includes('=== audio_2026-10-22.ogg') && withVoice.includes('пятнадцатому ноября')
   && withVoice.includes('Основное задание') && await page.evaluate(() => window.__VOICE__) === 'audio_2026-10-22.ogg');
 check('в CRM: бриф помнит сделку, кнопка — «Обновить в CRM»', (await page.textContent('[data-action=bfcrmpush]')).includes('Обновить в CRM'));
+// ставки для клиента: региональные −20% — смета и цены КП пересчитаны, расходы нет
+{
+  await page.click('[data-action=bftab][data-id=estimate]');
+  const fullBefore = (await state()).briefs[0].kp?.price_full;
+  const sumBefore = await page.textContent('[data-sum="0"]');
+  await page.selectOption('#bfratek', '80');
+  await page.waitForFunction(p => window.__STATE__.briefs[0].kp?.price_full && window.__STATE__.briefs[0].kp.price_full !== p, fullBefore);
+  const bk = (await state()).briefs[0];
+  check('ставки для клиента 80%: строка сметы и цена КП снизились, настройка сохранена', bk.estimate.rate_k === 80 && bk.kp.price_full < fullBefore
+    && (await page.textContent('[data-sum="0"]')) !== sumBefore, `${fullBefore} → ${bk.kp.price_full}`);
+  await page.selectOption('#bfratek', '100');
+}
 
 // --- 5ч. утренняя сводка в Telegram
 await nav('settings');
