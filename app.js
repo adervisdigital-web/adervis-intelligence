@@ -4573,6 +4573,39 @@ function kpShareData(b) {
   };
 }
 
+// ---- Проверка КП перед отправкой: правила владельцев для текстов клиенту.
+// Длинное тире «—» в текстах клиенту не ставим: в определениях — двоеточие,
+// в середине фразы — запятая, в диапазонах чисел — короткое «–».
+function dashFix(text) {
+  return String(text ?? '').replace(/(\d)\s*—\s*(\d)/g, '$1–$2')
+    .replace(/([^\n.!?:]*?)\s+—\s+/g, (m, before) => before + (/^\s*(#+ |[-•]\s)/.test(before) || before.trim().split(/\s+/).length <= 4 ? ': ' : ', '))
+    .replace(/—/g, '–');
+}
+// все тексты брифа, которые попадают на страницу КП
+function kpTextSlots(b) {
+  const kp = b.kp || {}, e = b.estimate || {}, a = b.analysis || {};
+  return [
+    ...['intro', 'style', 'concept', 'approach', 'terms', 'refs'].filter(k => kp[k]).map(k => [kp, k]),
+    ...(e.items || []).flatMap(it => [[it, 'name'], [it, 'group'], [it, 'hint']]),
+    ...(e.options || []).flatMap(o => [[o, 'name'], [o, 'why']]),
+    ...(b.plan || []).flatMap(st => [[st, 'stage'], [st, 'result']]),
+    ...(a.deliverables || []).flatMap(d => [[d, 'name'], [d, 'details']]),
+    ...((kp.media || []).map(m => [m, 'caption']))
+  ].filter(([o, k]) => typeof o[k] === 'string' && o[k]);
+}
+function kpChecks(b) {
+  const kp = b.kp || {}, data = kpShareData(b);
+  const dashes = kpTextSlots(b).reduce((n, [o, k]) => n + (o[k].match(/—/g) || []).length, 0);
+  const rows = data.estimate.groups.flatMap(g => g.rows), hinted = rows.filter(r => r.hint).length;
+  return [
+    { ok: !dashes, fix: dashes ? 'kpdash' : '', text: dashes ? `Длинные тире в текстах: ${dashes}. В текстах клиенту их не ставим` : 'Без длинных тире' },
+    { ok: (kp.media || []).length > 0, text: (kp.media || []).length ? `Примеры: ${(kp.media || []).length}` : 'Нет примеров: клиент увидит только текст. Добавьте кадры или видео ниже' },
+    { ok: !rows.length || hinted === rows.length, text: rows.length ? `Пояснения к строкам сметы: ${hinted} из ${rows.length}${hinted < rows.length ? '. Добавьте на вкладке «Смета», клиенту так понятнее' : ''}` : 'Смета пустая' },
+    { ok: !!(kp.contact && kpData(b).phone), text: kp.contact ? `Контакт: ${kp.contact}, ${kpData(b).phone.split(/[·,;]/)[0].trim()}` : 'Не указано контактное лицо (вкладка «КП»)' },
+    { ok: data.estimate.full > 0, text: data.estimate.full ? `Цена: ${data.estimate.two ? `${rub(data.estimate.base)} / ` : ''}${rub(data.estimate.full)}` : 'Нет цены' }
+  ];
+}
+
 async function kpShareModal(b) {
   // после каждого сохранения бриф в базе — новый объект: берём свежий, иначе
   // следующее сохранение упрётся в «запись изменена» и токен ссылки потеряется
@@ -4600,6 +4633,9 @@ async function kpShareModal(b) {
     <p class="fileadd"><button type="button" id="kpmbtn">${icon('upload', 15)} Добавить картинки и видео</button>
       <input type="file" id="kpmfile" accept="image/*,video/mp4,video/webm,video/quicktime" multiple hidden> <small class="muted" id="kpmst"></small></p>
     <p class="muted">На странице: задача, ${media.length ? 'примеры, ' : ''}стиль${kp.concept ? ', концепция' : ''}, что сделаем, смета, этапы, условия, наши работы и кнопка «Позвонить». Часов и ставок студии там нет.</p>
+    <h3>Перед отправкой</h3>
+    <ul class="kpchecks">${kpChecks(b).map(c => `<li class="${c.ok ? 'ok' : 'warn'}">${icon(c.ok ? 'check' : 'warn', 15)}<span>${E(c.text)}</span>
+      ${c.fix ? `<button data-action="${c.fix}">Убрать</button>` : ''}</li>`).join('')}</ul>
     <div class="formactions"><button class="primary" id="kppublish">${icon('link', 15)} ${kp.share_token ? 'Обновить страницу' : 'Опубликовать и получить ссылку'}</button></div>`, 'wide');
   const box = $('#modal');
   box.querySelectorAll('[data-kpm]').forEach(inp => inp.oninput = () => { media[Number(inp.dataset.kpm)][inp.dataset.k] = inp.value; queueBriefSave(b); });
@@ -4624,6 +4660,13 @@ async function kpShareModal(b) {
     kp.cover = kp.cover === src ? '' : src;
     await saveBriefNow(b, kp.cover ? 'Кадр стал фоном шапки. Нажмите «Обновить страницу», чтобы клиент увидел' : 'Фон шапки — снова первый пример'); kpShareModal(b);
   });
+  const dashBtn = box.querySelector('[data-action=kpdash]');
+  if (dashBtn) dashBtn.onclick = async () => {
+    let n = 0;
+    for (const [o, k] of kpTextSlots(b)) { const v = dashFix(o[k]); if (v !== o[k]) { n += (o[k].match(/—/g) || []).length; o[k] = v; } }
+    await saveBriefNow(b, `Заменено длинных тире: ${n}. Проверьте текст и нажмите «${kp.share_token ? 'Обновить страницу' : 'Опубликовать'}»`);
+    kpShareModal(b);
+  };
   box.querySelectorAll('[data-action=kpmdel]').forEach(btn => btn.onclick = async () => {
     const [m] = media.splice(Number(btn.dataset.id), 1);
     try { await api.removeKpMedia([m.path]); } catch (e) { /* файл мог быть уже удалён */ }

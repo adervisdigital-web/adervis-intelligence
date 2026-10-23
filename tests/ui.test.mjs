@@ -2111,7 +2111,13 @@ await ctx.route('https://x.supabase.co/storage/**', r => r.fulfill({ contentType
 await page.click('[data-action=bftab][data-id=estimate]');
 await page.fill('.bfhint >> nth=0', 'Короткая анимация в начале выпуска, по ней узнают дайджест');
 await page.click('[data-action=bftab][data-id=kp]');
+await page.fill('#kpintro', 'Задача — сделать дайджест для сотрудников');
 await page.click('[data-action=bfshare]');
+// проверка перед отправкой: тире замечено и убирается одной кнопкой
+check('КП-ссылка: проверка перед отправкой видит длинное тире', (await page.textContent('.kpchecks')).includes('Длинные тире'));
+await page.click('[data-action=kpdash]');
+await page.waitForFunction(() => !document.querySelector('[data-action=kpdash]'));
+check('КП-ссылка: «Убрать» заменило тире по смыслу', (await state()).briefs.find(x => x.kp?.intro?.startsWith('Задача'))?.kp.intro === 'Задача: сделать дайджест для сотрудников');
 await page.setInputFiles('#kpmfile', { name: 'заставка_стекло.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') });
 await page.waitForSelector('.kpmedia li');
 check('КП-ссылка: пример загружен, подпись из имени файла', (await page.inputValue('.kpmedia [data-k=caption]')) === 'заставка стекло');
