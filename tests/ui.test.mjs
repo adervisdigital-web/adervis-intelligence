@@ -2131,13 +2131,25 @@ await page.click('#modal [data-action=close]');
 
 // сама страница КП у клиента: на компьютере и на телефоне
 const kpPage = await ctx.newPage();
-await kpPage.route('**/functions/v1/kp', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: share.data }) }));
+const kpPosts = [];
+await kpPage.route('**/functions/v1/kp', r => { kpPosts.push(JSON.parse(r.request().postData())); r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: share.data }) }); });
 await kpPage.goto(BASE + 'kp.html?t=' + share.token);
 await kpPage.waitForSelector('.hero h1');
 const kpText = (await kpPage.textContent('body')).replace(/\s/g, '');
 check('страница КП: название, клиент, цена, смета, этапы, пример', (await kpPage.textContent('.hero h1')) === 'Видеодайджест' && kpText.includes('Уралхим')
   && kpText.includes('205000₽') && (await kpPage.$$('.est tbody tr')).length > 2 && (await kpPage.$$('.plan li')).length > 0 && (await kpPage.$$('.gallery img')).length === 1);
 const estTotal = () => kpPage.$eval('.est tfoot .num', x => x.textContent.replace(/\s/g, ''));
+check('страница КП: открыл сотрудник (входили в Hub) — просмотр не засчитан, плашка «Просмотр команды»', kpPosts[0]?.preview === true && await kpPage.isVisible('.teamnote'));
+{
+  // клиент: чужой браузер без входа в Hub — просмотр считается, плашки нет
+  const guest = await browser.newContext();
+  const g = await guest.newPage(), posts = [];
+  await g.route('**/functions/v1/kp', r => { posts.push(JSON.parse(r.request().postData())); r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: share.data }) }); });
+  await g.goto(BASE + 'kp.html?t=' + share.token);
+  await g.waitForSelector('.hero h1');
+  check('страница КП: клиент — просмотр засчитан, плашки нет', posts[0]?.preview === false && !(await g.$('.teamnote')));
+  await guest.close();
+}
 check('страница КП: срок действия нигде не показан', !kpText.includes('действует'));
 check('страница КП: этапы в рабочих днях, внизу итог', /^\d+ рабоч(ий день|их дня|их дней)$/.test(await kpPage.textContent('.plan li small'))
   && (await kpPage.textContent('.plantotal')).startsWith('Итого: около'), await kpPage.textContent('.plan li small'));
