@@ -1,6 +1,6 @@
 // Приём заявок через служебного бота: что пришло, как читается, во что складывается.
 import zlib from 'node:zlib';
-import { choiceOf } from '../supabase/functions/_shared/kp-choice.ts';
+import { choiceOf, budgetOf } from '../supabase/functions/_shared/kp-choice.ts';
 import { senderOf, pieceOf, wordXmlText, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, GO, CANCEL, KEYBOARD } from '../supabase/functions/_shared/intake.ts';
 
 let fails = 0;
@@ -15,6 +15,8 @@ check('автор: скрытый профиль, канал, старый фо�
   const data = { estimate: { two: true, base: 365000, full: 450000, options: [{ name: 'Звук', price: 20000 }, { name: 'LED', price: 20000 }] } };
   const c = choiceOf(data, { variant: 'base', options: [0, 0, 7, -1, 'x'], comment: '  созвон  в понедельник ' });
   check('КП, выбор: базовый + звук = 385 000, мусорные индексы отброшены', c.total === 385000 && c.options.length === 1 && c.label === 'Базовый вариант' && c.comment === 'созвон в понедельник');
+  check('КП, бюджет: «300 000 ₽» → 300000, наша цена «от» базового; мусор и мелочь отклоняются', budgetOf(data, { amount: '300 000 ₽' })?.amount === 300000
+    && budgetOf(data, { amount: '300 000' }).ours === 365000 && budgetOf(data, { amount: 'abc' }) === null && budgetOf(data, { amount: 500 }) === null);
   check('КП, выбор: без второго варианта всегда полный', choiceOf({ estimate: { two: false, full: 100000 } }, { variant: 'base' }).total === 100000);
 }
 check('автор: своё сообщение — без автора', senderOf({ text: 'привет' }) === '');

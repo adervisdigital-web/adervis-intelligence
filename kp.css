@@ -104,6 +104,13 @@ section li{margin:4px 0}
 .choose>.btn{margin:0 0 10px;white-space:normal;text-align:left}
 .choose>small{display:block;color:var(--muted);font-size:14px}
 .chooseerr{color:#b42318;font-size:14px;margin:8px 0 0}
+.linkbtn{background:none;border:0;padding:0;margin:14px 0 0;font:inherit;font-size:15px;color:var(--ink);text-decoration:underline;text-underline-offset:4px;cursor:pointer}
+.linkbtn:focus-visible,.budget input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.budget{margin:16px 0 0;padding-top:16px;border-top:1px dashed var(--line)}
+.budget label{display:block;font-size:14px;color:var(--muted);margin:0 0 6px}
+.budgetrow{display:flex;gap:10px;flex-wrap:wrap}
+.budgetrow input{flex:1;min-width:160px;font:inherit;font-size:18px;padding:11px 14px;border:1px solid var(--line);border-radius:12px;font-variant-numeric:tabular-nums}
+.budgetrow .btn{margin:0}
 .chosen{margin:0;color:var(--ink)}
 .chosen b{color:#1f7a3a}
 .chooseerr:empty{display:none}

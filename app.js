@@ -4551,7 +4551,8 @@ async function kpShareModal(b) {
         <button data-action="kpcopy">${icon('copy', 15)} Скопировать</button>
         <a class="btnlink" href="${E(kpLink(kp.share_token, true))}" target="_blank" rel="noopener">${icon('external', 15)} Открыть</a></div>
       <p class="muted">${icon('eye', 14)} Клиент ${E(views)}. Когда откроет, придёт сообщение в Telegram служебного бота.</p>
-      ${info?.choice ? `<div class="notice kpchoice"><b>${icon('check', 15)} Клиент выбрал ${E(ago(info.chosen_at))}:</b> ${E([info.choice.label, ...(info.choice.options || []).map(o => o.name)].join(' + '))}, ${rub(info.choice.total)}${info.choice.comment ? `<br>Комментарий: «${E(info.choice.comment)}»` : ''}</div>` : ''}` : ''}
+      ${info?.choice?.type === 'budget' ? `<div class="notice kpchoice"><b>${icon('chat', 15)} Клиент предложил свой бюджет ${E(ago(info.chosen_at))}:</b> ${rub(info.choice.amount)}. Наша цена: ${info.choice.from ? 'от ' : ''}${rub(info.choice.ours)}.</div>`
+        : info?.choice ? `<div class="notice kpchoice"><b>${icon('check', 15)} Клиент выбрал ${E(ago(info.chosen_at))}:</b> ${E([info.choice.label, ...(info.choice.options || []).map(o => o.name)].join(' + '))}, ${rub(info.choice.total)}${info.choice.comment ? `<br>Комментарий: «${E(info.choice.comment)}»` : ''}</div>` : ''}` : ''}
     <h3>Примеры — картинки и видео</h3>
     <p class="muted">Стайлфреймы, аниматик, кадры из похожих работ. Подпись — что на кадре; раздел — например, «Направление 1 «Технологичное стекло»». До 50 МБ на файл.</p>
     <ul class="kpmedia">${media.map((m, i) => `<li>
