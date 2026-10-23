@@ -8,9 +8,11 @@
 import { admin, secret, settings, sameSecret, tgApi, permToday, type Sb } from '../_shared/outreach.ts';
 import { buildDigest, sendDigest, INTEL_TOKEN, APP_URL } from '../_shared/digest-run.ts';
 import { GO, CANCEL, KEYBOARD, NO_KEYBOARD, senderOf, pieceOf, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, type Item } from '../_shared/intake.ts';
-import { analyzeBrief, readWithAi } from '../_shared/brief-ai.ts';
+import { analyzeBrief, readWithAi, askModel } from '../_shared/brief-ai.ts';
+import { ANSWERS, PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../_shared/answers.ts';
 
-const HELP = 'Перешлите сюда ТЗ, голосовые, PDF, скриншоты переписки и сообщения клиента — я соберу их в бриф с разбором и сметой. Когда всё прислали — «🧠 Разобрать».\n\n' +
+const HELP = 'Перешлите сюда ТЗ, голосовые, PDF, скриншоты переписки и сообщения клиента — я соберу их в бриф с разбором и сметой. Когда всё прислали — «🧠 Разобрать».\n' +
+  'Клиент ответил на вопросы? Перешлите ответ и нажмите «📝 Ответы к брифу» — разложу ответы по вопросам брифа.\n\n' +
   'Команды:\n/today — сводка «На сегодня» сейчас\n/new — начать новую заявку\n/stop — не присылать утреннюю сводку';
 
 // Тяжёлую работу (скачать, расшифровать, разобрать) делаем после ответа
@@ -54,6 +56,19 @@ Deno.serve(async (req) => {
     } else if (text === CANCEL || /^\/new/.test(text)) {
       await sb.from('bot_intake_items').delete().eq('chat_id', chat);
       await send(chat, text === CANCEL ? 'Заявку очистил.' : 'Начинаем новую заявку — пересылайте материалы.', text === CANCEL ? NO_KEYBOARD : undefined);
+    } else if (text === ANSWERS) {
+      const { count } = await sb.from('bot_intake_items').select('*', { count: 'exact', head: true }).eq('chat_id', chat);
+      if (!count) { await reply('Сначала перешлите ответ клиента: сообщения, скриншоты или голосовое. Потом нажмите «📝 Ответы к брифу».'); return new Response('ok'); }
+      const { briefs, leads } = await activeBriefs(sb);
+      if (!briefs.length) { await reply('Брифов в работе нет. Новая заявка — кнопка «🧠 Разобрать».'); return new Response('ok'); }
+      const { data: items } = await sb.from('bot_intake_items').select('sender').eq('chat_id', chat);
+      const guess = guessBrief((items ?? []).map((i: any) => i.sender).find(Boolean) || '', briefs, leads);
+      await send(chat, guess ? `Похоже, это ответ по брифу «${guess.title}». Выберите бриф:` : 'К какому брифу это ответ? Выберите:', briefKeyboard(briefs, guess, CANCEL));
+    } else if (text.startsWith(PICK)) {
+      const brief = pickBrief(text, (await activeBriefs(sb)).briefs);
+      if (!brief) { await send(chat, 'Не нашёл такой бриф в работе. Нажмите «📝 Ответы к брифу» ещё раз.', KEYBOARD); return new Response('ok'); }
+      await send(chat, `Раскладываю ответы по вопросам брифа «${brief.title}»…`, NO_KEYBOARD);
+      await later(processAnswers(sb, chat, brief.id));
     } else if (text === GO || /^\/go/.test(text)) {
       const { count } = await sb.from('bot_intake_items').select('*', { count: 'exact', head: true }).eq('chat_id', chat);
       if (!count) { await reply('Пока ничего не прислали. Перешлите ТЗ, голосовые или сообщения клиента.'); return new Response('ok'); }
@@ -136,4 +151,35 @@ async function processIntake(sb: Sb, chat: number) {
   await send(chat, problem
     ? `🧾 Бриф заведён: ${title}\nРазбор не сделал: ${problem}. Откройте бриф и нажмите «Разобрать ТЗ с ИИ».\n\nОткрыть бриф: ${link}`
     : summaryText({ title, client, analysis: brief.analysis as Record<string, unknown>, questions: brief.questions as Record<string, unknown>[], range, link, parts: items.length, model }));
+}
+
+// Брифы в работе — для выбора, к какому брифу ответ клиента.
+async function activeBriefs(sb: Sb) {
+  const { data: briefs } = await sb.from('briefs').select('id,title,client,lead_id,stage,updated_at').not('stage', 'in', '("Сделка","Отказ")').order('updated_at', { ascending: false }).limit(20);
+  const ids = (briefs ?? []).map((b: any) => b.lead_id).filter(Boolean);
+  const { data: leads } = ids.length ? await sb.from('leads').select('id,name').in('id', ids) : { data: [] };
+  return { briefs: briefs ?? [], leads: leads ?? [] };
+}
+
+// «Ответы к брифу»: модель раскладывает переписку по вопросам, бриф и заявка обновляются.
+async function processAnswers(sb: Sb, chat: number, briefId: string) {
+  const { data: rows } = await sb.from('bot_intake_items').select('*').eq('chat_id', chat).order('msg_id');
+  const items: Item[] = (rows ?? []).map((r: any) => ({ kind: r.kind, name: r.name, text: r.text, sender: r.sender }));
+  const { data: brief } = await sb.from('briefs').select('*').eq('id', briefId).maybeSingle();
+  if (!items.length || !brief) { await send(chat, 'Не нашёл материалов или бриф. Перешлите ответ клиента ещё раз.', KEYBOARD); return; }
+  const text = compileSource(items), today = permToday(), link = `${APP_URL}#brief=${briefId}`;
+  const qs = (Array.isArray(brief.questions) ? brief.questions : []) as Record<string, unknown>[];
+  let parsed = { answers: new Map<number, string>(), other: '' };
+  if (qs.length) {
+    try { parsed = parseAnswers(await askModel(sb, buildAnswersPrompt(qs.map(q => String(q.q ?? '')), text)), qs.length); }
+    catch (e) { await send(chat, `⚠️ Не разложил ответы: ${e instanceof Error ? e.message : 'ошибка модели'}. Материалы сохранены — выберите бриф ещё раз.`, KEYBOARD); return; }
+  }
+  const upd = applyAnswers(brief, parsed, text, today);
+  const { error } = await sb.from('briefs').update({ questions: upd.questions, source_text: upd.source_text, next_step: upd.next_step, next_on: upd.next_on }).eq('id', briefId);
+  if (error) { await send(chat, '⚠️ Не записал в бриф: ' + error.message, KEYBOARD); return; }
+  if (brief.lead_id) await sb.from('leads').update({ next_step: upd.next_step, next_on: today }).eq('id', brief.lead_id);
+  await sb.from('bot_intake_items').delete().eq('chat_id', chat);
+  await send(chat, qs.length ? answersText(String(brief.title), upd.questions, upd.got, upd.open, parsed.other, link)
+    : `📝 В брифе «${brief.title}» нет вопросов — ответ клиента дописал к ТЗ.
+${link}`);
 }
