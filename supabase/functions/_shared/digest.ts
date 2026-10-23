@@ -14,6 +14,7 @@ export type DigestData = {
   content: Row[];
   newLeads: number;       // заявок за вчера
   inbound: number;        // сообщений клиентов за сутки
+  kp?: Row[];             // КП-ссылки: title, client, views, last_view_at, choice, chosen_at, created_at
   appUrl: string;
 };
 
@@ -61,6 +62,21 @@ export function digestItems(d: DigestData): Item[] {
   return out.sort((a, b) => Number(b.late) - Number(a.late) || a.when.localeCompare(b.when));
 }
 
+// Что клиенты сделали с КП-ссылками за сутки и какие КП давно не открывали.
+export function kpLines(d: DigestData): string[] {
+  const rub = (n: number) => `${Math.round(Number(n) || 0).toLocaleString('ru-RU')} ₽`;
+  const fresh = (v?: string) => !!v && d.now - Date.parse(v) < DAY;
+  const name = (k: Row) => `«${k.title || 'КП'}»${k.client ? ` (${k.client})` : ''}`;
+  const out: string[] = [];
+  for (const k of d.kp || []) {
+    const c = k.choice;
+    if (c && fresh(k.chosen_at)) out.push(c.type === 'budget' ? `• ${name(k)}: клиент предложил бюджет ${rub(c.amount)}` : `• ${name(k)}: клиент выбрал ${c.label || 'вариант'}${c.options?.length ? ` + ${c.options.length}` : ''}, ${rub(c.total)}`);
+    else if (fresh(k.last_view_at)) out.push(`• ${name(k)}: КП открыли, всего ${k.views} ${plural(k.views, 'раз', 'раза', 'раз')}`);
+    else if (!k.views && k.created_at && d.now - Date.parse(k.created_at) >= 3 * DAY) out.push(`• ${name(k)}: КП не открывали ${days(Math.floor((d.now - Date.parse(k.created_at)) / DAY))}, стоит переспросить`);
+  }
+  return out.slice(0, 6);
+}
+
 // Текст для Telegram: просроченное — первым, не больше 12 дел, ссылка в приложение.
 export function digestText(d: DigestData): string {
   const items = digestItems(d);
@@ -73,6 +89,8 @@ export function digestText(d: DigestData): string {
   if (nowShown.length) lines.push('', '📌 Сегодня', ...nowShown.map(line));
   if (items.length > shown.length) lines.push(`…и ещё ${items.length - shown.length} — в приложении`);
   if (!items.length) lines.push('', 'Хорошее время написать новым компаниям из «Поиска клиентов».');
+  const kp = kpLines(d);
+  if (kp.length) lines.push('', '📨 КП', ...kp);
   lines.push('', `📈 За сутки: ${d.newLeads} ${plural(d.newLeads, 'новая заявка', 'новые заявки', 'новых заявок')}, ${d.inbound} ${plural(d.inbound, 'сообщение', 'сообщения', 'сообщений')} от клиентов`);
   lines.push(d.appUrl);
   return lines.join('\n').slice(0, 4000);

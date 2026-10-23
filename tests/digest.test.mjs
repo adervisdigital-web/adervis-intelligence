@@ -34,6 +34,18 @@ check('КП без ответа 4 дня — напомнить', items.some(x =
 const text = digestText(d);
 check('текст: дата, счёт дел, разделы', text.startsWith('☀️ На сегодня, 20 октября: 8 дел, просрочено 4') && text.includes('🔴 Просрочено') && text.includes('📌 Сегодня'), text.split('\n')[0]);
 check('текст: итоги суток и ссылка', text.includes('2 новые заявки, 7 сообщений от клиентов') && text.trim().endsWith('https://app'));
+{
+  // КП за сутки: выбор, бюджет, просмотры и давно не открытые
+  const H = 36e5, now = Date.parse('2026-10-24T09:00:00Z');
+  const kpDay = digestText({ ...base, now, kp: [
+    { title: 'Дайджест', client: 'Химпром', views: 3, last_view_at: new Date(now - 2 * H).toISOString(), choice: { label: 'Полный вариант', options: [], total: 360000 }, chosen_at: new Date(now - H).toISOString() },
+    { title: 'Ролики', client: 'СтройГрупп', views: 1, last_view_at: new Date(now - 3 * H).toISOString(), choice: { type: 'budget', amount: 500000 }, chosen_at: new Date(now - 3 * H).toISOString() },
+    { title: 'Графика', client: 'UNIX', views: 2, last_view_at: new Date(now - 5 * H).toISOString() },
+    { title: 'Старое', client: 'Кто-то', views: 0, created_at: new Date(now - 4 * 24 * H).toISOString() },
+    { title: 'Вчерашнее', views: 1, last_view_at: new Date(now - 30 * H).toISOString() }] });
+  check('сводка: блок «КП» — выбор, бюджет, просмотры, давно не открыли; старые просмотры не шумят', kpDay.includes('📨 КП') && /Химпром\): клиент выбрал Полный вариант, 360\s000 ₽/.test(kpDay)
+    && /клиент предложил бюджет 500\s000 ₽/.test(kpDay) && kpDay.includes('UNIX): КП открыли, всего 2 раза') && kpDay.includes('КП не открывали 4 дня') && !kpDay.includes('Вчерашнее'), kpDay);
+}
 check('пустой день — подсказка', digestText(base).includes('срочного нет') && digestText(base).includes('Поиска клиентов'));
 const many = digestText({ ...base, leads: Array.from({ length: 20 }, (_, i) => ({ name: 'Л' + i, status: 'В работе', next_on: '2026-10-20' })) });
 check('больше 12 дел — остальные «в приложении»', many.includes('…и ещё 8'));
