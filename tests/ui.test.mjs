@@ -2107,6 +2107,9 @@ check('КП: условия самозанятых, обещания из анк
 // КП-ссылка: примеры, публикация, снимок без часов и ставок
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 await ctx.route('https://x.supabase.co/storage/**', r => r.fulfill({ contentType: 'image/png', body: PIXEL }));
+await page.click('[data-action=bftab][data-id=estimate]');
+await page.fill('.bfhint >> nth=0', 'Короткая анимация в начале выпуска, по ней узнают дайджест');
+await page.click('[data-action=bftab][data-id=kp]');
 await page.click('[data-action=bfshare]');
 await page.setInputFiles('#kpmfile', { name: 'заставка_стекло.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64') });
 await page.waitForSelector('.kpmedia li');
@@ -2118,6 +2121,8 @@ const share = Object.values(await page.evaluate(() => window.__KPSHARES__))[0];
 const shareJson = JSON.stringify(share.data);
 check('КП-ссылка: снимок — смета как у клиента, пример, сроки', share.data.estimate.full === 205000 && share.data.media.length === 1
   && share.data.media[0].group.startsWith('Направление 1') && share.data.plan.length > 0 && share.data.title === 'Видеодайджест', JSON.stringify({ full: share.data.estimate.full, media: share.data.media, plan: share.data.plan?.length }));
+check('КП-ссылка: снимок версии 2, пояснение к строке, предоплата, без срока действия', share.data.v === 2 && share.data.prepay === 50 && !('valid_until' in share.data)
+  && share.data.estimate.groups.some(g => g.rows.some(r => r.hint.startsWith('Короткая анимация'))) && !share.data.terms.some(t => /действует/.test(t)), JSON.stringify(share.data.terms));
 check('КП-ссылка: часов и ставок студии в снимке нет', !/"min"|"max"|"role"|Моушн-дизайнер|Арт-директор/.test(shareJson));
 check('КП-ссылка: ссылка скопирована и видна в окне', /kp\.html\?t=[A-Za-z0-9]{24}$/.test(await page.evaluate(() => navigator.clipboard.readText()))
   && (await page.inputValue('#kplink')).includes(share.token));
@@ -2132,6 +2137,18 @@ await kpPage.waitForSelector('.hero h1');
 const kpText = (await kpPage.textContent('body')).replace(/\s/g, '');
 check('страница КП: название, клиент, цена, смета, этапы, пример', (await kpPage.textContent('.hero h1')) === 'Видеодайджест' && kpText.includes('Химпром')
   && kpText.includes('205000₽') && (await kpPage.$$('.est tbody tr')).length > 2 && (await kpPage.$$('.plan li')).length > 0 && (await kpPage.$$('.gallery img')).length === 1);
+const estTotal = () => kpPage.$eval('.est tfoot .num', x => x.textContent.replace(/\s/g, ''));
+check('страница КП: срок действия нигде не показан', !kpText.includes('действует'));
+check('страница КП: по умолчанию полный вариант', (await estTotal()) === '205000₽' && (await kpPage.getAttribute('[data-v=full]', 'aria-checked')) === 'true');
+await kpPage.click('[data-v=base]');
+check('страница КП: «Базовый» пересчитывает итог, строки не из варианта помечены', (await estTotal()) === '95000₽' && (await kpPage.$$('.est tr.off')).length > 0
+  && (await kpPage.textContent('.est tr.off')).includes('не входит'));
+const optPrice = await kpPage.$eval('.opts li b', x => Number(x.textContent.replace(/\D/g, '')));
+await kpPage.check('.opts input >> nth=0');
+check('страница КП: галочка у опции добавляет её к итогу', (await estTotal()) === `${95000 + optPrice}₽` && (await kpPage.textContent('.est tfoot')).includes('с дополнительными работами'), await estTotal());
+await kpPage.click('.est tr.has');
+check('страница КП: пояснение к строке открывается по нажатию', await kpPage.isVisible('.est tr.has.open .tip') && (await kpPage.textContent('.est tr.has .tip')).startsWith('Короткая анимация'));
+check('страница КП: у примеров нельзя перетащить картинку и скачать видео', (await kpPage.getAttribute('.gallery img', 'draggable')) === 'false' && !!(await kpPage.$('.gallery .shield')));
 await kpPage.screenshot({ path: path.join(OUT, 'kp-page.png'), fullPage: true });
 await kpPage.setViewportSize({ width: 390, height: 844 });
 check('страница КП на телефоне: без горизонтальной прокрутки, кнопка «Позвонить» внизу', await kpPage.evaluate(() => document.documentElement.scrollWidth <= 390)
