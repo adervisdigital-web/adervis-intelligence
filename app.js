@@ -4606,6 +4606,25 @@ function kpChecks(b) {
   ];
 }
 
+// Сообщение клиенту со ссылкой на КП — по правилам владельцев: коротко,
+// по-человечески, без длинных тире; цены из КП, открытые вопросы из брифа.
+function kpMessage(b, link) {
+  const d = kpShareData(b), e = d.estimate, lead = briefLead(b);
+  const person = String(lead?.name || '').split(/\s[—–-]\s/).map(x => x.trim()).find(x => /^[А-ЯЁ][а-яё]+(\s[А-ЯЁ][а-яё]+){1,2}$/.test(x));
+  const first = person ? person.split(' ')[0] : '';
+  const rows = e.groups.flatMap(g => g.rows), hinted = rows.length && rows.every(r => r.hint);
+  const qs = (b.questions || []).filter(q => q.status !== 'ответ' && !String(q.answer || '').trim()).map(q => dashFix(q.q));
+  const lines = [
+    `${first ? `${first}, добрый` : 'Добрый'} день!`, '',
+    `Подготовили предложение: ${d.title}. Всё собрали на одной странице: ${d.media?.length ? 'примеры, ' : ''}смету, этапы и сроки.`, link, '',
+    (e.two ? `Посчитали два варианта: ${rub(e.base)} и ${rub(e.full)}. Чем они отличаются, расписали на странице` : `Стоимость ${rub(e.full)}, смета по строкам на странице`)
+      + (hinted ? ', а у каждой строки сметы есть пояснение.' : '.'),
+    ...(qs.length ? ['', 'Чтобы точнее спланировать работу, подскажите, пожалуйста:', ...qs.map((q, i) => `${i + 1}. ${q}`)] : []),
+    '', 'Если удобнее обсудить голосом, давайте созвонимся.'
+  ];
+  return dashFix(lines.join('\n'));
+}
+
 async function kpShareModal(b) {
   // после каждого сохранения бриф в базе — новый объект: берём свежий, иначе
   // следующее сохранение упрётся в «запись изменена» и токен ссылки потеряется
@@ -4621,6 +4640,10 @@ async function kpShareModal(b) {
       <p class="muted">${icon('eye', 14)} Клиент ${E(views)}. Когда откроет, придёт сообщение в Telegram служебного бота.</p>
       ${info?.choice?.type === 'budget' ? `<div class="notice kpchoice"><b>${icon('chat', 15)} Клиент предложил свой бюджет ${E(ago(info.chosen_at))}:</b> ${rub(info.choice.amount)}. Наша цена: ${info.choice.from ? 'от ' : ''}${rub(info.choice.ours)}.</div>`
         : info?.choice ? `<div class="notice kpchoice"><b>${icon('check', 15)} Клиент выбрал ${E(ago(info.chosen_at))}:</b> ${E([info.choice.label, ...(info.choice.options || []).map(o => o.name)].join(' + '))}, ${rub(info.choice.total)}${info.choice.comment ? `<br>Комментарий: «${E(info.choice.comment)}»` : ''}</div>` : ''}` : ''}
+    ${kp.share_token ? `<h3>Сообщение клиенту</h3>
+      <p class="muted">Собрано из КП и открытых вопросов брифа. Поправьте, если нужно, и скопируйте.</p>
+      <textarea class="input kpmsg" id="kpmsg" rows="9">${E(kpMessage(b, kpLink(kp.share_token)))}</textarea>
+      <div class="formactions"><button data-action="kpmsgcopy">${icon('copy', 15)} Скопировать сообщение</button></div>` : ''}
     <h3>Примеры — картинки и видео</h3>
     <p class="muted">Стайлфреймы, аниматик, кадры из похожих работ. Подпись — что на кадре; раздел — например, «Направление 1 «Технологичное стекло»». До 50 МБ на файл.</p>
     <ul class="kpmedia">${media.map((m, i) => `<li>
@@ -4660,6 +4683,8 @@ async function kpShareModal(b) {
     kp.cover = kp.cover === src ? '' : src;
     await saveBriefNow(b, kp.cover ? 'Кадр стал фоном шапки. Нажмите «Обновить страницу», чтобы клиент увидел' : 'Фон шапки — снова первый пример'); kpShareModal(b);
   });
+  const msgBtn = box.querySelector('[data-action=kpmsgcopy]');
+  if (msgBtn) msgBtn.onclick = () => copyText($('#kpmsg').value, 'Сообщение скопировано: вставьте в переписку с клиентом');
   const dashBtn = box.querySelector('[data-action=kpdash]');
   if (dashBtn) dashBtn.onclick = async () => {
     let n = 0;

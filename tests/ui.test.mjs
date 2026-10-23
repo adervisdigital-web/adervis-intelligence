@@ -2138,6 +2138,11 @@ check('КП-ссылка: снимок версии 2, пояснение к с�
 check('КП-ссылка: часов и ставок студии в снимке нет', !/"min"|"max"|"role"|Моушн-дизайнер|Арт-директор/.test(shareJson));
 check('КП-ссылка: ссылка скопирована и видна в окне', /kp\.html\?t=[A-Za-z0-9]{24}$/.test(await page.evaluate(() => navigator.clipboard.readText()))
   && (await page.inputValue('#kplink')).includes(share.token));
+const kpMsg = await page.inputValue('#kpmsg');
+check('КП-ссылка: сообщение клиенту — ссылка, оба варианта, вопросы, без длинных тире', kpMsg.includes(share.token) && /Посчитали два варианта: 95\s000 ₽ и 205\s000 ₽/.test(kpMsg)
+  && kpMsg.includes('подскажите, пожалуйста') && !kpMsg.includes('—') && kpMsg.endsWith('давайте созвонимся.'), kpMsg.slice(0, 400));
+await page.click('[data-action=kpmsgcopy]');
+check('КП-ссылка: «Скопировать сообщение» кладёт текст в буфер', (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r/g, '') === kpMsg.replace(/\r/g, ''));
 await page.screenshot({ path: path.join(OUT, 'intel-kp-share.png') });
 await page.click('#modal [data-action=close]');
 

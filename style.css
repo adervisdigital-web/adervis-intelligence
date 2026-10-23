@@ -2088,3 +2088,4 @@ html[data-theme=dark] .kpchecks li{background:#23262d}
 html[data-theme=dark] .kpchecks li.warn{background:rgba(246,189,58,.12)}
 .kpmedia .kpmacts{display:flex;flex-direction:column;gap:6px;align-items:center}
 .kpchecks li{padding:6px 12px}
+.kpmsg{width:100%;font:inherit;font-size:14px;line-height:1.5;resize:vertical}
