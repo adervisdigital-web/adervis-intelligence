@@ -66,13 +66,58 @@
   // на компьютере при наведении, на телефоне по нажатию.
   function estimate(e) {
     if (!e?.groups?.length) return '';
-    return `<section id="price"><div class="read"><h2>Стоимость</h2><div id="est"></div></div></section>`;
+    return `<section id="price"><div class="read"><h2>Стоимость</h2><div id="est"></div><div id="choose" class="choose"></div></div></section>`;
   }
 
-  function mountEstimate(e) {
+  function mountEstimate(e, d) {
     const box = document.getElementById('est');
     if (!box) return;
-    const st = { v: 'full', opts: new Set() };
+    const st = { v: 'full', opts: new Set(), form: false, sent: null };
+    const pick = () => {
+      const v = e.two ? st.v : 'full', opts = [...st.opts].sort((a, b) => a - b);
+      const what = [e.two ? (v === 'base' ? 'Базовый вариант' : 'Полный вариант') : 'Смета', ...opts.map(i => e.options[i].name)];
+      return { v, opts, what, total: (v === 'base' ? e.base : e.full) + opts.reduce((n, i) => n + (Number(e.options[i].price) || 0), 0) };
+    };
+    // «Выбрать этот вариант»: клиент подтверждает выбор, мы получаем его в Telegram
+    const chooseBox = document.getElementById('choose');
+    const drawChoose = () => {
+      if (!chooseBox) return;
+      const c = pick();
+      if (st.sent) {
+        chooseBox.innerHTML = st.sent === 'preview'
+          ? '<p class="chosen">Просмотр команды: выбор не отправлен.</p>'
+          : `<p class="chosen"><b>Спасибо, выбор отправлен:</b> ${E(c.what.join(' + '))}, ${rub(c.total)}. ${d.contact ? `${E(d.contact)} свяжется` : 'Мы свяжемся'} с вами, чтобы обсудить договор.</p>`;
+        return;
+      }
+      chooseBox.innerHTML = !st.form
+        ? `<button type="button" class="btn" data-choose>Выбрать: ${E(c.what.join(' + '))}, ${rub(c.total)}</button>
+           <small>Нажмите, и мы получим ваш выбор. Обязательств это не создаёт: дальше обсудим договор.</small>`
+        : `<div class="chooseform"><p><b>${E(c.what.join(' + '))}</b>: ${rub(c.total)}</p>
+           <label for="choosecomment">Комментарий, если нужен</label>
+           <textarea id="choosecomment" maxlength="500" rows="3" placeholder="Например, удобное время для созвона или вопросы по смете"></textarea>
+           <div class="chooseacts"><button type="button" class="btn" data-send>Отправить выбор</button>
+           <button type="button" class="btn ghost" data-cancel>Отмена</button></div><p class="chooseerr" role="alert"></p></div>`;
+    };
+    chooseBox?.addEventListener('click', async ev => {
+      if (ev.target.closest('[data-choose]')) { st.form = true; drawChoose(); chooseBox.querySelector('textarea')?.focus(); return; }
+      if (ev.target.closest('[data-cancel]')) { st.form = false; drawChoose(); return; }
+      const btn = ev.target.closest('[data-send]');
+      if (!btn) return;
+      btn.disabled = true;
+      const c = pick();
+      try {
+        const r = await fetch(`${cfg.supabaseUrl}/functions/v1/kp`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.supabaseAnonKey },
+          body: JSON.stringify({ token, preview, action: 'choose', variant: c.v, options: c.opts, comment: chooseBox.querySelector('textarea')?.value || '' })
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) throw new Error(j.error || 'не отправилось');
+        st.sent = j.preview ? 'preview' : 'ok'; drawChoose();
+      } catch (err) {
+        btn.disabled = false;
+        chooseBox.querySelector('.chooseerr').textContent = 'Не отправилось. Проверьте интернет и попробуйте ещё раз или позвоните нам.';
+      }
+    });
     const hints = e.groups.some(g => g.rows.some(r => r.hint));
     const draw = focus => {
       const v = e.two ? st.v : 'full';
@@ -97,6 +142,7 @@
           <ul class="opts">${e.options.map((o, i) => `<li><label><input type="checkbox" data-o="${i}"${st.opts.has(i) ? ' checked' : ''}>
             <span>${E(o.name)}${o.why ? `<small>${E(o.why)}</small>` : ''}</span><b class="num">+ ${rub(o.price)}</b></label></li>`).join('')}</ul>` : ''}`;
       if (focus) box.querySelector(focus)?.focus();
+      if (!st.sent) drawChoose();
     };
     box.addEventListener('click', ev => {
       const vb = ev.target.closest('[data-v]');
@@ -150,11 +196,13 @@
       <h2>Обсудим?</h2>
       <p>${d.contact ? `${E(d.contact)}, ADERVIS. ` : ''}Ответим на вопросы и покажем, как начнём работу.</p>
       ${tel ? `<a class="btn" href="tel:${E(tel)}">Позвонить ${E(phone)}</a>` : ''}
+      <button type="button" class="btn ghost" id="pdfbtn">Скачать PDF</button>
       <a class="btn ghost" href="https://adervis.ru" target="_blank" rel="noopener noreferrer">adervis.ru</a>
     </div></footer>
     ${tel ? `<div class="bar"><a class="btn" href="tel:${E(tel)}">Позвонить</a></div>` : ''}`;
     if (preview) root.insertAdjacentHTML('afterbegin', '<p class="teamnote">Просмотр команды: клиенту не засчитан, уведомление не придёт</p>');
-    mountEstimate(e);
+    mountEstimate(e, d);
+    document.getElementById('pdfbtn')?.addEventListener('click', () => window.print());
     root.querySelectorAll('.gallery img, .gallery video, .gallery .shield').forEach(el => {
       el.addEventListener('contextmenu', ev => ev.preventDefault());
       el.addEventListener('dragstart', ev => ev.preventDefault());
