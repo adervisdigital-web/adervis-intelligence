@@ -1,6 +1,6 @@
-// Страница КП для клиента: …/kp.html?t=<токен>. Данные отдаёт функция kp —
-// снимок КП из брифа без часов и ставок студии. Всё, что пришло, — текст:
-// перед выводом экранируется.
+// Страница КП для клиента: …/kp.html?t=<токен>. Данные отдаёт функция kp:
+// снимок КП из брифа без часов и ставок студии. Всё, что пришло, считаем
+// текстом и перед выводом экранируем. Длинных тире в текстах для клиента нет.
 (() => {
   const cfg = window.INTEL_CONFIG || {};
   const root = document.getElementById('kp');
@@ -12,9 +12,15 @@
   const rub = n => Math.round(Number(n) || 0).toLocaleString('ru-RU') + ' ₽';
   const day = (iso, opts = { day: 'numeric', month: 'long' }) => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('ru-RU', opts) : '';
   const safeUrl = u => /^https:\/\//.test(String(u || '')) ? String(u) : '';
+  // «26–27 октября», «30 октября – 2 ноября»
+  const range = (a, b) => {
+    if (!a || !b || a === b) return day(a || b);
+    const [x, y] = [new Date(a + 'T00:00:00'), new Date(b + 'T00:00:00')];
+    return x.getMonth() === y.getMonth() ? `${x.getDate()}–${day(b)}` : `${day(a)} – ${day(b)}`;
+  };
   const plural = (n, a, b, c) => n % 10 === 1 && n % 100 !== 11 ? a : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? b : c;
 
-  // «## » подзаголовок, «- » пункт, «1. » шаг, «**…**» жирный, пустая строка — абзац
+  // «## » подзаголовок, «- » пункт, «1. » шаг, «**…**» жирный, пустая строка: абзац
   function richText(text) {
     const inline = x => E(x).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
     return String(text || '').split(/\n{2,}/).map(block => {
@@ -46,7 +52,7 @@
 
   function estimate(e) {
     if (!e?.groups?.length) return '';
-    const two = !!e.two, cols = two ? 3 : 2, money = v => v === null || v === undefined ? '—' : rub(v);
+    const two = !!e.two, cols = two ? 3 : 2, money = v => v === null || v === undefined ? '<span class="off">не входит</span>' : rub(v);
     const rows = e.groups.map(g => `<tr class="grp"><td colspan="${cols}">${E(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${E(r.name)}</td>
         ${two ? `<td class="num">${money(r.base)}</td>` : ''}<td class="num">${money(r.full)}</td></tr>`).join('')
       + (e.subtotals ? `<tr class="sub"><td>Итого «${E(g.name)}»</td>${two ? `<td class="num">${rub(g.sum?.base)}</td>` : ''}<td class="num">${rub(g.sum?.full)}</td></tr>` : '')).join('');
@@ -58,7 +64,7 @@
   }
 
   function render(d) {
-    document.title = `${d.title} — предложение ADERVIS`;
+    document.title = `${d.title} · ADERVIS`;
     const e = d.estimate || {};
     const price = e.two ? `от ${rub(e.base)}` : rub(e.full);
     const phone = String(d.phone || '').split(/[·,;]/)[0].trim();
@@ -79,13 +85,13 @@
     ${gallery(media)}
     ${d.style ? `<section><div class="read"><h2>Стиль</h2>${richText(d.style)}</div></section>` : ''}
     ${d.concept ? `<section><div class="read"><h2>Концепция и сюжет</h2>${richText(d.concept)}</div></section>` : ''}
-    ${d.deliverables?.length ? `<section><div class="read"><h2>Что сделаем</h2><ul>${d.deliverables.map(x => `<li><b>${E(x.name)}</b>${x.details ? ` — ${E(x.details)}` : ''}</li>`).join('')}</ul></div></section>` : ''}
+    ${d.deliverables?.length ? `<section><div class="read"><h2>Что сделаем</h2><ul class="deliver">${d.deliverables.map(x => `<li><b>${E(x.name)}</b>${x.details ? `<span>${E(x.details)}</span>` : ''}</li>`).join('')}</ul></div></section>` : ''}
     ${d.approach ? `<section><div class="read"><h2>Как будем делать</h2>${richText(d.approach)}</div></section>` : ''}
     ${estimate(e)}
     ${d.plan?.length ? `<section><div class="read"><h2>Этапы и сроки</h2><ol class="plan">${d.plan.map(s => `<li><b>${E(s.stage)}</b>
-      <small>${E(day(s.from))} — ${E(day(s.to))}${s.result ? ` · ${E(s.result)}` : ''}</small></li>`).join('')}</ol></div></section>` : ''}
+      <small>${E(range(s.from, s.to))}</small>${s.result ? `<span>${E(s.result)}</span>` : ''}</li>`).join('')}</ol></div></section>` : ''}
     ${d.terms?.length ? `<section><div class="read"><h2>Условия</h2><ul>${d.terms.map(t => `<li>${E(t)}</li>`).join('')}</ul></div></section>` : ''}
-    ${d.refs?.length ? `<section><div class="read"><h2>Наши работы</h2><ul>${d.refs.map(r => `<li>${E(r.name)}${safeUrl(r.url) ? ` — <a href="${E(r.url)}" target="_blank" rel="noopener noreferrer">${E(r.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a>` : ''}</li>`).join('')}</ul></div></section>` : ''}
+    ${d.refs?.length ? `<section><div class="read"><h2>Наши работы</h2><ul>${d.refs.map(r => safeUrl(r.url) ? `<li><a href="${E(r.url)}" target="_blank" rel="noopener noreferrer">${E(r.name || r.url)}</a></li>` : `<li>${E(r.name)}</li>`).join('')}</ul></div></section>` : ''}
     ${d.why?.length ? `<section><div class="read"><h2>Почему ADERVIS</h2><ul>${d.why.map(w => `<li>${E(w)}</li>`).join('')}</ul></div></section>` : ''}
     <footer class="cta"><div class="read">
       <h2>Обсудим?</h2>

@@ -4167,12 +4167,13 @@ function bfPlan(b) {
 }
 
 // ---- КП: те же данные, собранные в документ для клиента
-const KP_DEFAULT_TERMS = 'Работаем по этапам: каждый этап вы утверждаете, прежде чем мы идём дальше. Исходники и шаблоны передаём после оплаты. Сроки отсчитываются от предоплаты и получения материалов. Работаем как самозанятые: договор и чек «Мой налог», цены без НДС.';
-// Что студия обещает всегда — из анкеты владельцев, а не из головы.
+// Тексты для клиента: живым языком и без длинных тире (просьба владельцев).
+const KP_DEFAULT_TERMS = 'Работаем по этапам: показываем результат, вы согласуете, и только потом идём дальше. Сроки считаем с момента предоплаты и получения материалов. Исходники и шаблоны передаём после оплаты. Работаем как самозанятые: договор и чек «Мой налог», без НДС.';
+// Что студия обещает всегда: из анкеты владельцев, а не из головы.
 const KP_WHY = [
-  'Проект ведут руководители студии — без стажёров, руководитель на связи весь проект.',
-  'Сроки фиксируем в договоре, смета — без скрытых платежей.',
-  'Не попали в задачу — переделаем.',
+  'Проект ведут руководители студии, без стажёров. Вы общаетесь напрямую с тем, кто делает работу.',
+  'Сроки фиксируем в договоре. В смете нет скрытых платежей.',
+  'Если результат не попадёт в задачу, переделаем.',
   'Моушн, 3D, видео и дизайн в одной команде. С 2017 года делаем видео и графику «Битвы роботов», которая выросла в международный проект.'
 ];
 
@@ -4242,9 +4243,9 @@ function kpHtml(b) {
     ${k.style ? `<section><h2>Как видим оформление</h2>${k.style.split(/\n+/).filter(Boolean).map(x => `<p>${E(x)}</p>`).join('')}</section>` : ''}
     ${k.concept ? `<section><h2>Концепция и сюжет</h2>${richText(k.concept)}</section>` : ''}
     ${k.approach ? `<section><h2>Как будем делать</h2>${richText(k.approach)}</section>` : ''}
-    ${deliver.length ? `<section><h2>Что сделаем</h2><ul>${deliver.map(d => `<li><b>${E(d.name)}</b>${d.details ? ` — ${E(d.details)}` : ''}</li>`).join('')}</ul></section>` : ''}
+    ${deliver.length ? `<section><h2>Что сделаем</h2><ul>${deliver.map(d => `<li><b>${E(d.name)}</b>${d.details ? `: ${E(d.details)}` : ''}</li>`).join('')}</ul></section>` : ''}
     <section><h2>Стоимость</h2><table class="kptable"><tbody>
-      <tr><td><b>Полный вариант — всё по ТЗ</b></td><td class="kpprice">${rub(k.full)}</td></tr>
+      <tr><td><b>Полный вариант, всё по ТЗ</b></td><td class="kpprice">${rub(k.full)}</td></tr>
       ${k.base ? `<tr><td><b>Базовый вариант</b>${onlyFull.length ? `<br><small>Без: ${E(onlyFull.join('; '))}${onlyBase.length ? `. Вместо этого: ${E(onlyBase.join('; '))}` : ''}</small>` : ''}</td><td class="kpprice">${rub(k.base)}</td></tr>` : ''}
       ${(e.options || []).filter(o => o.name).map(o => `<tr><td>Дополнительно: ${E(o.name)}${o.why ? `<br><small>${E(o.why)}</small>` : ''}</td><td class="kpprice">+ ${rub(optionPrice(b, o))}</td></tr>`).join('')}
     </tbody></table></section>
@@ -4252,10 +4253,10 @@ function kpHtml(b) {
       <td class="kpprice">${E(shortDate(s.from))} – ${E(shortDate(s.to))}</td></tr>`).join('')}</tbody></table>
       <p>Всего около ${planDays(b)} рабочих дней.</p></section>` : ''}
     <section><h2>Условия</h2><ul>
-      <li>Предоплата ${k.prepay}%, остаток — после сдачи.</li>
-      <li>${k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок по каждому блоку входят в стоимость.` : 'Правки — по договорённости.'}</li>
+      <li>Предоплата ${k.prepay}%, остаток после сдачи.</li>
+      <li>${k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок по каждому блоку входят в стоимость.` : 'Правки обсуждаем отдельно.'}</li>
       ${k.terms ? `<li>${E(k.terms)}</li>` : ''}</ul></section>
-    ${refLines(k.refs).length ? `<section><h2>Наши работы и референсы</h2><ul>${refLines(k.refs).map(r => `<li>${r.name ? `${E(r.name)} — ` : ''}${r.url
+    ${refLines(k.refs).length ? `<section><h2>Наши работы и референсы</h2><ul>${refLines(k.refs).map(r => `<li>${r.name ? `${E(r.name)}: ` : ''}${r.url
       ? `<a href="${E(r.url)}" target="_blank" rel="noopener noreferrer">${E(r.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a>` : ''}</li>`).join('')}</ul></section>` : ''}
     <section><h2>Почему ADERVIS</h2><ul>${KP_WHY.map(x => `<li>${E(x)}</li>`).join('')}</ul></section>
     <footer class="kpfoot"><b>${k.contact ? `${E(k.contact)}, ` : ''}ADERVIS</b><span>adervis.ru${k.phone ? ` · ${E(k.phone)}` : ''}</span>
@@ -4344,29 +4345,29 @@ function estimateDoc(b) {
   return {
     k, two, groups, subtotals: !!e.subtotals, date: new Date(k.date + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' }),
     options: (e.options || []).filter(o => o.name).map(o => ({ name: o.name, why: o.why || '', price: optionPrice(b, o) })),
-    terms: [`Предоплата ${k.prepay}%, остаток — после сдачи.`,
+    terms: [`Предоплата ${k.prepay}%, остаток после сдачи.`,
       k.revisions ? `${k.revisions} ${plural(k.revisions, 'круг', 'круга', 'кругов')} правок входят в стоимость.` : '',
       k.terms, `Смета действует до ${valid}.`].filter(Boolean)
   };
 }
-// Смета текстом — вставить в мессенджер или письмо как есть.
+// Смета текстом: вставить в мессенджер или письмо как есть.
 function estimateText(b) {
-  const d = estimateDoc(b), money = v => v === null ? '—' : rub(v);
+  const d = estimateDoc(b), money = v => v === null ? 'не входит' : rub(v);
   const price = r => !d.two ? money(r.full) : r.base === r.full ? money(r.full)
     : r.base === null ? `${money(r.full)} (только в полном)` : r.full === null ? `${money(r.base)} (только в базовом)`
     : `базовый ${money(r.base)}, полный ${money(r.full)}`;
-  return [`Смета: ${b.title}`, `Для: ${b.client || '—'}`, '',
-    ...d.groups.flatMap(g => [g.name, ...g.rows.map(r => `— ${r.name} — ${price(r)}`),
+  return [`Смета: ${b.title}`, `Для: ${b.client || ''}`, '',
+    ...d.groups.flatMap(g => [g.name, ...g.rows.map(r => `• ${r.name}: ${price(r)}`),
       ...(d.subtotals ? [`Итого «${g.name}»: ${d.two ? `базовый ${rub(g.sum.base)}, полный ${rub(g.sum.full)}` : rub(g.sum.full)}`] : []), '']),
-    d.two ? `Итого: базовый вариант — ${rub(d.k.base)}, полный — ${rub(d.k.full)}` : `Итого: ${rub(d.k.full)}`,
-    ...(d.options.length ? ['', 'Дополнительно, по желанию:', ...d.options.map(o => `— ${o.name} — + ${rub(o.price)}`)] : []),
-    '', 'Условия:', ...d.terms.map(t => `— ${t}`)].join('\n');
+    d.two ? `Итого: базовый вариант ${rub(d.k.base)}, полный ${rub(d.k.full)}` : `Итого: ${rub(d.k.full)}`,
+    ...(d.options.length ? ['', 'Дополнительно, по желанию:', ...d.options.map(o => `• ${o.name}: + ${rub(o.price)}`)] : []),
+    '', 'Условия:', ...d.terms.map(t => `• ${t}`)].join('\n');
 }
-const estimateFile = (b, ext) => `Смета — ${b.title}`.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 120) + '.' + ext;
+const estimateFile = (b, ext) => `Смета ${b.title}`.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 120) + '.' + ext;
 
 function estimateHtml(b) {
   const d = estimateDoc(b), cols = d.two ? 3 : 2;
-  const money = v => v === null ? '—' : rub(v);
+  const money = v => v === null ? 'не входит' : rub(v);
   return `<header class="kptop"><img src="brand/logoB.svg" alt="ADERVIS"><div><b>Смета</b><span>${E(d.date)}</span></div></header>
     <h1 class="kptitle">${E(b.title)}</h1>
     <p class="kpfor">Для: <b>${E(b.client || '—')}</b></p>
@@ -4376,7 +4377,7 @@ function estimateHtml(b) {
         + (d.subtotals ? `<tr class="smsub"><td>Итого «${E(g.name)}»</td>${d.two ? `<td class="kpprice">${rub(g.sum.base)}</td>` : ''}<td class="kpprice">${rub(g.sum.full)}</td></tr>` : '')).join('')}
       <tr class="smtotal"><td>Итого</td>${d.two ? `<td class="kpprice">${rub(d.k.base)}</td>` : ''}<td class="kpprice">${rub(d.k.full)}</td></tr>
     </tbody></table>
-    ${d.options.length ? `<section><h2>Дополнительно — по желанию</h2><table class="kptable"><tbody>${d.options.map(o => `<tr><td>${E(o.name)}${o.why ? `<br><small>${E(o.why)}</small>` : ''}</td>
+    ${d.options.length ? `<section><h2>Дополнительно, по желанию</h2><table class="kptable"><tbody>${d.options.map(o => `<tr><td>${E(o.name)}${o.why ? `<br><small>${E(o.why)}</small>` : ''}</td>
       <td class="kpprice">+ ${rub(o.price)}</td></tr>`).join('')}</tbody></table></section>` : ''}
     <section><h2>Условия</h2><ul>${d.terms.map(t => `<li>${E(t)}</li>`).join('')}</ul></section>
     <footer class="kpfoot"><b>${d.k.contact ? `${E(d.k.contact)}, ` : ''}ADERVIS</b><span>adervis.ru${d.k.phone ? ` · ${E(d.k.phone)}` : ''}</span></footer>`;
@@ -4417,7 +4418,7 @@ function estimateXlsx(b) {
   const last = d.two ? 'D' : 'C', rows = [], merges = [];
   let r = 0;
   const str = (col, v, st) => `<c r="${col}${r}" t="inlineStr" s="${st}"><is><t xml:space="preserve">${x(v)}</t></is></c>`;
-  const n = (col, v, st) => v === null ? str(col, '—', 9) : `<c r="${col}${r}" s="${st}"><v>${v}</v></c>`;
+  const n = (col, v, st) => v === null ? str(col, 'не входит', 9) : `<c r="${col}${r}" s="${st}"><v>${v}</v></c>`;
   const row = (cells, ht) => { r++; rows.push(`<row r="${r}"${ht ? ` ht="${ht}" customHeight="1"` : ''}>${cells()}</row>`); };
   const wide = (v, st, ht) => { row(() => str('A', v, st), ht); merges.push(`A${r}:${last}${r}`); };
   wide(`Смета: ${b.title}`, 1, 26);
@@ -4443,8 +4444,8 @@ function estimateXlsx(b) {
   row(() => str('A', '', 7) + str('B', 'Итого', 7) + (d.two ? sum('C', d.k.base) + sum('D', d.k.full) : sum('C', d.k.full)));
   if (d.options.length) {
     row(() => '');
-    row(() => str('A', '', 4) + str('B', 'Дополнительно — по желанию', 4) + (d.two ? str('C', '', 4) : '') + str(last, '', 4));
-    for (const o of d.options) row(() => str('A', '', 5) + str('B', o.name + (o.why ? ` — ${o.why}` : ''), 5) + n(last, o.price, 6));
+    row(() => str('A', '', 4) + str('B', 'Дополнительно, по желанию', 4) + (d.two ? str('C', '', 4) : '') + str(last, '', 4));
+    for (const o of d.options) row(() => str('A', '', 5) + str('B', o.name + (o.why ? `. ${o.why}` : ''), 5) + n(last, o.price, 6));
   }
   row(() => '');
   row(() => str('B', 'Условия', 2));

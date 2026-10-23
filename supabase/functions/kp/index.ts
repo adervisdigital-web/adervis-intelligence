@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const token = String(body?.token ?? '');
-    if (!/^[A-Za-z0-9]{20,40}$/.test(token)) return json({ error: 'Ссылка неполная — проверьте, что скопировали её целиком' }, 404);
+    if (!/^[A-Za-z0-9]{20,40}$/.test(token)) return json({ error: 'Ссылка неполная. Проверьте, что скопировали её целиком' }, 404);
     const sb = admin();
     const { data: row } = await sb.from('kp_shares').select('*').eq('token', token).maybeSingle();
     if (!row) return json({ error: 'Предложение не найдено или снято с публикации' }, 404);
