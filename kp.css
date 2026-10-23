@@ -30,8 +30,9 @@ img,video{display:block;max-width:100%}
 .hero h1{font:700 clamp(30px,5.4vw,64px)/1.08 var(--display);letter-spacing:-.02em;margin:64px 0 14px;max-width:16ch}
 .hero .for{font-size:19px;color:#c9ccd3;margin:0}
 /* шапка с обложкой: название слева, кадр первого примера справа */
-.herogrid.withcover{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:48px;align-items:end}
-.herogrid.withcover h1{max-width:none;font-size:clamp(30px,3.7vw,54px);overflow-wrap:break-word;hyphens:auto}
+.herogrid.withcover{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:48px;align-items:end;margin-top:48px}
+.herogrid.withcover h1{margin-top:0}
+.herogrid.withcover h1{max-width:none;font-size:clamp(30px,3.7vw,54px)}
 .cover{position:relative;display:block;border-radius:22px;overflow:hidden;border:1px solid #2c2f36;box-shadow:0 30px 80px rgba(0,0,0,.45);transform:rotate(1.2deg);transition:transform .25s ease;text-decoration:none;-webkit-touch-callout:none}
 .cover:hover{transform:rotate(0) translateY(-4px)}
 .cover img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;-webkit-user-drag:none;user-select:none}
