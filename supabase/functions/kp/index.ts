@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
       const now = new Date();
       if (row.chosen_at && now.getTime() - Date.parse(row.chosen_at) < CHOICE_AGAIN && row.choice?.total === c.total) return json({ ok: true, total: c.total });
       await sb.from('kp_shares').update({ choice: { ...c, at: now.toISOString() }, chosen_at: now.toISOString() }).eq('token', token);
-      const what = [c.label, ...c.options.map(o => o.name)].join(' + ');
+      const what = [c.label, ...c.options.map(o => o.name.split(':')[0].trim())].join(' + ');
       // дело в заявке: связаться сегодня
       const { data: brief } = await sb.from('briefs').select('lead_id').eq('id', row.brief_id).maybeSingle();
       if (brief?.lead_id) {
