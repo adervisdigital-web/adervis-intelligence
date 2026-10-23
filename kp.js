@@ -6,7 +6,12 @@
   const root = document.getElementById('kp');
   const params = new URLSearchParams(location.search);
   const token = params.get('t') || '';
-  const preview = params.get('p') === '1';
+  // Кто-то из команды (на этом устройстве входили в Hub ADERVIS) открывает
+  // КП как просмотр: он не засчитывается, и «Клиент открыл КП» не приходит.
+  const team = (() => {
+    try { return Object.keys(localStorage).some(k => /^sb-.+-auth-token$/.test(k)) || !!localStorage.getItem('adervis.email'); } catch { return false; }
+  })();
+  const preview = params.get('p') === '1' || team;
 
   const E = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const rub = n => Math.round(Number(n) || 0).toLocaleString('ru-RU') + ' ₽';
@@ -148,6 +153,7 @@
       <a class="btn ghost" href="https://adervis.ru" target="_blank" rel="noopener noreferrer">adervis.ru</a>
     </div></footer>
     ${tel ? `<div class="bar"><a class="btn" href="tel:${E(tel)}">Позвонить</a></div>` : ''}`;
+    if (preview) root.insertAdjacentHTML('afterbegin', '<p class="teamnote">Просмотр команды: клиенту не засчитан, уведомление не придёт</p>');
     mountEstimate(e);
     root.querySelectorAll('.gallery img, .gallery video, .gallery .shield').forEach(el => {
       el.addEventListener('contextmenu', ev => ev.preventDefault());
