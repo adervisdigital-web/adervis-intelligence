@@ -2102,7 +2102,7 @@ await page.click('[data-action=bftab][data-id=kp]');
 const kp = norm(await page.textContent('.kppreview'));
 check('КП: клиент, состав, цены вариантов, опции, этапы, условия', kp.includes('Уралхим') && kp.includes('Заставка') && kp.includes('Базовый вариант')
   && kp.includes('Звуковое оформление') && kp.includes('Концепция') && kp.includes('Предоплата 50%') && kp.includes('2 круга правок'), kp.slice(0, 300));
-check('КП: условия самозанятых, обещания из анкеты, портфолио', kp.includes('без НДС') && kp.includes('Не попали в задачу — переделаем') && kp.includes('behance.net/adervisdigital'));
+check('КП: условия самозанятых, обещания из анкеты, портфолио', kp.includes('без НДС') && kp.includes('Если результат не попадёт в задачу, переделаем') && kp.includes('behance.net/adervisdigital'));
 
 // КП-ссылка: примеры, публикация, снимок без часов и ставок
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -2166,7 +2166,7 @@ const [xdl] = await Promise.all([page.waitForEvent('download'), page.click('.bfk
 const xpath = path.join(OUT, 'smeta.xlsx');
 await xdl.saveAs(xpath);
 const xtext = fs.readFileSync(xpath).toString('utf8');
-check('смета в Excel: настоящий .xlsx, работы, итог формулой', xdl.suggestedFilename() === 'Смета — Видеодайджест.xlsx' && xtext.startsWith('PK')
+check('смета в Excel: настоящий .xlsx, работы, итог формулой', xdl.suggestedFilename() === 'Смета Видеодайджест.xlsx' && xtext.startsWith('PK')
   && xtext.includes('xl/worksheets/sheet1.xml') && xtext.includes('Заставка') && xtext.includes('SUM(D') && xtext.includes('210000'), xdl.suggestedFilename());
 check('смета в Excel: ставок и часов студии нет', !/Моушн-дизайнер|Арт-директор|ч ·|часов/.test(xtext));
 await page.click('[data-action=bftab][data-id=estimate]');
@@ -2177,15 +2177,15 @@ check('смета в PDF: только документ сметы, итог с�
 await page.screenshot({ path: path.join(OUT, 'intel-brief-smeta-btn.png') });
 await page.click('[data-action=bftext]');
 const smText = await page.evaluate(() => navigator.clipboard.readText());
-check('смета текстом: разделы, строки с ценами, итог как в КП, без часов', smText.startsWith('Смета: Видеодайджест') && /— Заставка 10–15 с — базовый/.test(smText) && /— 3D-студия, 3 плана — [\d\s]+₽ \(только в полном\)/.test(smText)
-  && smText.replace(/\s/g, '').includes('полный—210000₽') && !/ч ·|Моушн-дизайнер/.test(smText), smText.slice(0, 300));
+check('смета текстом: разделы, строки с ценами, итог как в КП, без часов', smText.startsWith('Смета: Видеодайджест') && /• Заставка 10–15 с: базовый/.test(smText) && /• 3D-студия, 3 плана: [\d\s]+₽ \(только в полном\)/.test(smText)
+  && smText.replace(/\s/g, '').includes('полный210000₽') && !smText.includes('—') && !/ч ·|Моушн-дизайнер/.test(smText), smText.slice(0, 300));
 // «вшить в стоимость»: строка не видна клиенту, итог тот же
 const foldRow = await page.$$eval('.bftable tbody tr', rs => rs.find(r => r.querySelector('input')?.value.startsWith('Мастер-отбивка'))?.querySelector('[data-action=bfitemfold]').dataset.id);
 await page.click(`[data-action=bfitemfold][data-id="${foldRow}"]`);
 await page.waitForFunction(i => window.__STATE__.briefs[0].estimate.items[i]?.fold === true, foldRow);
 await page.click('[data-action=bftext]');
 const foldText = await page.evaluate(() => navigator.clipboard.readText());
-check('вшитая работа: в смете для клиента строки нет, итог прежний', !foldText.includes('Мастер-отбивка') && foldText.replace(/\s/g, '').includes('полный—210000₽')
+check('вшитая работа: в смете для клиента строки нет, итог прежний', !foldText.includes('Мастер-отбивка') && foldText.replace(/\s/g, '').includes('полный210000₽') && !smText.includes('—')
   && await page.isVisible('.bftable tr.folded'), foldText.slice(0, 200));
 await page.click(`[data-action=bfitemfold][data-id="${foldRow}"]`);
 await page.waitForFunction(i => !window.__STATE__.briefs[0].estimate.items[i]?.fold, foldRow);

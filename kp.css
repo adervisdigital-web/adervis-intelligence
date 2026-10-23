@@ -67,6 +67,9 @@ section li{margin:4px 0}
 .opts li{display:flex;justify-content:space-between;gap:16px;border-bottom:1px dashed var(--line);padding:8px 0;list-style:none}
 .opts{padding:0}
 .opts small{display:block;color:var(--muted)}
+.est .off{color:#9aa0aa;font-size:13px}
+.deliver li{margin:0 0 10px}
+.deliver li span{display:block;color:var(--muted);font-size:15px}
 
 /* этапы */
 .plan{list-style:none;padding:0;margin:0;counter-reset:st}
@@ -75,7 +78,8 @@ section li{margin:4px 0}
 .plan li::after{content:'';position:absolute;left:16px;top:38px;bottom:4px;width:2px;background:var(--line)}
 .plan li:last-child::after{display:none}
 .plan b{display:block}
-.plan small{color:var(--muted);font-size:14px}
+.plan small{display:block;color:var(--muted);font-size:14px}
+.plan span{display:block;font-size:15px;margin-top:2px}
 
 /* связь */
 .cta{margin:64px 0 0;background:var(--graphite);color:#fff;padding:48px 20px 64px}
