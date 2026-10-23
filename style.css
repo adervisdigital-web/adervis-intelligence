@@ -2057,3 +2057,8 @@ dialog textarea.short{min-height:84px}
 
 /* пояснение к строке сметы: клиент видит его на странице КП */
 .bftable .bfhint{margin-top:6px;font-size:13px;color:var(--muted)}
+
+/* логотип Hub ADERVIS: золотая плашка с «U»-капсулой и надпись ADERVIS / HUB */
+.brandmark img{width:64%;height:auto;display:block}
+.brandword img{height:30px;width:auto;display:block}
+.gatecard .gateword{height:56px;width:auto;display:block;margin:4px 0 14px}
