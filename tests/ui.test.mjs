@@ -2139,6 +2139,8 @@ check('страница КП: название, клиент, цена, смет
   && kpText.includes('205000₽') && (await kpPage.$$('.est tbody tr')).length > 2 && (await kpPage.$$('.plan li')).length > 0 && (await kpPage.$$('.gallery img')).length === 1);
 const estTotal = () => kpPage.$eval('.est tfoot .num', x => x.textContent.replace(/\s/g, ''));
 check('страница КП: срок действия нигде не показан', !kpText.includes('действует'));
+check('страница КП: этапы в рабочих днях, внизу итог', /^\d+ рабоч(ий день|их дня|их дней)$/.test(await kpPage.textContent('.plan li small'))
+  && (await kpPage.textContent('.plantotal')).startsWith('Итого: около'), await kpPage.textContent('.plan li small'));
 check('страница КП: по умолчанию полный вариант', (await estTotal()) === '205000₽' && (await kpPage.getAttribute('[data-v=full]', 'aria-checked')) === 'true');
 await kpPage.click('[data-v=base]');
 check('страница КП: «Базовый» пересчитывает итог, строки не из варианта помечены', (await estTotal()) === '95000₽' && (await kpPage.$$('.est tr.off')).length > 0
