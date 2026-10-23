@@ -4186,7 +4186,7 @@ function kpData(b) {
     base: Number(kp.price_base ?? (hasBase(b) ? suggested(b, 'base') : 0)) || 0,
     prepay: Number(kp.prepay ?? 50), revisions: Number(kp.revisions ?? 2), valid: Number(kp.valid_days ?? 14),
     terms: kp.terms ?? KP_DEFAULT_TERMS, contact: kp.contact ?? '', phone: kp.phone ?? '+7 922 301-88-80 · +7 995 926-54-20', date: kp.date || today(),
-    style: kp.style ?? '', refs: kp.refs ?? 'Портфолио — https://www.behance.net/adervisdigital',
+    style: kp.style ?? '', refs: kp.refs ?? 'Кейсы студии на сайте ADERVIS: https://adervis.ru/cases/',
     concept: kp.concept ?? '', approach: kp.approach ?? ''
   };
 }

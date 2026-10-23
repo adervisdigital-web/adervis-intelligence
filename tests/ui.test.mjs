@@ -2102,7 +2102,7 @@ await page.click('[data-action=bftab][data-id=kp]');
 const kp = norm(await page.textContent('.kppreview'));
 check('КП: клиент, состав, цены вариантов, опции, этапы, условия', kp.includes('Уралхим') && kp.includes('Заставка') && kp.includes('Базовый вариант')
   && kp.includes('Звуковое оформление') && kp.includes('Концепция') && kp.includes('Предоплата 50%') && kp.includes('2 круга правок'), kp.slice(0, 300));
-check('КП: условия самозанятых, обещания из анкеты, портфолио', kp.includes('без НДС') && kp.includes('Если результат не попадёт в задачу, переделаем') && kp.includes('behance.net/adervisdigital'));
+check('КП: условия самозанятых, обещания из анкеты, портфолио', kp.includes('без НДС') && kp.includes('Если результат не попадёт в задачу, переделаем') && kp.includes('adervis.ru/cases'));
 
 // КП-ссылка: примеры, публикация, снимок без часов и ставок
 const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
