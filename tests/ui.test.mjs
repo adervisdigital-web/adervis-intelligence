@@ -306,6 +306,7 @@ const fake = (seedData) => {
     },
     async removeKpMedia(paths) { window.__KPREMOVED__ = paths; },
     async kpShareGet(token) { return (window.__KPSHARES__ || {})[token] ? { token, views: 2, last_view_at: now(), first_view_at: now(), ...(window.__KPCHOICE__ ? { choice: window.__KPCHOICE__, chosen_at: now() } : {}) } : null; },
+    async kpShareList() { return Object.values(window.__KPSHARES__ || {}).map(r => ({ token: r.token, brief_id: r.brief_id, views: window.__KPVIEWS__ || 0, last_view_at: now(), choice: window.__KPCHOICE__ || null })); },
     async kpSharePut(row) { (window.__KPSHARES__ ||= {})[row.token] = clone(row); return { token: row.token, views: 0 }; },
     async user() { return session ? { email: session } : null; },
     async signIn(email, password) {
@@ -2200,6 +2201,12 @@ await kpPage.goto(BASE + 'kp.html');
 await kpPage.waitForSelector('.kp-error');
 check('страница КП без токена — понятная ошибка', (await kpPage.textContent('.kp-error h1')) === 'Ссылка неполная');
 await kpPage.close();
+// в списке брифов на карточке видно, что клиент сделал с КП-ссылкой
+await page.click('[data-action=bfback]');
+await page.waitForSelector('.bfcard .kpbadge');
+check('список брифов: на карточке плашка КП-ссылки', (await page.textContent('.bfcard .kpbadge')).includes('ещё не открывали'), await page.textContent('.bfcard .kpbadge'));
+await page.click(`.bfcard[data-brief="${share.brief_id}"]`);
+await page.click('[data-action=bftab][data-id=kp]');
 await page.fill('#kpconcept', '## Ролик 1 — «Обычный четверг»\n**Идея.** Обычный день семьи\n\n1. Утро\n2. Финал\n- <b>не тег</b>');
 await page.waitForFunction(() => document.querySelector('.kppreview')?.textContent.includes('Концепция и сюжет'));
 check('КП: концепция с подзаголовком, шагами и списком; HTML из текста не исполняется', await page.$eval('.kppreview', d =>

@@ -262,6 +262,7 @@ function createApi(cfg) {
     },
     async removeKpMedia(paths) { if (paths.length) await sb.storage.from('kp-media').remove(paths); },
     async kpShareGet(token) { return must(await sb.from('kp_shares').select('token,views,first_view_at,last_view_at,updated_at,choice,chosen_at').eq('token', token).maybeSingle()); },
+    async kpShareList() { return must(await sb.from('kp_shares').select('token,brief_id,views,last_view_at,choice,chosen_at')); },
     async kpSharePut(row) { return must(await sb.from('kp_shares').upsert(row).select('token,views,first_view_at,last_view_at,updated_at').single()); },
 
     async insert(table, o) {
@@ -3981,6 +3982,7 @@ async function syncLead(b, patch) {
 function renderBriefs() {
   const b = db.briefs.find(x => x.id === briefView.id);
   if (b) return renderBrief(b);
+  ensureKpStats();
   const head = heading('Брифы и КП', 'Заявка с ТЗ — от разбора до подписанного КП: вопросы клиенту, смета, план, коммерческое предложение и что писать на каждом шаге.',
     `<div class="headactions"><button data-action="crm">${icon('link', 15)} ADERVIS CRM${db.outreach.crm_agency_id ? ' <b class="okdot" aria-label="подключена"></b>' : ''}</button>
       <button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button>
@@ -4002,6 +4004,28 @@ function renderBriefs() {
     : `<div class="card empty"><h2>Брифов пока нет</h2><p>Пришло ТЗ? Нажмите «+ Бриф», вставьте текст или загрузите .docx — разбор разложит его на работы и вопросы, приложение посчитает вилку по вашим ставкам.</p></div>`);
 }
 
+// Что клиент сделал с КП-ссылкой — для карточек брифов. Грузим раз в минуту,
+// после загрузки перерисовываем список, если он открыт.
+const kpStats = { at: 0, loading: false, by: {} };
+function ensureKpStats() {
+  if (kpStats.loading || Date.now() - kpStats.at < 60e3 || !api.kpShareList) return;
+  kpStats.loading = true;
+  api.kpShareList().then(rows => {
+    kpStats.by = Object.fromEntries((rows || []).map(r => [r.brief_id, r]));
+    kpStats.at = Date.now(); kpStats.loading = false;
+    if (page === 'briefs' && !db.briefs.some(x => x.id === briefView.id)) render();
+  }).catch(() => { kpStats.at = Date.now(); kpStats.loading = false; });
+}
+function kpBadge(x) {
+  const s = x.kp?.share_token && kpStats.by[x.id];
+  if (!s) return '';
+  const c = s.choice;
+  if (c?.type === 'budget') return `<span class="kpbadge tone-violet">${icon('chat', 13)} Предложил бюджет: ${rub(c.amount)}</span>`;
+  if (c) return `<span class="kpbadge tone-green">${icon('check', 13)} Выбрал: ${E(String(c.label || '').replace(' вариант', ''))}${c.options?.length ? ` + ${c.options.length}` : ''}, ${rub(c.total)}</span>`;
+  if (s.views) return `<span class="kpbadge tone-gold">${icon('eye', 13)} КП открыли ${s.views} ${plural(s.views, 'раз', 'раза', 'раз')}, ${E(ago(s.last_view_at))}</span>`;
+  return `<span class="kpbadge">${icon('link', 13)} КП-ссылку ещё не открывали</span>`;
+}
+
 // Карточка брифа: шаг цепочки полосой, сумма КП, срок шага и наполненность.
 const BRIEF_TONE = { 'Разбор': 'sky', 'Вопросы': 'sky', 'Расчёт': 'gold', 'КП': 'gold', 'Переговоры': 'violet', 'Сделка': 'green', 'Отказ': 'red' };
 function briefCard(x) {
@@ -4020,6 +4044,7 @@ function briefCard(x) {
     <p class="bfstage"><b>${E(x.stage)}</b>${x.stage === 'Отказ' ? '' : `<small class="muted">шаг ${idx + 1} из ${BRIEF_STAGES.length}</small>`}</p>
     <div class="bfprice">${price ? `<b>${rub(price)}</b><small class="muted">в КП${x.kp?.sent_on ? ` · отправлено ${E(shortDate(x.kp.sent_on))}` : ''}</small>`
       : t.count ? `<b>${rub(roundUp(t.min, r))} – ${rub(roundUp(t.max, r))}</b><small class="muted">вилка по смете</small>` : '<small class="muted">смета ещё не посчитана</small>'}</div>
+    ${kpBadge(x)}
     ${x.next_step && !closed ? `<span class="lnext ${late ? 'late' : now ? 'now' : ''}">${icon('time', 12)} ${late ? 'просрочено' : now ? 'сегодня' : x.next_on ? E(shortDate(x.next_on)) : 'без даты'} · ${E(x.next_step.slice(0, 60))}</span>` : ''}
     <div class="bfmeta">${qs.length ? `<span title="Вопросы клиенту">${icon('chat', 14)} ${answered}/${qs.length}</span>` : ''}
       ${t.count ? `<span title="Работ в смете">${icon('estimate', 14)} ${t.count}</span>` : ''}
@@ -4542,6 +4567,9 @@ function kpShareData(b) {
 }
 
 async function kpShareModal(b) {
+  // после каждого сохранения бриф в базе — новый объект: берём свежий, иначе
+  // следующее сохранение упрётся в «запись изменена» и токен ссылки потеряется
+  b = db.briefs.find(x => x.id === b.id) || b;
   const kp = (b.kp ||= {}), media = (kp.media ||= []);
   let info = null;
   if (kp.share_token) { try { info = await api.kpShareGet(kp.share_token); } catch (e) { info = null; } }
@@ -4594,6 +4622,7 @@ async function kpShareModal(b) {
       flushPendingBrief();
       kp.share_token ||= shareToken();
       await api.kpSharePut({ token: kp.share_token, brief_id: b.id, data: kpShareData(b) });
+      kpStats.at = 0;   // в списке брифов статус ссылки обновится сразу
       await saveBriefNow(b, 'КП-ссылка обновлена');
       await copyText(kpLink(kp.share_token), 'Ссылка на КП скопирована — отправьте клиенту');
       kpShareModal(b);

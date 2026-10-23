@@ -2062,3 +2062,12 @@ dialog textarea.short{min-height:84px}
 .brandmark img{width:64%;height:auto;display:block}
 .brandword img{height:30px;width:auto;display:block}
 .gatecard .gateword{height:56px;width:auto;display:block;margin:4px 0 14px}
+
+/* плашка на карточке брифа: что клиент сделал с КП-ссылкой */
+.kpbadge{display:inline-flex;align-items:center;gap:6px;margin:2px 0 8px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--chip,#eef0f3);color:var(--muted);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpbadge.tone-gold{background:rgba(246,189,58,.16);color:#8a6100}
+.kpbadge.tone-green{background:rgba(40,160,90,.14);color:#1f7a3a}
+.kpbadge.tone-violet{background:rgba(101,80,234,.13);color:#5140c4}
+html[data-theme=dark] .kpbadge.tone-gold{color:#f6bd3a}
+html[data-theme=dark] .kpbadge.tone-green{color:#5fd38d}
+html[data-theme=dark] .kpbadge.tone-violet{color:#a99cff}
