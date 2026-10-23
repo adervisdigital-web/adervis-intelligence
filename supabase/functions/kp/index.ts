@@ -7,7 +7,7 @@
 
 import { admin, json, CORS } from '../_shared/outreach.ts';
 import { sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
-import { choiceOf, rub } from '../_shared/kp-choice.ts';
+import { choiceOf, budgetOf, rub } from '../_shared/kp-choice.ts';
 
 const AGAIN_AFTER = 2 * 3600e3;   // повторное открытие — уведомляем не чаще раза в 2 часа
 const CHOICE_AGAIN = 60e3;        // двойной клик по «Отправить» — второй раз не шлём
@@ -24,6 +24,28 @@ Deno.serve(async (req) => {
     const d = row.data ?? {};
     const subs = async () => (await sb.from('digest_subscribers').select('chat_id')).data ?? [];
 
+    // дело в заявке и сообщение руководителям — общее для выбора и бюджета
+    const notify = async (step: string, text: string) => {
+      const { data: brief } = await sb.from('briefs').select('lead_id').eq('id', row.brief_id).maybeSingle();
+      if (brief?.lead_id) await sb.from('leads').update({ next_step: step.slice(0, 300), next_on: new Date().toISOString().slice(0, 10) }).eq('id', brief.lead_id);
+      if (INTEL_TOKEN) for (const s of await subs()) await sendDigest(Number(s.chat_id), text);
+    };
+
+    if (body?.action === 'budget') {
+      const bgt = budgetOf(d, body);
+      if (!bgt) return json({ error: 'Укажите сумму в рублях, например 300 000' }, 400);
+      if (body?.preview === true) return json({ ok: true, preview: true, amount: bgt.amount });
+      const now = new Date();
+      if (row.chosen_at && now.getTime() - Date.parse(row.chosen_at) < CHOICE_AGAIN && row.choice?.amount === bgt.amount) return json({ ok: true, amount: bgt.amount });
+      await sb.from('kp_shares').update({ choice: { ...bgt, at: now.toISOString() }, chosen_at: now.toISOString() }).eq('token', token);
+      await notify(`Клиент предложил свой бюджет по КП: ${rub(bgt.amount)}. Связаться: что можно сделать в эту сумму`,
+        `💬 Клиент предложил свой бюджет по КП «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}: ${rub(bgt.amount)}.
+` +
+        `Наша цена: ${bgt.from ? 'от ' : ''}${rub(bgt.ours)}.
+Свяжитесь сегодня: обсудите, что можно сделать в эту сумму.`);
+      return json({ ok: true, amount: bgt.amount });
+    }
+
     if (body?.action === 'choose') {
       const c = choiceOf(d, body);
       if (body?.preview === true) return json({ ok: true, preview: true, total: c.total });
@@ -31,17 +53,9 @@ Deno.serve(async (req) => {
       if (row.chosen_at && now.getTime() - Date.parse(row.chosen_at) < CHOICE_AGAIN && row.choice?.total === c.total) return json({ ok: true, total: c.total });
       await sb.from('kp_shares').update({ choice: { ...c, at: now.toISOString() }, chosen_at: now.toISOString() }).eq('token', token);
       const what = [c.label, ...c.options.map(o => o.name.split(':')[0].trim())].join(' + ');
-      // дело в заявке: связаться сегодня
-      const { data: brief } = await sb.from('briefs').select('lead_id').eq('id', row.brief_id).maybeSingle();
-      if (brief?.lead_id) {
-        await sb.from('leads').update({ next_step: `Клиент выбрал в КП: ${what}, ${rub(c.total)}. Связаться: договор и предоплата`.slice(0, 300),
-          next_on: now.toISOString().slice(0, 10) }).eq('id', brief.lead_id);
-      }
-      if (INTEL_TOKEN) {
-        const text = `✅ Клиент выбрал вариант в КП «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}:\n${what}: ${rub(c.total)}.` +
-          `${c.comment ? `\nКомментарий: «${c.comment}»` : ''}\nСвяжитесь сегодня: договор и предоплата.`;
-        for (const s of await subs()) await sendDigest(Number(s.chat_id), text);
-      }
+      await notify(`Клиент выбрал в КП: ${what}, ${rub(c.total)}. Связаться: договор и предоплата`,
+        `✅ Клиент выбрал вариант в КП «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}:\n${what}: ${rub(c.total)}.` +
+        `${c.comment ? `\nКомментарий: «${c.comment}»` : ''}\nСвяжитесь сегодня: договор и предоплата.`);
       return json({ ok: true, total: c.total });
     }
 

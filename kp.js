@@ -72,7 +72,7 @@
   function mountEstimate(e, d) {
     const box = document.getElementById('est');
     if (!box) return;
-    const st = { v: 'full', opts: new Set(), sent: null };
+    const st = { v: 'full', opts: new Set(), sent: null, budget: false };
     const pick = () => {
       const v = e.two ? st.v : 'full', opts = [...st.opts].sort((a, b) => a - b);
       // в кнопке и подтверждении — короткое название опции: до двоеточия
@@ -85,27 +85,55 @@
     const drawChoose = () => {
       if (!chooseBox) return;
       const c = pick();
-      chooseBox.innerHTML = st.sent
-        ? `<p class="chosen">${st.sent === 'preview' ? 'Просмотр команды: выбор не отправлен.' : `<b>✓ Вы выбрали:</b> ${E(c.what.join(' + '))}, ${rub(c.total)}. ${d.contact ? `${E(d.contact)} свяжется` : 'Мы свяжемся'} с вами.`}</p>`
+      const who = d.contact ? `${E(d.contact)} свяжется` : 'Мы свяжемся';
+      chooseBox.innerHTML = st.sent === 'preview' ? '<p class="chosen">Просмотр команды: ничего не отправлено.</p>'
+        : st.sent?.budget ? `<p class="chosen"><b>✓ Ваш бюджет ${rub(st.sent.budget)} отправлен.</b> ${who} с вами: подберём, что можно сделать в эту сумму.</p>`
+        : st.sent ? `<p class="chosen"><b>✓ Вы выбрали:</b> ${E(c.what.join(' + '))}, ${rub(c.total)}. ${who} с вами.</p>`
         : `<button type="button" class="btn" data-choose>Выбрать: ${E(c.what.join(' + '))}, ${rub(c.total)}</button>
-           <small>Нажмите, и мы получим ваш выбор. Обязательств это не создаёт: дальше обсудим договор.</small><p class="chooseerr" role="alert"></p>`;
+           <small>Нажмите, и мы получим ваш выбор. Обязательств это не создаёт: дальше обсудим договор.</small>
+           ${st.budget ? `<div class="budget"><label for="budgetin">Ваш бюджет, ₽</label>
+             <div class="budgetrow"><input id="budgetin" inputmode="numeric" autocomplete="off" maxlength="16" placeholder="Например, 300 000">
+             <button type="button" class="btn" data-budgetsend>Отправить</button></div></div>`
+           : '<button type="button" class="linkbtn" data-budget>Предложить свой бюджет</button>'}
+           <p class="chooseerr" role="alert"></p>`;
     };
+    const post = async payload => {
+      const r = await fetch(`${cfg.supabaseUrl}/functions/v1/kp`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.supabaseAnonKey }, body: JSON.stringify({ token, preview, ...payload })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.error || 'Не отправилось. Проверьте интернет и попробуйте ещё раз или позвоните нам.');
+      return j;
+    };
+    chooseBox?.addEventListener('input', ev => {
+      // 300000 → «300 000» прямо при вводе
+      if (ev.target.id !== 'budgetin') return;
+      const digits = ev.target.value.replace(/\D/g, '').slice(0, 10);
+      ev.target.value = digits ? Number(digits).toLocaleString('ru-RU') : '';
+    });
+    chooseBox?.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.id === 'budgetin') chooseBox.querySelector('[data-budgetsend]')?.click(); });
     chooseBox?.addEventListener('click', async ev => {
-      const btn = ev.target.closest('[data-choose]');
+      if (ev.target.closest('[data-budget]')) { st.budget = true; drawChoose(); chooseBox.querySelector('#budgetin')?.focus(); return; }
+      const btn = ev.target.closest('[data-choose], [data-budgetsend]');
       if (!btn) return;
-      btn.disabled = true;
-      const c = pick();
+      const err = chooseBox.querySelector('.chooseerr');
       try {
-        const r = await fetch(`${cfg.supabaseUrl}/functions/v1/kp`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.supabaseAnonKey },
-          body: JSON.stringify({ token, preview, action: 'choose', variant: c.v, options: c.opts })
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || !j.ok) throw new Error(j.error || 'не отправилось');
-        st.sent = j.preview ? 'preview' : 'ok'; drawChoose();
-      } catch (err) {
+        if (btn.matches('[data-budgetsend]')) {
+          const amount = Number(chooseBox.querySelector('#budgetin').value.replace(/\D/g, ''));
+          if (amount < 1000) { err.textContent = 'Укажите сумму в рублях, например 300 000'; return; }
+          btn.disabled = true;
+          const j = await post({ action: 'budget', amount });
+          st.sent = j.preview ? 'preview' : { budget: j.amount };
+        } else {
+          btn.disabled = true;
+          const c = pick();
+          const j = await post({ action: 'choose', variant: c.v, options: c.opts });
+          st.sent = j.preview ? 'preview' : 'ok';
+        }
+        drawChoose();
+      } catch (e) {
         btn.disabled = false;
-        chooseBox.querySelector('.chooseerr').textContent = 'Не отправилось. Проверьте интернет и попробуйте ещё раз или позвоните нам.';
+        err.textContent = e.message;
       }
     });
     const hints = e.groups.some(g => g.rows.some(r => r.hint));
@@ -132,7 +160,7 @@
           <ul class="opts">${e.options.map((o, i) => `<li><label><input type="checkbox" data-o="${i}"${st.opts.has(i) ? ' checked' : ''}>
             <span>${E(o.name)}${o.why ? `<small>${E(o.why)}</small>` : ''}</span><b class="num">+ ${rub(o.price)}</b></label></li>`).join('')}</ul>` : ''}`;
       if (focus) box.querySelector(focus)?.focus();
-      st.sent = null; drawChoose();
+      st.sent = null; st.budget = false; drawChoose();
     };
     box.addEventListener('click', ev => {
       const vb = ev.target.closest('[data-v]');

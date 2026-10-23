@@ -2138,7 +2138,7 @@ await page.click('#modal [data-action=close]');
 // сама страница КП у клиента: на компьютере и на телефоне
 const kpPage = await ctx.newPage();
 const kpPosts = [];
-const kpReply = b => JSON.stringify(b.action === 'choose' ? { ok: true, preview: b.preview === true, total: 1 } : { ok: true, data: share.data });
+const kpReply = b => JSON.stringify(b.action === 'choose' ? { ok: true, preview: b.preview === true, total: 1 } : b.action === 'budget' ? { ok: true, preview: b.preview === true, amount: b.amount } : { ok: true, data: share.data });
 await kpPage.route('**/functions/v1/kp', r => { const b = JSON.parse(r.request().postData()); kpPosts.push(b); r.fulfill({ contentType: 'application/json', body: kpReply(b) }); });
 await kpPage.goto(BASE + 'kp.html?t=' + share.token);
 await kpPage.waitForSelector('.hero h1');
@@ -2166,6 +2166,15 @@ check('страница КП: открыл сотрудник (входили в
     && sent.preview === false && (await g.textContent('.chosen')).includes('Вы выбрали') && !(await g.$('textarea')), JSON.stringify(sent));
   await g.click('[data-v=full]');
   check('страница КП: поменяли вариант — кнопка снова с новой суммой', /Полный вариант/.test(await g.textContent('[data-choose]')));
+  // свой бюджет: ввод с пробелами, отправка, подтверждение
+  await g.click('[data-budget]');
+  await g.fill('#budgetin', '300000');
+  await g.dispatchEvent('#budgetin', 'input');
+  check('страница КП: бюджет при вводе разбивается пробелами', /^300\s000$/.test(await g.inputValue('#budgetin')), await g.inputValue('#budgetin'));
+  await g.click('[data-budgetsend]');
+  await g.waitForSelector('.chosen');
+  const bsent = posts.find(p => p.action === 'budget');
+  check('страница КП: свой бюджет ушёл на сервер, клиент видит подтверждение', bsent?.amount === 300000 && (await g.textContent('.chosen')).includes('Ваш бюджет'), JSON.stringify(bsent));
   check('страница КП: есть «Скачать PDF», нет срока действия', await g.isVisible('#pdfbtn'));
   await guest.close();
 }

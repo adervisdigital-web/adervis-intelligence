@@ -18,3 +18,12 @@ export function choiceOf(data: Row, body: Row) {
   const comment = String(body?.comment ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
   return { variant, label, price, options, total, comment };
 }
+
+// «Предложить свой бюджет»: из ввода берём только цифры, разумные пределы.
+export function budgetOf(data: Row, body: Row) {
+  const amount = Math.round(Number(String(body?.amount ?? '').replace(/[^\d]/g, '')) || 0);
+  if (amount < 1000 || amount > 1_000_000_000) return null;
+  const e = data?.estimate ?? {};
+  const ours = Number(e.two ? e.base : e.full) || 0;
+  return { type: 'budget', amount, ours, from: !!e.two };
+}
