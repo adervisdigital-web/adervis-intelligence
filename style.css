@@ -2071,3 +2071,7 @@ dialog textarea.short{min-height:84px}
 html[data-theme=dark] .kpbadge.tone-gold{color:#f6bd3a}
 html[data-theme=dark] .kpbadge.tone-green{color:#5fd38d}
 html[data-theme=dark] .kpbadge.tone-violet{color:#a99cff}
+
+/* кнопка «фон шапки» у примера в окне КП-ссылки */
+.kpmedia .kpmcover{background:none;border:1px solid var(--line);border-radius:9px;width:34px;height:34px;display:grid;place-items:center;color:var(--muted)}
+.kpmedia .kpmcover.on{background:var(--gold);border-color:var(--gold);color:#141414}

@@ -188,7 +188,8 @@
     const media = d.media || [];
     // фон шапки: кадр первого примера (обложка видео или картинка), полупрозрачно
     const first = media.find(m => safeUrl(m.kind === 'video' ? m.poster : m.url));
-    const cover = first ? { src: safeUrl(first.kind === 'video' ? first.poster : first.url), video: first.kind === 'video' } : null;
+    // можно задать отдельный кадр без надписей (cover), иначе — первый пример
+    const cover = safeUrl(d.cover) ? { src: safeUrl(d.cover) } : first ? { src: safeUrl(first.kind === 'video' ? first.poster : first.url) } : null;
     root.innerHTML = `
     <header class="hero">${cover ? `<div class="herobg" aria-hidden="true"><img src="${E(cover.src)}" alt="" draggable="false"></div>` : ''}<div class="wrap">
       <div class="top"><img src="brand/logo.svg" alt="ADERVIS"><span>Коммерческое предложение · ${E(day(d.date, { day: 'numeric', month: 'long', year: 'numeric' }))}</span></div>
