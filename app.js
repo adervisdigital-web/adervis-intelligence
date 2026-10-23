@@ -4568,6 +4568,7 @@ function kpShareData(b) {
     terms: d.terms, days: planDays(b),
     plan: planDates(b, b.kp?.start || dayShift(3)).map(s => ({ stage: s.stage, result: s.result || '', days: Number(s.days) || 0, from: s.from, to: s.to })),
     refs: refLines(k.refs), why: KP_WHY, contact: k.contact, phone: k.phone,
+    cover: b.kp?.cover || '',
     media: (b.kp?.media || []).map(m => ({ url: m.url, kind: m.kind, caption: m.caption || '', group: m.group || '', ...(m.poster ? { poster: m.poster } : {}) }))
   };
 }
@@ -4593,6 +4594,8 @@ async function kpShareModal(b) {
       ${m.kind === 'video' ? `<span class="kpthumb">${icon('play', 20)}</span>` : `<img class="kpthumb" src="${E(m.url)}" alt="">`}
       <span class="kpmeta"><input class="input" data-kpm="${i}" data-k="caption" maxlength="200" value="${E(m.caption || '')}" placeholder="Подпись к кадру">
         <input class="input" data-kpm="${i}" data-k="group" maxlength="120" value="${E(m.group || '')}" placeholder="Раздел — необязательно"></span>
+      ${(m.kind === 'video' ? m.poster : m.url) ? `<button class="kpmcover${kp.cover && kp.cover === (m.kind === 'video' ? m.poster : m.url) ? ' on' : ''}" data-action="kpmcover" data-id="${i}"
+        aria-pressed="${!!kp.cover && kp.cover === (m.kind === 'video' ? m.poster : m.url)}" title="Сделать фоном шапки КП (лучше кадр без надписей)">${icon('photo', 15)}</button>` : ''}
       <button class="del" data-action="kpmdel" data-id="${i}" aria-label="Убрать файл">${icon('delete', 15)}</button></li>`).join('')}</ul>
     <p class="fileadd"><button type="button" id="kpmbtn">${icon('upload', 15)} Добавить картинки и видео</button>
       <input type="file" id="kpmfile" accept="image/*,video/mp4,video/webm,video/quicktime" multiple hidden> <small class="muted" id="kpmst"></small></p>
@@ -4615,6 +4618,12 @@ async function kpShareModal(b) {
       kpShareModal(b);
     } catch (err) { $('#kpmst').textContent = 'Не загрузилось: ' + (err.message || 'ошибка'); }
   };
+  // фон шапки КП: кадр примера полупрозрачно на тёмном фоне; повторное нажатие — снова первый пример
+  box.querySelectorAll('[data-action=kpmcover]').forEach(btn => btn.onclick = async () => {
+    const m = media[Number(btn.dataset.id)], src = m.kind === 'video' ? m.poster : m.url;
+    kp.cover = kp.cover === src ? '' : src;
+    await saveBriefNow(b, kp.cover ? 'Кадр стал фоном шапки. Нажмите «Обновить страницу», чтобы клиент увидел' : 'Фон шапки — снова первый пример'); kpShareModal(b);
+  });
   box.querySelectorAll('[data-action=kpmdel]').forEach(btn => btn.onclick = async () => {
     const [m] = media.splice(Number(btn.dataset.id), 1);
     try { await api.removeKpMedia([m.path]); } catch (e) { /* файл мог быть уже удалён */ }
