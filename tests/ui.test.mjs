@@ -2160,12 +2160,12 @@ check('страница КП: открыл сотрудник (входили в
   await g.check('.opts input >> nth=0');
   check('страница КП: кнопка выбора показывает вариант и сумму', /Базовый вариант \+ .+, 115\s000\s₽/.test(await g.textContent('[data-choose]')), await g.textContent('[data-choose]'));
   await g.click('[data-choose]');
-  await g.fill('#choosecomment', 'Созвонимся в понедельник');
-  await g.click('[data-send]');
   await g.waitForSelector('.chosen');
   const sent = posts.find(p => p.action === 'choose');
-  check('страница КП: выбор ушёл на сервер — вариант, опция, комментарий; клиент видит «Спасибо»', sent?.variant === 'base' && JSON.stringify(sent.options) === '[0]'
-    && sent.comment === 'Созвонимся в понедельник' && sent.preview === false && (await g.textContent('.chosen')).includes('выбор отправлен'), JSON.stringify(sent));
+  check('страница КП: одно нажатие — выбор ушёл на сервер, клиент видит «Вы выбрали»', sent?.variant === 'base' && JSON.stringify(sent.options) === '[0]'
+    && sent.preview === false && (await g.textContent('.chosen')).includes('Вы выбрали') && !(await g.$('textarea')), JSON.stringify(sent));
+  await g.click('[data-v=full]');
+  check('страница КП: поменяли вариант — кнопка снова с новой суммой', /Полный вариант/.test(await g.textContent('[data-choose]')));
   check('страница КП: есть «Скачать PDF», нет срока действия', await g.isVisible('#pdfbtn'));
   await guest.close();
 }
