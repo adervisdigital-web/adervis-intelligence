@@ -2222,6 +2222,11 @@ await kpPage.setViewportSize({ width: 390, height: 844 });
 check('страница КП на телефоне: без горизонтальной прокрутки, кнопка «Позвонить» внизу', await kpPage.evaluate(() => document.documentElement.scrollWidth <= 390)
   && await kpPage.isVisible('.bar .btn'));
 await kpPage.screenshot({ path: path.join(OUT, 'kp-page-mobile.png'), fullPage: true });
+// КП на несколько роликов: концепции карточками, цена каждого ролика под общей
+await kpPage.evaluate(d => window.__KP_RENDER__({ ...d, concept: '## Ролик 1. Papushevo Park: «Четверг»\nИдея ролика.\n\n## Ролик 2. Монави: «Дом»\nИдея ролика.',
+  estimate: { ...d.estimate, two: false, subtotals: true, groups: d.estimate.groups.slice(0, 2).map((g, i) => ({ ...g, name: `Ролик ${i + 1}. ${['Papushevo Park', 'Монави'][i]}` })) } }), share.data);
+check('страница КП: два ролика — две карточки концепций, цены роликов под общей ценой', (await kpPage.$$('.vcard')).length === 2
+  && (await kpPage.textContent('.vcard h3')) === 'Ролик 1. Papushevo Park: «Четверг»' && /Papushevo Park: [\d\s]+₽/.test(await kpPage.textContent('.facts small.sub')), await kpPage.textContent('.facts'));
 await kpPage.goto(BASE + 'kp.html');
 await kpPage.waitForSelector('.kp-error');
 check('страница КП без токена — понятная ошибка', (await kpPage.textContent('.kp-error h1')) === 'Ссылка неполная');
