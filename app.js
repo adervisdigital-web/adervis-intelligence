@@ -28,7 +28,7 @@ function toast(text, ms = 3500) {
 // каждый на своей сетке и со своей толщиной линии.
 const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
 // Старые имена из кода приложения, чтобы не переписывать все вызовы.
-const ICON_ALIAS = { mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat', briefs: 'proposal' };
+const ICON_ALIAS = { site: 'website', mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat', briefs: 'proposal' };
 const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
 const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
@@ -282,6 +282,7 @@ function createApi(cfg) {
     generate: payload => callFn('ai-write', payload),
     feed: payload => callFn('feed', payload),
     prospect: payload => callFn('prospect', payload),
+    site: payload => callFn('site', payload),
     // У аккаунта площадки ключ — сама площадка, поэтому запись, а не правка по номеру.
     async saveAccount(a) {
       return must(await sb.from('social_accounts').upsert({ network: a.network, handle: a.handle })
@@ -326,7 +327,7 @@ let ai = {
 const SECTION_TITLE = {
   home: 'Обзор', survey: 'Анкета', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', briefs: 'Брифы и КП', dialogs: 'Диалоги', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
-  cases: 'Кейсы', competitors: 'Конкуренты',
+  cases: 'Кейсы', site: 'Сайт', competitors: 'Конкуренты',
   content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
   chain: 'Нейроцепочка', tasks: 'Задачи и рост', roadmap: 'Развитие системы', settings: 'Настройки'
 };
@@ -337,7 +338,7 @@ const NAV = [
   ['Реклама', ['ads', 'keywords']],
   ['Контент', ['content', 'assistant']],
   ['Аналитика', ['analytics', 'decisions']],
-  ['Компания', ['knowledge', 'cases', 'products', 'competitors', 'brand']],
+  ['Компания', ['knowledge', 'cases', 'site', 'products', 'competitors', 'brand']],
   ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
 ];
 // У каждой группы меню — свой цвет из брендбука (цвета направлений): по
@@ -2592,6 +2593,89 @@ function magnetStats(m) {
   return { leads: list.length, deals: deals.length, amount: sumOf(deals, 'amount'),
     rate: closed.length ? Math.round(100 * deals.length / closed.length) : null,
     sent: sent.length, replied: sent.filter(p => p.status !== 'Написали').length };
+}
+
+// ---- сайт adervis.ru
+// Панель сайта: заявки с формы (функция site-lead кладёт их в воронку),
+// проверка страниц по кнопке (функция site), кейсы сайта против кейсов базы
+// знаний и просьбы о правках — задачами «Сайт: …», их делает Claude в коде сайта.
+const SITE_URL = 'https://adervis.ru';
+let siteView = { busy: false, error: '', result: null };
+const siteCaseSlug = url => (String(url || '').match(/\/cases\/([^/?#]+)\/?$/) || [])[1] || '';
+const siteTitle = t => String(t || '').replace(/\s*[|·—–-]\s*ADERVIS.*$/i, '').trim();
+
+function siteCases() {
+  const pages = (siteView.result?.pages || []).filter(p => siteCaseSlug(p.url));
+  const hub = db.knowledge.filter(k => k.category === 'Кейсы');
+  return pages.map(p => {
+    const slug = siteCaseSlug(p.url), title = siteTitle(p.title);
+    const k = hub.find(x => siteCaseSlug(x.source) === slug) || hub.find(x => title && x.title && title.toLowerCase().includes(x.title.toLowerCase()));
+    return { ...p, slug, name: title || slug, k };
+  });
+}
+
+function renderSite() {
+  const r = siteView.result, leads = db.leads.filter(l => l.source === 'Сайт').sort((a, b) => String(b.came_on).localeCompare(String(a.came_on)));
+  const month = leads.filter(l => daysAgo(l.came_on) <= 30).length;
+  const bad = (r?.pages || []).filter(p => p.problems.length), down = (r?.pages || []).filter(p => p.status !== 200);
+  const slow = (r?.pages || []).filter(p => p.ms > 2500);
+  const cases = siteCases(), missing = cases.filter(c => !c.k);
+  const asks = db.tasks.filter(t => /^Сайт:/.test(t.title || ''));
+  const card = (label, value, hint, tone = '') => `<div class="card sitestat ${tone}"><small>${label}</small><b>${value}</b><span class="muted">${hint}</span></div>`;
+  return heading('Сайт adervis.ru', 'Заявки с сайта, проверка страниц, кейсы и правки — в одном месте.',
+    `<span class="headactions"><a class="btnlink" href="${SITE_URL}" target="_blank" rel="noopener">${icon('external', 15)} Открыть сайт</a>
+      <button class="primary" data-action="sitecheck" ${siteView.busy ? 'disabled' : ''}>${icon('refresh', 15)} ${siteView.busy ? 'Проверяю страницы… до минуты' : 'Проверить сайт'}</button></span>`)
+    + (siteView.error ? `<div class="notice error">${E(siteView.error)}</div>` : '')
+    + `<div class="sitestats">
+      ${card('Заявки с сайта', `${month}`, 'за 30 дней, сами попадают в «Заявки»')}
+      ${r ? card('Страницы', `${r.total - bad.length} из ${r.total}`, bad.length ? `без замечаний, у ${bad.length} есть что поправить` : 'без замечаний', bad.length ? 'tone-gold' : 'tone-green') : card('Страницы', '—', 'нажмите «Проверить сайт»')}
+      ${r ? card('HTTPS', r.https.redirects ? 'включён' : 'не обязателен', r.https.redirects ? 'http сам переходит на https' : 'сайт открывается и без замка', r.https.redirects ? 'tone-green' : 'tone-red') : card('HTTPS', '—', 'покажет проверка')}
+      ${r ? card('Кейсы', `${cases.length - missing.length} из ${cases.length}`, missing.length ? `${missing.length} нет в базе знаний Hub` : 'все есть в базе знаний', missing.length ? 'tone-gold' : 'tone-green') : card('Кейсы', '—', 'сверю с базой знаний после проверки')}
+    </div>`
+    + `<div class="grid sitecols">
+      <div class="card"><h2>Заявки с сайта</h2>${leads.length ? `<ul class="sitelist">${leads.slice(0, 8).map(l => `<li><button class="linkbtn" data-action="openlead" data-id="${E(l.id)}">${E(l.name)}</button>
+          <span class="muted">${E(shortDate(l.came_on))} · ${E(l.status)}${l.request ? ` · ${E(String(l.request).slice(0, 80))}` : ''}</span></li>`).join('')}</ul>`
+        : '<p class="muted">Пока заявок с формы сайта не было. Новые появятся здесь и в «Заявках» сами, вместе со страницей и UTM.</p>'}</div>
+      <div class="card"><h2>Правки сайта</h2><p class="muted">Напишите, что поменять: текст, цены, новый кейс. Я внесу правку в код сайта и выложу.</p>
+        <form id="siteask" class="siteask"><input class="input" name="ask" maxlength="300" required placeholder="Например: добавить кейс «Раздолье» на главную"><button class="primary">Попросить</button></form>
+        ${asks.length ? `<ul class="sitelist">${asks.slice(0, 8).map(t => `<li class="${t.done ? 'done' : ''}">${t.done ? icon('check', 14) : icon('time', 14)} ${E(t.title.replace(/^Сайт:\s*/, ''))}</li>`).join('')}</ul>` : ''}</div>
+    </div>`
+    + (r ? `<div class="card"><h2>Кейсы на сайте и в Hub</h2><p class="muted">Кейсы из базы знаний Hub попадают в КП («Наши работы») и в посты. Нет в Hub — добавьте одной кнопкой.</p>
+        <ul class="sitelist">${cases.map(c => `<li><a href="${E(c.url)}" target="_blank" rel="noopener">${E(c.name)}</a>
+          ${c.k ? `<span class="muted">${icon('check', 14)} в Hub: ${E(c.k.title)}</span>` : `<button data-action="sitecase" data-url="${E(c.url)}">${icon('plus', 14)} В базу знаний</button>`}</li>`).join('')}</ul></div>
+      <div class="card"><h2>Что поправить на страницах</h2><p class="muted">Проверено ${E(ago(r.at))}: заголовок и описание для поиска, H1, картинка для соцсетей.${slow.length ? ` Медленно открываются: ${slow.length}.` : ''}</p>
+        ${bad.length ? `<ul class="sitelist">${[...down, ...bad.filter(p => p.status === 200)].slice(0, 30).map(p => `<li><a href="${E(p.url)}" target="_blank" rel="noopener">${E(p.url.replace(SITE_URL, '') || '/')}</a>
+          <span class="muted">${E(p.problems.join('; '))}</span></li>`).join('')}</ul>` : '<p>Замечаний нет.</p>'}</div>` : '');
+}
+
+async function siteCheck() {
+  siteView = { ...siteView, busy: true, error: '' };
+  render();
+  try { siteView.result = await api.site({ action: 'check' }); }
+  catch (e) { siteView.error = 'Проверка не получилась: ' + (e.message || 'ошибка сервера'); }
+  finally { siteView.busy = false; render(); }
+}
+
+async function siteCaseAdd(url) {
+  const c = siteCases().find(x => x.url === url);
+  if (!c) return;
+  try {
+    const k = await api.insert('knowledge', { id: uid(), title: c.name.slice(0, 200), body: (c.description || c.name).slice(0, 5000), category: 'Кейсы',
+      source: c.url, access: 'Публичное', status: 'Публичный источник' });
+    upsertLocal('knowledge', k);
+    noteLocal('insert', 'knowledge', k);
+    render();
+    toast(`Кейс «${c.name}» в базе знаний — его можно ставить в КП и посты`);
+  } catch (e) { handleError(e); }
+}
+
+async function siteAsk(text) {
+  try {
+    const t = await api.insert('tasks', { id: uid(), title: `Сайт: ${text}`.slice(0, 300), done: false });
+    upsertLocal('tasks', t);
+    render();
+    toast('Записал. Правку сайта сделаю и выложу, когда попросите «сделай правки сайта»');
+  } catch (e) { handleError(e); }
 }
 
 function renderMagnets() {
@@ -6633,6 +6717,7 @@ function render() {
   if (page === 'briefs') s = renderBriefs();
   if (page === 'prospects') s = renderProspects();
   if (page === 'magnets') s = renderMagnets();
+  if (page === 'site') s = renderSite();
   if (page === 'decisions') s = renderDecisions();
   if (page === 'chain') s = renderChain();
   if (page === 'brand') { loadBrandFonts(); setTimeout(loadShots, 0); }
@@ -6944,6 +7029,8 @@ function render() {
   };
   const c = $('#category');
   if (c) c.onchange = e => { category = e.target.value; render(); };
+  const sa = $('#siteask');
+  if (sa) sa.onsubmit = e => { e.preventDefault(); const v = sa.elements.ask.value.trim(); if (v) siteAsk(v); };
   const vslot = $('#bfvoiceslot');
   if (vslot && briefVoice.audio) vslot.appendChild(briefVoice.audio);
   else if (briefVoice.audio && !briefVoice.audio.isConnected) briefVoice.audio.pause();   // ушли с брифа — голос замолкает
@@ -8164,6 +8251,8 @@ document.addEventListener('click', async e => {
     case 'pitchsent': pitchCopy(true); break;
     case 'openlead': go('leads'); editLead(b.dataset.id); break;
     case 'leadvoice': await leadVoiceNote(b.dataset.id, b); break;
+    case 'sitecheck': await siteCheck(); break;
+    case 'sitecase': await siteCaseAdd(b.dataset.url); break;
     case 'contentnet': contentNet = b.dataset.id; render(); break;
     case 'contentview': contentView = b.dataset.id; render(); break;
     case 'contentrange': contentRange = b.dataset.id; render(); break;

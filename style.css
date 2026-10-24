@@ -2100,3 +2100,17 @@ html[data-theme=dark] .kpchecks li.warn{background:rgba(246,189,58,.12)}
 .kpvisits{margin:10px 0;padding:10px 14px;border:1px solid var(--line);border-radius:12px}
 .kpvisits p{margin:0 0 6px}
 .kpvisits ul{margin:0;padding-left:18px;font-size:13px;color:var(--muted)}
+
+/* сайт adervis.ru */
+.sitestats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:0 0 16px}
+.sitestat{display:grid;gap:4px}
+.sitestat b{font-size:26px;letter-spacing:-.03em}
+.sitestat.tone-green b{color:#2f8a4a}.sitestat.tone-gold b{color:#b07d10}.sitestat.tone-red b{color:#c2413a}
+.sitecols{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:16px}
+.sitelist{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.sitelist li{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.sitelist li:last-child{border:0}
+.sitelist li.done{color:var(--muted);text-decoration:line-through}
+.siteask{display:flex;gap:8px;margin:8px 0}
+.siteask .input{flex:1}
+@media (max-width:900px){.sitestats{grid-template-columns:repeat(2,minmax(0,1fr))}.sitecols{grid-template-columns:1fr}}

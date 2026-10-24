@@ -10,7 +10,7 @@
 - `index.html`, `config.js` (адрес и публичный ключ Supabase), `icons-data.js` (иконки — `icon('name', size)`), `brand/`.
 - `survey-*-data.js` — анкеты владельцев.
 - `supabase/migrations/*.sql` — схема (RLS через `is_member()`), `supabase/cron/digest.sql` — расписания.
-- `supabase/functions/` — edge-функции: `ai-write` (ИИ: тексты, план, посты, разбор ТЗ, расшифровка голоса), `channels`, `tg-bot`, `vk-bot`, `intel-bot` (служебный бот: сводка и приём заявок), `digest`, `crm` (связь с ADERVIS CRM), `feed`, `prospect`, `publish`. Общий код — `_shared/` (`bot.ts`, `flow.ts`, `outreach.ts`, `crm.ts`, `intake.ts`, `brief-ai.ts`, `digest*.ts`).
+- `supabase/functions/` — edge-функции: `ai-write` (ИИ: тексты, план, посты, разбор ТЗ, расшифровка голоса), `channels`, `tg-bot`, `vk-bot`, `intel-bot` (служебный бот: сводка и приём заявок), `digest`, `crm` (связь с ADERVIS CRM), `feed`, `prospect`, `publish`, `site` (проверка сайта для панели «Сайт»), `site-lead` (заявки с формы adervis.ru). Общий код — `_shared/` (`bot.ts`, `flow.ts`, `outreach.ts`, `crm.ts`, `intake.ts`, `brief-ai.ts`, `digest*.ts`, `voice.ts`, `kp-engage.ts`, `site.ts`).
 - `ai-write/compose.ts`, `feed/`, `prospect/`, `publish/` собираются в `bundle.ts` командой `node tools/bundle.mjs` — после правок пересобрать.
 
 ## Разделы app.js (по заголовкам)
@@ -20,11 +20,12 @@
 - Тесты: `cd tests && npm test` (база в PGlite, промпты, боты, CRM, приём заявок, UI на Playwright с подменным API `window.__INTEL_API__` в `tests/ui.test.mjs`). Перед коммитом — все зелёные. Тестовые данные — `tests/fixtures/seed.json` (обезличенные).
 - UI-тест идёт одним сценарием: новые проверки вставлять в нужный раздел и возвращать состояние (тему, фильтры), которое меняли.
 - Миграция: `supabase db query --linked -f supabase/migrations/<файл>.sql`.
-- Функции: `supabase functions deploy <имя> --use-api`; `tg-bot`, `vk-bot`, `intel-bot`, `digest`, `crm` — с `--no-verify-jwt` (сами проверяют доступ).
+- Функции: `supabase functions deploy <имя> --use-api`; `tg-bot`, `vk-bot`, `intel-bot`, `digest`, `crm` — с `--no-verify-jwt` (сами проверяют доступ), `site-lead` — тоже (её зовёт сайт без входа, пускает только adervis.ru).
 - Выкладка сайта — `git push origin main`; GitHub Actions гоняет тесты.
 
 ## Правила
-- Код сайта ADERVIS, ADERVIS CRM и ADERVIS Stock не меняем — только читаем. В CRM пишем входом студии, состояние меняем с проверкой версии и будим открытые вкладки сигналом `state-sync`.
+- Сайт adervis.ru (`Desktop\Сайт ADERVIS\Adervis-website`, репозиторий `adervisdigital-web/Adervis-website`) с 2026-10-25 ведём мы: правки — по задачам «Сайт: …» из раздела Hub «Сайт», сборка `npm run build`, затем `git push`; итоги — в `PROJECT_LOG.md` сайта. Заявки с формы сайта приходят в Hub функцией `site-lead`.
+- Код ADERVIS CRM и ADERVIS Stock не меняем — только читаем. В CRM пишем входом студии, состояние меняем с проверкой версии и будим открытые вкладки сигналом `state-sync`.
 - Ключи и пароли — только в `channel_secrets` / секретах Supabase через интерфейс; в коде, чате и логах их нет.
 - Тексты для клиентов — только по проверенным фактам базы знаний; клиентов называем публично только с разрешения.
 - Смета для клиента — без часов и ставок студии; итог всегда равен цене из КП.

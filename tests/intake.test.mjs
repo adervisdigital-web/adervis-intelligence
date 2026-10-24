@@ -2,6 +2,7 @@
 import zlib from 'node:zlib';
 import { choiceOf, budgetOf } from '../supabase/functions/_shared/kp-choice.ts';
 import { sanitizeTrack, mergeTrack, engageLine } from '../supabase/functions/_shared/kp-engage.ts';
+import { siteLeadOf, fingerprint, pageCheck, sitemapUrls, caseSlug } from '../supabase/functions/_shared/site.ts';
 import { ANSWERS, WHO, WHO_PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../supabase/functions/_shared/answers.ts';
 import { senderOf, pieceOf, wordXmlText, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, GO, CANCEL, KEYBOARD } from '../supabase/functions/_shared/intake.ts';
 
@@ -125,6 +126,22 @@ check('кнопки: «Разобрать», «Ответы к брифу», «�
   check('ответы: сообщение бота — что записано, что без ответа, ссылка', msg.includes('1 из 2') && msg.includes('✓ 2. Хромакей или LED?') && msg.includes('Без ответа: 1') && msg.includes('Старт в декабре'));
   let bad = false; try { parseAnswers('не json', 2); } catch { bad = true; }
   check('ответы: модель ответила не JSON — понятная ошибка', bad);
+}
+
+{
+  // заявка с формы сайта → лид в Hub
+  const text = 'Новая заявка с сайта\nИмя: Олег\nКонтакт: +7 900 555-01-23\nУслуга: Видеоролик\nНужен ролик для выставки\n\n———\nСтраница: /video/\nUTM · source=yandex · campaign=promo\nСмотрел кейс: lukoil-ai';
+  const l = siteLeadOf(text);
+  check('сайт: заявка — имя с контактом, суть без служебных строк, страница и UTM отдельно', l.name === 'Олег, +7 900 555-01-23'
+    && l.request === 'Услуга: Видеоролик Нужен ролик для выставки' && l.page === '/video/' && l.utm === 'source=yandex · campaign=promo' && l.lastCase === 'lukoil-ai', JSON.stringify(l));
+  check('сайт: без контакта — не заявка; одинаковый текст — один отпечаток', siteLeadOf('Имя: Олег\nПросто привет') === null && fingerprint(text) === fingerprint(text) && fingerprint(text) !== fingerprint(text + '!'));
+  const ok = pageCheck('https://adervis.ru/', 200, '<html><head><title>Видеопродакшн в Перми · ADERVIS</title><meta name="description" content="Снимаем рекламные ролики, корпоративное видео и контент для брендов. Пермь и вся Россия."><meta property="og:image" content="/og.png"></head><body><h1>ADERVIS</h1></body></html>');
+  check('сайт: хорошая страница — без замечаний', ok.problems.length === 0 && ok.title.startsWith('Видеопродакшн') && ok.h1 === 1, JSON.stringify(ok.problems));
+  const badp = pageCheck('https://adervis.ru/x/', 200, '<title>' + 'Очень длинный заголовок '.repeat(5) + '</title><h1>a</h1><h1>b</h1>');
+  check('сайт: длинный заголовок, нет описания и картинки, два H1 — всё перечислено', badp.problems.length === 4 && badp.problems.some(x => x.includes('H1: 2')), badp.problems.join(' | '));
+  check('сайт: недоступная страница — одно понятное замечание', pageCheck('https://adervis.ru/y/', 404, '').problems.join() === 'страница отвечает 404');
+  check('сайт: адреса из sitemap и слаг кейса', sitemapUrls('<url><loc>https://adervis.ru/</loc></url><url><loc> https://adervis.ru/cases/brait/ </loc></url>').length === 2
+    && caseSlug('https://adervis.ru/cases/brait/') === 'brait' && caseSlug('https://adervis.ru/cases/') === '' && caseSlug('https://adervis.ru/video/') === '');
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');

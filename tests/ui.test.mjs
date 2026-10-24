@@ -384,6 +384,13 @@ const fake = (seedData) => {
       if (window.__FEEDFAIL__) throw new Error(window.__FEEDFAIL__);
       return { ok: true, network: payload.network, posts: clone(window.__FEED__ || []), at: now() };
     },
+    async site(payload) {
+      window.__lastSitePayload = payload;
+      const P = (u, title, problems = [], status = 200, ms = 300) => ({ url: 'https://adervis.ru' + u, status, title, description: title + ' — описание', h1: 1, ogImage: '/og.png', problems, ms });
+      return { at: new Date().toISOString(), sitemap: true, total: 4, https: { redirects: false, status: 200 }, pages: [
+        P('/', 'ADERVIS — видеопродакшн'), P('/cases/brait/', 'Brait · ADERVIS'), P('/cases/new-case/', 'Новый кейс · ADERVIS'),
+        P('/video/', 'Видео', ['нет картинки для соцсетей (og:image)'])] };
+    },
     async prospect(payload) {
       window.__PROSPECT_ASKED__ = payload;
       if (window.__PROSPECTFAIL__) throw new Error(window.__PROSPECTFAIL__);
@@ -516,7 +523,7 @@ check('с плитки можно уйти в её раздел',
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textContent));
 check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 22,
+check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 23,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
 check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
@@ -1017,6 +1024,26 @@ await page.click('#modal [data-action=delk]');
 await page.click('#confirmdel');
 await page.waitForFunction(() => !document.querySelector('article[data-k=k24]'));
 check('запись удалена на сервере', !(await state()).knowledge.some(k => k.id === 'k24'));
+
+// --- сайт adervis.ru: проверка страниц, кейсы против базы знаний, правки
+await nav('site');
+await page.waitForSelector('[data-action=sitecheck]');
+await page.click('[data-action=sitecheck]');
+await page.waitForSelector('.sitestats .tone-red');
+check('сайт: проверка — страницы с замечаниями, HTTPS не обязателен, кейсы сверены с базой знаний', (await page.evaluate(() => window.__lastSitePayload)).action === 'check'
+  && (await page.textContent('.sitestats')).includes('3 из 4') && (await page.textContent('.sitestats')).includes('не обязателен') && (await page.textContent('.sitestats')).includes('1 из 2'),
+  await page.textContent('.sitestats'));
+check('сайт: Brait уже в Hub, нового кейса нет — кнопка «В базу знаний», замечание по /video/', (await page.textContent('.pagehead ~ .card, body')).includes('в Hub: Brait')
+  && (await page.$$('[data-action=sitecase]')).length === 1 && (await page.textContent('body')).includes('нет картинки для соцсетей'));
+await page.click('[data-action=sitecase]');
+await page.waitForFunction(() => window.__STATE__.knowledge.some(k => k.source === 'https://adervis.ru/cases/new-case/'));
+const siteCase = (await state()).knowledge.find(k => k.source === 'https://adervis.ru/cases/new-case/');
+check('сайт: кейс добавлен в базу знаний — публичный, с адресом страницы, без «· ADERVIS» в названии', siteCase.title === 'Новый кейс' && siteCase.category === 'Кейсы' && siteCase.access === 'Публичное'
+  && !(await page.$('[data-action=sitecase]')), JSON.stringify(siteCase));
+await page.fill('#siteask input[name=ask]', 'обновить цены на странице видео');
+await page.click('#siteask button');
+await page.waitForFunction(() => window.__STATE__.tasks.some(t => t.title === 'Сайт: обновить цены на странице видео'));
+check('сайт: просьба о правке стала задачей «Сайт: …» и видна в панели', (await page.textContent('.siteask ~ .sitelist')).includes('обновить цены на странице видео'));
 
 // --- 5. публикация, замеры, каскад
 await nav('content');
