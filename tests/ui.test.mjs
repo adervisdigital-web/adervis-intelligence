@@ -2419,6 +2419,14 @@ check('в CRM: бриф помнит сделку, кнопка — «Обнов
   const bk = (await state()).briefs[0];
   check('ставки для клиента 80%: строка сметы и цена КП снизились, настройка сохранена', bk.estimate.rate_k === 80 && bk.kp.price_full < fullBefore
     && (await page.textContent('[data-sum="0"]')) !== sumBefore, `${fullBefore} → ${bk.kp.price_full}`);
+  // ручная цена опции не зависит от ставок для клиента
+  await page.fill('[data-bf="estimate.options.0.fixed"]', '33000');
+  await page.waitForFunction(() => window.__STATE__.briefs[0].estimate.options[0].fixed === 33000);
+  await page.selectOption('#bfratek', '90');
+  await page.click('[data-action=bftab][data-id=kp]');
+  check('опция с ручной ценой: в КП 33 000 ₽ при любых ставках', /\+\s*33\s000\s₽/.test(await page.textContent('.kppreview')));
+  await page.click('[data-action=bftab][data-id=estimate]');
+  await page.fill('[data-bf="estimate.options.0.fixed"]', '');
   await page.selectOption('#bfratek', '100');
 }
 
