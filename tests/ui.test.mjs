@@ -2760,7 +2760,7 @@ const ringData = await page.$$eval('.patterncell:first-child path', ps => ps.map
 const kinds = new Set(ringData.map(r => r.d));
 check('контуры построены только из силуэта и отверстия знака', kinds.size === 2, [...kinds].join(' | '));
 check('внутри знака лишних контуров нет: отверстие нарисовано один раз',
-  ringData.filter(r => r.d.startsWith('M1580.87')).length === 1);
+  ringData.filter(r => r.d.startsWith('M1504.12')).length === 1);
 const scales = ringData.map(r => +((r.t.match(/scale\(([\d.]+)\)/) || [])[1] || 0)).filter(Boolean);
 check('копий несколько, и каждая следующая крупнее предыдущей',
   scales.length >= 6 && scales.every((x, i) => i === 0 || x > scales[i - 1]), scales.join(' / '));
@@ -2771,7 +2771,7 @@ const svgFile = await Promise.all([
 const svgText = fs.readFileSync(await svgFile.path(), 'utf8');
 check('паттерн сохраняется как SVG', /^<svg[^>]+xmlns=/.test(svgText.trim()) && svgText.includes('2120'),
   svgFile.suggestedFilename());
-check('в файле лежит тот же знак, оба контура кольца', svgText.includes('M1580.87,1460.95') && svgText.includes('M1644.09,1652.56'));
+check('в файле лежит тот же знак, оба контура кольца', svgText.includes('M1504.12,1534.31') && svgText.includes('M1644.2,1652.57'));
 // выгруженный файл должен открываться и рисоваться сам по себе
 const probe = await ctx.newPage();
 await probe.setViewportSize({ width: 1060, height: 596 });
