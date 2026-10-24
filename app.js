@@ -3835,7 +3835,9 @@ function briefTotals(b, variant) {
   const hours = f => items.reduce((n, it) => n + (Number(it[f]) || 0), 0);
   return { min: sum('min'), max: sum('max'), hmin: hours('min'), hmax: hours('max'), count: items.length };
 }
-const optionPrice = (b, o) => roundUp(((Number(o.min) + Number(o.max)) / 2) * rateIn(b, o.role) * (1 + (Number(b.estimate?.reserve) || 0) / 100), b.estimate?.round || 1000);
+// цена опции: ручная, если задана (её не меняют ни ставки, ни запас), иначе по часам
+const optionCalc = (b, o) => roundUp(((Number(o.min) + Number(o.max)) / 2) * rateIn(b, o.role) * (1 + (Number(b.estimate?.reserve) || 0) / 100), b.estimate?.round || 1000);
+const optionPrice = (b, o) => Number(o.fixed) > 0 ? Number(o.fixed) : optionCalc(b, o);
 const suggested = (b, v) => { const t = briefTotals(b, v); return t.count ? roundUp((t.min + t.max) / 2, b.estimate?.round || 1000) : 0; };
 const hasBase = b => (b.estimate?.items || []).some(it => it.variant === 'base' || it.variant === 'full');
 const briefLead = b => b.lead_id && db.leads.find(l => l.id === b.lead_id);
@@ -4176,12 +4178,13 @@ function bfEstimate(b) {
     </div>
     <div id="bftotals">${totalsHtml(b)}</div></div>
     <div class="card" style="margin-top:16px"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Дополнительно — опции для КП</h2></div>
-      ${options.length ? `<div class="tablewrap"><table class="table bftable"><thead><tr><th>Опция</th><th>Роль</th><th>Часов от</th><th>до</th><th>Цена</th><th></th></tr></thead><tbody>
+      ${options.length ? `<div class="tablewrap"><table class="table bftable"><thead><tr><th>Опция</th><th>Роль</th><th>Часов от</th><th>до</th><th>Цена по часам</th><th>Цена вручную, ₽</th><th></th></tr></thead><tbody>
       ${options.map((o, i) => `<tr><td><input class="input" data-bf="estimate.options.${i}.name" maxlength="200" value="${E(o.name)}" aria-label="Опция">${o.why ? `<small class="muted">${E(o.why)}</small>` : ''}</td>
         <td>${roleSel(`estimate.options.${i}.role`, o.role)}</td>
         <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.options.${i}.min" value="${E(o.min)}" aria-label="Часов от"></td>
         <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.options.${i}.max" value="${E(o.max)}" aria-label="Часов до"></td>
-        <td class="bfsum" data-opt="${i}">${rub(optionPrice(b, o))}</td>
+        <td class="bfsum" data-opt="${i}">${rub(optionCalc(b, o))}</td>
+        <td class="bfnum"><input class="input" type="number" min="0" step="1000" data-bf="estimate.options.${i}.fixed" value="${Number(o.fixed) > 0 ? E(o.fixed) : ''}" placeholder="как по часам" aria-label="Цена опции вручную"></td>
         <td><button class="del" data-action="bfoptdel" data-id="${i}" aria-label="Удалить опцию">${icon('close', 15)}</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Опций нет.</p>'}
       <button data-action="bfoptadd">+ Опция</button></div>`;
 }
@@ -4724,7 +4727,7 @@ function onBriefInput(e) {
     const it = b.estimate.items[Number(td.dataset.sum)];
     if (it) td.textContent = `${rub(it.min * rateIn(b, it.role))} – ${rub(it.max * rateIn(b, it.role))}`;
   });
-  document.querySelectorAll('[data-opt]').forEach(td => { const o = b.estimate.options[Number(td.dataset.opt)]; if (o) td.textContent = rub(optionPrice(b, o)); });
+  document.querySelectorAll('[data-opt]').forEach(td => { const o = b.estimate.options[Number(td.dataset.opt)]; if (o) td.textContent = rub(optionCalc(b, o)); });
   if (el.dataset.bf.startsWith('plan.') || el.dataset.bf === 'kp.start') {
     const dates = planDates(b, b.kp?.start || dayShift(3));
     document.querySelectorAll('[data-plan]').forEach(s => { const d = dates[Number(s.dataset.plan)]; if (d) s.textContent = `${shortDate(d.from)} – ${shortDate(d.to)}`; });
