@@ -3814,6 +3814,8 @@ const BRIEF_TABS = [['tz', 'ТЗ'], ['analysis', 'Разбор'], ['questions', 
 const VARIANTS = [['both', 'В обоих'], ['full', 'Только полный'], ['base', 'Только базовый']];
 const Q_STATUS = ['новый', 'задан', 'ответ'];
 let briefView = { id: '', tab: 'tz', busy: false, error: '' };
+// Голосовая сводка по клиенту: живёт до перезагрузки страницы, ссылка — объект в памяти браузера.
+let briefVoice = { id: '', busy: false, error: '', url: '', text: '', audio: null };
 let briefSave = { timer: 0, id: '', busy: false, again: false };
 
 const rub = n => num(Math.round(n)) + ' ₽';
@@ -4067,8 +4069,10 @@ function renderBrief(b) {
       <p class="muted">${lead ? `Заявка: <button class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button>` : 'Без заявки в воронке'}
       ${chat ? ` · <button class="linkbtn" data-action="bfchat">${icon('chat', 14)} переписка</button>` : ''}
       · <small id="bfsaved" class="muted" aria-live="polite"></small></p></div>
-      <div class="headactions"><button class="${b.crm_deal_id ? '' : 'primary'}" data-action="bfcrmpush">${icon('upload', 15)} ${b.crm_deal_id ? 'Обновить в CRM' : 'В ADERVIS CRM'}</button>
+      <div class="headactions"><button data-action="bfvoice" ${briefVoice.busy ? 'disabled' : ''} title="Короткое голосовое: что за клиент и что дальше">${icon('sound', 15)} ${briefVoice.busy && briefVoice.id === b.id ? 'Записываю… до минуты' : 'Голосовая сводка'}</button>
+        <button class="${b.crm_deal_id ? '' : 'primary'}" data-action="bfcrmpush">${icon('upload', 15)} ${b.crm_deal_id ? 'Обновить в CRM' : 'В ADERVIS CRM'}</button>
         <button data-action="bfedit">Изменить</button></div></div>
+    ${briefVoice.id === b.id && (briefVoice.url || briefVoice.error) ? voiceCard() : ''}
     ${b.crm_deal_id ? `<p class="muted bfcrmnote">${icon('check', 14)} Сделка в ADERVIS CRM${b.crm_pushed_at ? ` — отправлено ${E(ago(b.crm_pushed_at))}` : ''}. Откройте её в CRM и нажмите «Развернуть смету».</p>` : ''}
     <div class="bfstages" role="group" aria-label="Шаг работы с заявкой">${BRIEF_STAGES.map(s =>
       `<button class="chip${b.stage === s ? ' on' : ''}" data-action="bfstage" data-id="${E(s)}" aria-pressed="${b.stage === s}">${s}</button>`).join('')}
@@ -4081,6 +4085,38 @@ function renderBrief(b) {
   </div>`;
   const body = { tz: bfTz, analysis: bfAnalysis, questions: bfQuestions, estimate: bfEstimate, plan: bfPlan, kp: bfKp, talk: bfTalk }[tab](b);
   return head + `<div class="bfbody">${body}</div>`;
+}
+
+function voiceCard() {
+  const v = briefVoice;
+  // сам плеер вставляет render(): он один на всё время, поэтому перерисовка не обрывает запись
+  return `<div class="card bfvoice">${v.url ? `<div id="bfvoiceslot"></div>
+      <a class="linkbtn" href="${E(v.url)}" download="Сводка.wav">${icon('download', 14)} Скачать</a>` : ''}
+    ${v.error ? `<div class="notice error">${E(v.error)}</div>` : ''}
+    ${v.text ? `<details><summary class="muted">Текст сводки</summary><p>${E(v.text)}</p></details>` : ''}
+    <p class="muted">Для сводки бриф и заявка уходят в ИИ, включая суммы.</p></div>`;
+}
+
+async function briefVoiceNote(b) {
+  briefVoice.audio?.pause();
+  if (briefVoice.url) URL.revokeObjectURL(briefVoice.url);
+  briefVoice = { id: b.id, busy: true, error: '', url: '', text: '', audio: null };
+  render();
+  try {
+    flushPendingBrief();
+    const r = await api.generate({ mode: 'voice', brief: b.id });
+    const bytes = Uint8Array.from(atob(r.audio), c => c.charCodeAt(0));
+    briefVoice.url = URL.createObjectURL(new Blob([bytes], { type: r.mime || 'audio/wav' }));
+    briefVoice.text = r.text || '';
+    const a = new Audio(briefVoice.url);
+    a.controls = true; a.autoplay = true;
+    briefVoice.audio = a;
+  } catch (err) {
+    briefVoice.error = 'Сводка не получилась: ' + (err.message || 'ошибка сервера');
+  } finally {
+    briefVoice.busy = false;
+    render();
+  }
 }
 
 function tabBadge(b, k) {
@@ -4898,6 +4934,7 @@ async function briefAction(btn) {
     case 'bfstage': await setBriefStage(b, btn.dataset.id); break;
     case 'bffile': $('#bffile').click(); break;
     case 'bfai': await briefAi(b); break;
+    case 'bfvoice': await briefVoiceNote(b); break;
     case 'bfchat': { const p = briefChat(b); if (p) openDialog(p.id); break; }
     case 'bfqcopy': {
       const fresh = (b.questions || []).some(q => q.status === 'новый');
@@ -6894,6 +6931,9 @@ function render() {
   };
   const c = $('#category');
   if (c) c.onchange = e => { category = e.target.value; render(); };
+  const vslot = $('#bfvoiceslot');
+  if (vslot && briefVoice.audio) vslot.appendChild(briefVoice.audio);
+  else if (briefVoice.audio && !briefVoice.audio.isConnected) briefVoice.audio.pause();   // ушли с брифа — голос замолкает
 }
 
 // Свёрнутые группы помнятся на устройстве. Группа открытого раздела

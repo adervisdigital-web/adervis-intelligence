@@ -405,6 +405,13 @@ const fake = (seedData) => {
           { date: payload.start, network: payload.networks[0], rubric: 'Польза', title: 'Как выбрать формат ролика', brief: '' }
         ], gaps: ['нет свежих кейсов CRM'], model: 'yandexgpt/latest', left: 22 };
       }
+      if (payload.mode === 'voice') {
+        // короткий WAV тишины: плееру хватает, чтобы показать запись
+        const wav = new Uint8Array(44 + 800); const dv = new DataView(wav.buffer); const s = (o, t) => [...t].forEach((c, i) => dv.setUint8(o + i, c.charCodeAt(0)));
+        s(0, 'RIFF'); dv.setUint32(4, 36 + 800, true); s(8, 'WAVEfmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+        dv.setUint32(24, 8000, true); dv.setUint32(28, 16000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); s(36, 'data'); dv.setUint32(40, 800, true);
+        return { text: 'Химпром, видеодайджест. Ждём ответы по срокам.', audio: btoa(String.fromCharCode(...wav)), mime: 'audio/wav', left: 18 };
+      }
       if (payload.mode === 'transcribe') { window.__VOICE__ = payload.name; return { text: 'Паша, привет. Нужна графика к пятнадцатому ноября.', left: 20 }; }
       if (payload.mode === 'case') {
         return { title: 'Кейс: ' + (payload.named ? payload.client : 'база отдыха'), body: (payload.named ? payload.client : 'База отдыха') + '. Минута — и вы уже хотите приехать.\n\nЧто внутри:\n- ' + payload.work,
@@ -2062,6 +2069,15 @@ const briefAsk = await page.evaluate(() => window.__lastAiPayload);
 check('разбор ТЗ: в ИИ уходит ТЗ и роли, ставок там нет', briefAsk.mode === 'brief' && briefAsk.text.includes('ТЕХНИЧЕСКОЕ') && briefAsk.roles.some(r => r.id === '3d')
   && !JSON.stringify(briefAsk).includes('1700') && !JSON.stringify(briefAsk).includes('rate'));
 check('разбор показан и подписан моделью', (await page.textContent('.bfbody')).includes('Пакет графики для корпоративного видеодайджеста') && (await page.textContent('.bfbody')).includes('claude-opus-5-5'));
+await page.click('[data-action=bfvoice]');
+await page.waitForSelector('.bfvoice audio');
+const voiceAsk = await page.evaluate(() => window.__lastAiPayload);
+check('голосовая сводка: в ИИ уходит только номер брифа, плеер и текст на месте', voiceAsk.mode === 'voice' && Object.keys(voiceAsk).length === 2 && voiceAsk.brief === nb.id
+  && (await page.getAttribute('.bfvoice audio', 'src')).startsWith('blob:') && (await page.textContent('.bfvoice')).includes('Ждём ответы по срокам'));
+await page.evaluate(() => { document.querySelector('.bfvoice audio').__mark = 1; });
+await page.click('[data-action=bftab][data-id=tz]');
+check('голосовая сводка: перерисовка не пересоздаёт плеер (запись не обрывается)', await page.evaluate(() => document.querySelector('.bfvoice audio')?.__mark === 1));
+await page.click('[data-action=bftab][data-id=analysis]');
 stB = await state();
 check('после разбора — шаг «Вопросы», следующий шаг на сегодня', stB.briefs[0].stage === 'Вопросы' && stB.briefs[0].next_on === localDay() && stB.briefs[0].questions.length === 3);
 

@@ -760,6 +760,99 @@ export function buildCasePrompt(t: CaseTask, facts: Fact[]): string {
   ].filter(x => x !== '').join('\n');
 }
 
+// ---- голосовая сводка по клиенту
+// Короткое голосовое «что за клиент и что дальше»: модель пишет текст по данным
+// брифа и заявки, Gemini TTS читает его живым голосом. Данные собирает функция
+// из базы сама — от браузера приходит только номер брифа.
+
+export function sanitizeVoiceTask(input: any) {
+  const brief = typeof input?.brief === 'string' ? input.brief.trim().slice(0, 80) : '';
+  if (!brief) throw new Error('Не указан бриф');
+  return { brief };
+}
+
+const clip = (v: unknown, n: number) => (typeof v === 'string' ? v : v == null ? '' : String(v)).replace(/\s+/g, ' ').trim().slice(0, n);
+
+// Только то, что нужно для сводки, и с ограничением длины: огромное ТЗ модели не нужно.
+export function voiceContext(b: any, lead: any) {
+  const a = b?.analysis || {}, kp = b?.kp || {};
+  const open = (Array.isArray(b?.questions) ? b.questions : []).filter((q: any) => q?.status !== 'ответ').map((q: any) => clip(q?.q, 200)).filter(Boolean).slice(0, 6);
+  const price = [Number(kp.price_base) || 0, Number(kp.price_full) || 0].filter(x => x > 0);
+  return {
+    client: clip(b?.client, 120), title: clip(b?.title, 200), stage: clip(b?.stage, 40),
+    summary: clip(a.summary, 900), goal: clip(a.goal, 400), audience: clip(a.audience, 300),
+    concept: clip(kp.concept, 700), price, kp_sent: clip(kp.sent_on, 20),
+    open_questions: open, next_step: clip(b?.next_step, 300), next_on: clip(b?.next_on, 20),
+    lead: lead ? { name: clip(lead.name, 120), status: clip(lead.status, 40), source: clip(lead.source, 60), request: clip(lead.request, 300), note: clip(lead.note, 700), amount: Number(lead.amount) || 0 } : null
+  };
+}
+
+export function buildVoicePrompt(ctx: ReturnType<typeof voiceContext>): string {
+  return [
+    'Ты продюсер видеостудии ADERVIS. Коллега забыл, что это за клиент. Напиши текст короткого голосового сообщения, которое быстро и живо напомнит суть.',
+    'Порядок: кто клиент и откуда пришёл; что ему нужно; главная мысль или идея; деньги (если есть); на каком мы этапе и чего ждём от клиента; следующий шаг.',
+    'Правила:',
+    '- 70–100 слов, это 30–45 секунд речи. Разговорно, тепло, с интересом, как живой человек в рабочем чате. Без канцелярита.',
+    '- Только факты из данных ниже. Ничего не придумывай. Нет цены — не упоминай деньги.',
+    '- Числа и суммы пиши словами («семьсот пятьдесят тысяч»). Латинские названия пиши русскими буквами, как произносят.',
+    '- Без списков, заголовков, эмодзи, кавычек-ёлочек вокруг всего текста. Короткие предложения.',
+    '- Начни с имени клиента. Закончи следующим шагом.',
+    'Верни строго JSON: {"text":"текст сообщения"}',
+    '', 'ДАННЫЕ:', JSON.stringify(ctx, null, 1)
+  ].join('\n');
+}
+
+export function parseVoice(text: string): string {
+  let t = text.trim();
+  try { const j = JSON.parse(t.replace(/^```(?:json)?\s*|\s*```$/g, '')); if (typeof j?.text === 'string') t = j.text; } catch { /* модель ответила просто текстом */ }
+  t = t.replace(/[*#_`]/g, '').replace(/\s+\n/g, '\n').trim();
+  if (t.length < 40) throw new Error('Модель не написала сводку. Попробуйте ещё раз.');
+  return t.slice(0, 1500);
+}
+
+// Структура «режиссёр → актёр»: модели TTS 3.x читают вслух всё, что похоже на
+// текст, поэтому звучит только блок ТРАНСКРИПТ.
+export const VOICE_DIRECTION = `# AUDIO PROFILE: Russian male, a friendly producer at a video studio, telling his colleague about a client
+## THE SCENE: A short voice message in a work chat. The colleague forgot who this client is; the producer quickly and vividly brings him up to speed.
+### DIRECTOR'S NOTES
+Style: lively, warm and expressive, with a smile in the voice, genuinely interested in the project. Conversational, like a real person, never like a robot or a news anchor. Clear emphasis on names, numbers and the next step.
+Pacing: brisk but clear, short natural pauses between thoughts.
+Pronunciation: native Russian. Read numbers as words.
+#### TRANSCRIPT
+`;
+
+export function ttsRequest(model: string, key: string, baseUrl: string, script: string, voice = 'Puck') {
+  const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
+  return {
+    url: `${base}/models/${model}:generateContent`,
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: { contents: [{ parts: [{ text: VOICE_DIRECTION + script }] }],
+      generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } }
+  };
+}
+
+// Из списка моделей — свежая flash-модель TTS (pro медленнее, lite хуже звучит).
+export function pickTtsModel(names: string[]): string {
+  const tts = names.filter(n => /tts/i.test(n));
+  if (!tts.length) return '';
+  const ver = (n: string) => Number((n.match(/(\d+(?:\.\d+)?)/) || [])[1] || 0);
+  return [...tts].sort((x, y) => ver(y) - ver(x) || Number(/flash/.test(y) && !/lite/.test(y)) - Number(/flash/.test(x) && !/lite/.test(x)) || Number(!/pro/.test(y)) - Number(!/pro/.test(x)))[0];
+}
+
+// Gemini 2.5 отдаёт голый PCM (audio/L16;rate=24000), 3.x — готовый WAV.
+export function toWav(bytes: Uint8Array, mime: string): Uint8Array {
+  if (bytes.length > 4 && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF') return bytes;
+  const rate = Number((mime.match(/rate=(\d+)/) || [])[1] || 24000);
+  const head = new DataView(new ArrayBuffer(44));
+  const str = (o: number, s: string) => { for (let i = 0; i < s.length; i++) head.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); head.setUint32(4, 36 + bytes.length, true); str(8, 'WAVE'); str(12, 'fmt ');
+  head.setUint32(16, 16, true); head.setUint16(20, 1, true); head.setUint16(22, 1, true);
+  head.setUint32(24, rate, true); head.setUint32(28, rate * 2, true); head.setUint16(32, 2, true); head.setUint16(34, 16, true);
+  str(36, 'data'); head.setUint32(40, bytes.length, true);
+  const out = new Uint8Array(44 + bytes.length); out.set(new Uint8Array(head.buffer)); out.set(bytes, 44);
+  return out;
+}
+
 // Серверная функция: пишет черновики текстов по проверенным фактам базы.
 //
 // Почему сбор фактов происходит здесь, а не в браузере: приложение присылает
@@ -773,7 +866,8 @@ export function buildCasePrompt(t: CaseTask, facts: Fact[]): string {
   sanitizeAdTask, buildKeywordPrompt, buildAdPrompt, parseKeywords, parseAds,
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost,
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
-  providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
+  providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider,
+  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav
 
 // В новых проектах Supabase ключи называются иначе, чем в старых,
 // поэтому берём оба варианта.
@@ -800,6 +894,10 @@ const BRIEF_KEY = Deno.env.get('BRIEF_AI_KEY') || Deno.env.get('ANTHROPIC_API_KE
 const BRIEF_PROVIDER = (Deno.env.get('BRIEF_AI_PROVIDER') || 'anthropic') as Provider;
 const BRIEF_MODEL = Deno.env.get('BRIEF_AI_MODEL') || 'claude-opus-5-5';
 const BRIEF_BASE_URL = Deno.env.get('BRIEF_AI_BASE_URL') || '';
+// Голосовая сводка читается только Gemini TTS: свой ключ VOICE_AI_KEY или ключ Gemini проекта.
+const VOICE_KEY = Deno.env.get('VOICE_AI_KEY') || (PROVIDER === 'gemini' ? AI_KEY : Deno.env.get('GEMINI_API_KEY')) || '';
+const VOICE_MODEL = Deno.env.get('VOICE_TTS_MODEL') || '';
+const VOICE_NAME = Deno.env.get('VOICE_TTS_VOICE') || 'Puck';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -868,6 +966,58 @@ Deno.serve(async (req) => {
       if (!text) return json({ error: 'В записи не нашлось речи.' }, 422);
       await admin.from('ai_usage').insert({ actor: user.email, model: `gemini/${usedModel}`, drafts: 0, chars: text.length });
       return json({ text: text.slice(0, 20000), model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
+    }
+
+    // Голосовая сводка по клиенту: бриф и заявку читаем от имени вошедшего человека,
+    // текст пишет модель, читает Gemini TTS. В ответе — WAV в base64 и сам текст.
+    if (input?.mode === 'voice') {
+      if (!VOICE_KEY) return json({ error: 'Для голоса нужен ключ Gemini: секрет VOICE_AI_KEY.' }, 500);
+      const task = sanitizeVoiceTask(input);
+      const { data: brief } = await supabase.from('briefs').select('*').eq('id', task.brief).maybeSingle();
+      if (!brief) return json({ error: 'Бриф не найден' }, 404);
+      const { data: lead } = brief.lead_id ? await supabase.from('leads').select('*').eq('id', brief.lead_id).maybeSingle() : { data: null };
+      const prompt = buildVoicePrompt(voiceContext(brief, lead));
+
+      const claude = !!BRIEF_KEY, provider = claude ? BRIEF_PROVIDER : PROVIDER;
+      let script = '', usedModel = '', lastStatus = 0;
+      for (const [i, model] of (claude ? modelAttempts(BRIEF_MODEL, '') : modelAttempts(MODEL, FALLBACK_MODEL)).entries()) {
+        const r = claude ? providerRequest(BRIEF_PROVIDER, model, BRIEF_KEY, BRIEF_BASE_URL, prompt) : providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt, YANDEX_FOLDER);
+        const resp = await fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(r.body) });
+        if (resp.ok) { script = parseVoice(providerText(provider, await resp.json())); usedModel = model; break; }
+        lastStatus = resp.status;
+        console.error('ai-write voice text:', model, resp.status, (await resp.text()).slice(0, 300));
+        if (!RETRY_STATUS.includes(resp.status)) break;
+        if (i === 0) await new Promise(res => setTimeout(res, 1500));
+      }
+      if (!script) return json({ error: RETRY_STATUS.includes(lastStatus) ? 'Модель сейчас перегружена. Попробуйте через минуту.' : `Текст сводки не получился (ошибка ${lastStatus}).` }, 502);
+
+      let ttsModel = VOICE_MODEL;
+      if (!ttsModel) {
+        const list = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': VOICE_KEY } });
+        const names = list.ok ? ((await list.json()).models || []).filter((m: any) => (m.supportedGenerationMethods || []).includes('generateContent')).map((m: any) => String(m.name).split('/').pop()) : [];
+        ttsModel = pickTtsModel(names);
+        if (!ttsModel) return json({ error: 'Ключ Gemini не видит моделей озвучки.', text: script }, 502);
+      }
+      let audio: Uint8Array | null = null;
+      for (let i = 0; i < 3 && !audio; i++) {
+        const r = ttsRequest(ttsModel, VOICE_KEY, '', script, VOICE_NAME);
+        const resp = await fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(r.body), signal: AbortSignal.timeout(110_000) });
+        if (resp.ok) {
+          const part = (await resp.json())?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData)?.inlineData;
+          if (part?.data) audio = toWav(Uint8Array.from(atob(part.data), c => c.charCodeAt(0)), part.mimeType || '');
+          else break;
+        } else {
+          lastStatus = resp.status;
+          console.error('ai-write voice tts:', ttsModel, resp.status, (await resp.text()).slice(0, 300));
+          if (!RETRY_STATUS.includes(resp.status)) break;
+          await new Promise(res => setTimeout(res, 3000 * (i + 1)));
+        }
+      }
+      if (!audio) return json({ error: RETRY_STATUS.includes(lastStatus) ? 'Озвучка сейчас перегружена. Текст готов, голос — через минуту.' : `Озвучка не получилась (ошибка ${lastStatus}).`, text: script }, 502);
+      let bin = '';
+      for (let i = 0; i < audio.length; i += 0x8000) bin += String.fromCharCode(...audio.subarray(i, i + 0x8000));
+      await admin.from('ai_usage').insert({ actor: user.email, model: `${provider}/${usedModel}+${ttsModel}`, drafts: 0, chars: script.length });
+      return json({ text: script, audio: btoa(bin), mime: 'audio/wav', model: usedModel, voice: ttsModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
     }
 
     const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post', 'brief', 'case'].includes(input?.mode) ? input.mode : 'write';

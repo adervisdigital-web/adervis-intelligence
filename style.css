@@ -2089,3 +2089,8 @@ html[data-theme=dark] .kpchecks li.warn{background:rgba(246,189,58,.12)}
 .kpmedia .kpmacts{display:flex;flex-direction:column;gap:6px;align-items:center}
 .kpchecks li{padding:6px 12px}
 .kpmsg{width:100%;font:inherit;font-size:14px;line-height:1.5;resize:vertical}
+
+/* голосовая сводка по клиенту */
+.bfvoice{display:grid;gap:8px;margin:0 0 12px}
+.bfvoice audio{width:100%;max-width:560px}
+.bfvoice details p{margin:6px 0 0;line-height:1.55}

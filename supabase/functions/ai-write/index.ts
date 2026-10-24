@@ -13,7 +13,8 @@ import {
   sanitizeAdTask, buildKeywordPrompt, buildAdPrompt, parseKeywords, parseAds,
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost,
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
-  providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider
+  providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider,
+  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav
 } from './compose.ts';
 
 // В новых проектах Supabase ключи называются иначе, чем в старых,
@@ -41,6 +42,10 @@ const BRIEF_KEY = Deno.env.get('BRIEF_AI_KEY') || Deno.env.get('ANTHROPIC_API_KE
 const BRIEF_PROVIDER = (Deno.env.get('BRIEF_AI_PROVIDER') || 'anthropic') as Provider;
 const BRIEF_MODEL = Deno.env.get('BRIEF_AI_MODEL') || 'claude-opus-5-5';
 const BRIEF_BASE_URL = Deno.env.get('BRIEF_AI_BASE_URL') || '';
+// Голосовая сводка читается только Gemini TTS: свой ключ VOICE_AI_KEY или ключ Gemini проекта.
+const VOICE_KEY = Deno.env.get('VOICE_AI_KEY') || (PROVIDER === 'gemini' ? AI_KEY : Deno.env.get('GEMINI_API_KEY')) || '';
+const VOICE_MODEL = Deno.env.get('VOICE_TTS_MODEL') || '';
+const VOICE_NAME = Deno.env.get('VOICE_TTS_VOICE') || 'Puck';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -109,6 +114,58 @@ Deno.serve(async (req) => {
       if (!text) return json({ error: 'В записи не нашлось речи.' }, 422);
       await admin.from('ai_usage').insert({ actor: user.email, model: `gemini/${usedModel}`, drafts: 0, chars: text.length });
       return json({ text: text.slice(0, 20000), model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
+    }
+
+    // Голосовая сводка по клиенту: бриф и заявку читаем от имени вошедшего человека,
+    // текст пишет модель, читает Gemini TTS. В ответе — WAV в base64 и сам текст.
+    if (input?.mode === 'voice') {
+      if (!VOICE_KEY) return json({ error: 'Для голоса нужен ключ Gemini: секрет VOICE_AI_KEY.' }, 500);
+      const task = sanitizeVoiceTask(input);
+      const { data: brief } = await supabase.from('briefs').select('*').eq('id', task.brief).maybeSingle();
+      if (!brief) return json({ error: 'Бриф не найден' }, 404);
+      const { data: lead } = brief.lead_id ? await supabase.from('leads').select('*').eq('id', brief.lead_id).maybeSingle() : { data: null };
+      const prompt = buildVoicePrompt(voiceContext(brief, lead));
+
+      const claude = !!BRIEF_KEY, provider = claude ? BRIEF_PROVIDER : PROVIDER;
+      let script = '', usedModel = '', lastStatus = 0;
+      for (const [i, model] of (claude ? modelAttempts(BRIEF_MODEL, '') : modelAttempts(MODEL, FALLBACK_MODEL)).entries()) {
+        const r = claude ? providerRequest(BRIEF_PROVIDER, model, BRIEF_KEY, BRIEF_BASE_URL, prompt) : providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt, YANDEX_FOLDER);
+        const resp = await fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(r.body) });
+        if (resp.ok) { script = parseVoice(providerText(provider, await resp.json())); usedModel = model; break; }
+        lastStatus = resp.status;
+        console.error('ai-write voice text:', model, resp.status, (await resp.text()).slice(0, 300));
+        if (!RETRY_STATUS.includes(resp.status)) break;
+        if (i === 0) await new Promise(res => setTimeout(res, 1500));
+      }
+      if (!script) return json({ error: RETRY_STATUS.includes(lastStatus) ? 'Модель сейчас перегружена. Попробуйте через минуту.' : `Текст сводки не получился (ошибка ${lastStatus}).` }, 502);
+
+      let ttsModel = VOICE_MODEL;
+      if (!ttsModel) {
+        const list = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': VOICE_KEY } });
+        const names = list.ok ? ((await list.json()).models || []).filter((m: any) => (m.supportedGenerationMethods || []).includes('generateContent')).map((m: any) => String(m.name).split('/').pop()) : [];
+        ttsModel = pickTtsModel(names);
+        if (!ttsModel) return json({ error: 'Ключ Gemini не видит моделей озвучки.', text: script }, 502);
+      }
+      let audio: Uint8Array | null = null;
+      for (let i = 0; i < 3 && !audio; i++) {
+        const r = ttsRequest(ttsModel, VOICE_KEY, '', script, VOICE_NAME);
+        const resp = await fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(r.body), signal: AbortSignal.timeout(110_000) });
+        if (resp.ok) {
+          const part = (await resp.json())?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData)?.inlineData;
+          if (part?.data) audio = toWav(Uint8Array.from(atob(part.data), c => c.charCodeAt(0)), part.mimeType || '');
+          else break;
+        } else {
+          lastStatus = resp.status;
+          console.error('ai-write voice tts:', ttsModel, resp.status, (await resp.text()).slice(0, 300));
+          if (!RETRY_STATUS.includes(resp.status)) break;
+          await new Promise(res => setTimeout(res, 3000 * (i + 1)));
+        }
+      }
+      if (!audio) return json({ error: RETRY_STATUS.includes(lastStatus) ? 'Озвучка сейчас перегружена. Текст готов, голос — через минуту.' : `Озвучка не получилась (ошибка ${lastStatus}).`, text: script }, 502);
+      let bin = '';
+      for (let i = 0; i < audio.length; i += 0x8000) bin += String.fromCharCode(...audio.subarray(i, i + 0x8000));
+      await admin.from('ai_usage').insert({ actor: user.email, model: `${provider}/${usedModel}+${ttsModel}`, drafts: 0, chars: script.length });
+      return json({ text: script, audio: btoa(bin), mime: 'audio/wav', model: usedModel, voice: ttsModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
     }
 
     const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post', 'brief', 'case'].includes(input?.mode) ? input.mode : 'write';

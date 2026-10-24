@@ -4,7 +4,8 @@ import {
   sanitizePitch, buildPitchPrompt, PITCH_LIMIT,
   sanitizeAdTask, buildKeywordPrompt, parseKeywords, buildAdPrompt, parseAds, DIRECT_LIMITS,
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost, RUBRICS,
-  sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt
+  sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
+  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -260,6 +261,31 @@ check('кейс: структура по образцу владельцев, к
 const cp2 = buildCasePrompt(sanitizeCaseTask({ network: 'Telegram', client: 'Раздолье', named: false, work: 'Сняли рекламный ролик для базы отдыха' }), []);
 check('кейс: без разрешения клиента не называем; в Telegram — короче', cp2.includes('Клиента НЕ называть') && !cp2.includes('Клиента можно называть') && cp2.includes('короче'));
 check('кейс: пример — только образец, его факты не берём', cp1.includes('его факты не используй'));
+
+// ---- голосовая сводка по клиенту
+check('сводка: без брифа — ошибка', !!throws(() => sanitizeVoiceTask({})));
+check('сводка: номер брифа обрезан', sanitizeVoiceTask({ brief: ' b1 ' }).brief === 'b1');
+const vb = { client: 'ООО «Тест»', title: 'Ролик', stage: 'Вопросы', source_text: 'х'.repeat(50000),
+  analysis: { summary: 'Нужен ролик', goal: 'Узнаваемость' }, kp: { price_base: 0, price_full: 300000, concept: 'Идея' },
+  questions: [{ q: 'Сроки?', status: 'новый' }, { q: 'Бюджет?', status: 'ответ' }], next_step: 'Ждём ответы' };
+const vc = voiceContext(vb, { name: 'Анна', status: 'Новое', note: 'Пришла по рекомендации', amount: 300000 });
+check('сводка: ТЗ целиком в модель не уходит', !JSON.stringify(vc).includes('ххххх'));
+check('сводка: только открытые вопросы', vc.open_questions.length === 1 && vc.open_questions[0] === 'Сроки?');
+check('сводка: цена без нулей', vc.price.length === 1 && vc.price[0] === 300000);
+check('сводка: без заявки — lead null', voiceContext(vb, null).lead === null);
+const vp = buildVoicePrompt(vc);
+check('сводка: промпт с клиентом, правилом «не придумывай» и JSON', vp.includes('ООО «Тест»') && vp.includes('Ничего не придумывай') && vp.includes('{"text"'));
+check('сводка: текст из JSON', parseVoice('{"text":"ООО Тест, ролик за триста тысяч, ждём ответы по срокам и бюджету."}').startsWith('ООО Тест'));
+check('сводка: просто текст тоже принимаем', parseVoice('**ООО Тест**: ролик за триста тысяч, ждём ответы по срокам.').startsWith('ООО Тест'));
+check('сводка: пустой ответ — ошибка', !!throws(() => parseVoice('{"text":""}')));
+const tr = ttsRequest('gemini-2.5-flash-preview-tts', 'KEY', '', 'Привет', 'Puck');
+check('сводка: ключ TTS в заголовке, не в адресе', !tr.url.includes('KEY') && tr.headers['x-goog-api-key'] === 'KEY');
+check('сводка: звучит только транскрипт', tr.body.contents[0].parts[0].text.endsWith('#### TRANSCRIPT\nПривет') && tr.body.generationConfig.responseModalities[0] === 'AUDIO');
+check('сводка: модель озвучки — свежая flash', pickTtsModel(['gemini-2.5-pro-preview-tts', 'gemini-2.5-flash-preview-tts', 'gemini-3.5-flash', 'gemini-3.1-flash-tts', 'gemini-3.1-flash-lite-tts']) === 'gemini-3.1-flash-tts');
+check('сводка: моделей озвучки нет — пусто', pickTtsModel(['gemini-3.5-flash']) === '');
+const w = toWav(new Uint8Array(480), 'audio/L16;codec=pcm;rate=24000');
+check('сводка: PCM оборачиваем в WAV', w.length === 524 && String.fromCharCode(...w.subarray(0, 4)) === 'RIFF' && new DataView(w.buffer).getUint32(24, true) === 24000);
+check('сводка: готовый WAV не трогаем', toWav(w, 'audio/wav') === w);
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);
