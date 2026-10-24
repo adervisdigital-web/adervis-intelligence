@@ -43,6 +43,15 @@
     }).join('');
   }
 
+  // Концепции: «## Ролик 1…» в тексте — отдельная карточка на каждый ролик
+  function conceptHtml(text) {
+    const parts = String(text).split(/^##\s+/m);
+    const intro = parts.shift().trim(), cards = parts.map(p => { const [title, ...rest] = p.split('\n'); return { title: title.trim(), body: rest.join('\n') }; });
+    if (cards.length < 2) return `<section><div class="read"><h2>Концепция и сюжет</h2>${richText(text)}</div></section>`;
+    return `<section><div class="wrap"><h2>Концепции</h2>${intro ? `<div class="read-left">${richText(intro)}</div>` : ''}
+      <div class="vcards">${cards.map((c, i) => `<article class="vcard"><span class="vnum">${i + 1}</span><h3>${E(c.title)}</h3>${richText(c.body)}</article>`).join('')}</div></div></section>`;
+  }
+
   // Примеры: без кнопки «скачать», без перетаскивания и меню по правой кнопке.
   // Полностью защитить файл в браузере нельзя, но случайно сохранить не выйдет.
   function gallery(media) {
@@ -222,6 +231,9 @@
     const phone = String(d.phone || '').split(/[·,;]/)[0].trim();
     const tel = phone.replace(/[^\d+]/g, '');
     const media = d.media || [];
+    // несколько роликов с итогами по разделам: цена каждого — под общей ценой
+    const perGroup = e.subtotals && !e.two && e.groups?.length > 1 && e.groups.length <= 4
+      ? `<small class="sub">${e.groups.map(g => `${E(String(g.name).replace(/^Ролик\s*\d+[.:]?\s*/i, ''))}: ${rub(g.sum?.full)}`).join('<br>')}</small>` : '';
     // фон шапки: кадр первого примера (обложка видео или картинка), полупрозрачно
     const first = media.find(m => safeUrl(m.kind === 'video' ? m.poster : m.url));
     // можно задать отдельный кадр без надписей (cover), иначе — первый пример
@@ -232,7 +244,7 @@
       <h1>${E(d.title)}</h1>
       ${d.client ? `<p class="for">Для: <b>${E(d.client)}</b></p>` : ''}
       <div class="facts">
-        <div><small>Стоимость</small><b class="gold">${E(price)}</b></div>
+        <div><small>Стоимость</small><b class="gold">${E(price)}</b>${perGroup}</div>
         <div><small>Срок</small><b>${d.days ? `~${d.days} ${plural(d.days, 'рабочий день', 'рабочих дня', 'рабочих дней')}` : 'по плану'}</b></div>
         ${d.prepay ? `<div><small>Оплата</small><b>${d.prepay}% + ${100 - d.prepay}%</b><small class="sub">до старта и после сдачи</small></div>` : ''}
       </div>
@@ -240,7 +252,7 @@
     </div></header>
     ${gallery(media)}
     ${d.style ? `<section><div class="read"><h2>Стиль</h2>${richText(d.style)}</div></section>` : ''}
-    ${d.concept ? `<section><div class="read"><h2>Концепция и сюжет</h2>${richText(d.concept)}</div></section>` : ''}
+    ${d.concept ? conceptHtml(d.concept) : ''}
     ${d.deliverables?.length ? `<section><div class="read"><h2>Что сделаем</h2><ul class="deliver">${d.deliverables.map(x => `<li><b>${E(x.name)}</b>${x.details ? `<span>${E(x.details)}</span>` : ''}</li>`).join('')}</ul></div></section>` : ''}
     ${d.approach ? `<section><div class="read"><h2>Как будем делать</h2>${richText(d.approach)}</div></section>` : ''}
     ${estimate(e)}
