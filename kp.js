@@ -190,8 +190,8 @@
       <div class="sp-top"><img src="brand/logoB.svg" alt="ADERVIS"><span>${E(day(d.date, { day: 'numeric', month: 'long', year: 'numeric' }))}</span></div>
       <h1>Смета: ${E(d.title)}</h1>${d.client ? `<p>Для: <b>${E(d.client)}</b></p>` : ''}
       <table><thead><tr><th>Работа</th>${two ? `<th>Базовый${e.labels?.base ? `<small>${E(e.labels.base)}</small>` : ''}</th><th>Полный${e.labels?.full ? `<small>${E(e.labels.full)}</small>` : ''}</th>` : '<th>Стоимость</th>'}</tr></thead>
-      <tbody>${e.groups.map(g => `<tr class="g"><td colspan="${two ? 3 : 2}">${E(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${E(r.name)}</td>${two ? `<td>${money(r.base)}</td>` : ''}<td>${money(r.full)}</td></tr>`).join('')).join('')}</tbody>
-      <tfoot><tr><td>Итого</td>${two ? `<td>${rub(e.base)}</td>` : ''}<td>${rub(e.full)}</td></tr></tfoot></table>
+      <tbody>${e.groups.map(g => `<tr class="g"><td colspan="${two ? 3 : 2}">${E(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${E(r.name)}</td>${two ? `<td>${money(r.base)}</td>` : ''}<td>${money(r.full)}</td></tr>`).join('')).join('')}
+      <tr class="total"><td>Итого</td>${two ? `<td>${rub(e.base)}</td>` : ''}<td>${rub(e.full)}</td></tr></tbody></table>
       ${e.options?.length ? `<h2>Дополнительно, по желанию</h2><table class="opt">${e.options.map(o => `<tr><td>${E(o.name)}${o.why ? `<small>${E(o.why)}</small>` : ''}</td><td>+ ${rub(o.price)}</td></tr>`).join('')}</table>` : ''}
       ${d.terms?.length ? `<h2>Условия</h2><ul>${d.terms.map(t => `<li>${E(t)}</li>`).join('')}</ul>` : ''}
       <p class="sp-foot">${d.contact ? `${E(d.contact)}, ` : ''}ADERVIS · adervis.ru${d.phone ? ` · ${E(String(d.phone).split(/[·,;]/)[0].trim())}` : ''}</p>
