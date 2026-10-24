@@ -283,6 +283,17 @@
       move();
     }
     root.querySelectorAll('[data-smeta]').forEach(btn => btn.addEventListener('click', () => btn.dataset.smeta === 'pdf' ? smetaPdf(d) : smetaXlsx(d)));
+    // Вертикальные примеры показываем в их формате: ролик 9:16 целиком, кадр без
+    // срезанных голов. Размеры в данных КП не хранятся — узнаём их у самого файла.
+    const tall = (el, w, h) => { if (h > w * 1.05) el.closest('figure')?.classList.add('tall'); };
+    root.querySelectorAll('.gallery video').forEach(v => {
+      const f = () => tall(v, v.videoWidth, v.videoHeight);
+      if (v.readyState >= 1) f(); else v.addEventListener('loadedmetadata', f, { once: true });
+    });
+    root.querySelectorAll('.gallery img').forEach(i => {
+      const f = () => tall(i, i.naturalWidth, i.naturalHeight);
+      if (i.complete && i.naturalWidth) f(); else i.addEventListener('load', f, { once: true });
+    });
     root.querySelectorAll('.gallery img, .gallery video, .gallery .shield, .herobg img').forEach(el => {
       el.addEventListener('contextmenu', ev => ev.preventDefault());
       el.addEventListener('dragstart', ev => ev.preventDefault());

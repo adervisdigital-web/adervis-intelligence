@@ -62,6 +62,17 @@ section li{margin:4px 0}
 .gallery img,.gallery video,.shield{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
 .gallery figcaption{padding:12px 16px;font-size:15px;color:var(--muted)}
 .gallery img,.gallery video{width:100%;aspect-ratio:16/9;object-fit:cover;background:#0d0e11}
+/* вертикальные примеры — в своём формате: ролик целиком, подпись рядом */
+.gallery figure.tall img{aspect-ratio:4/5;object-position:center 30%}
+.gallery figure.tall video{aspect-ratio:9/16;object-fit:contain}
+.gallery figure.tall.wide{display:flex;align-items:center;background:#0d0e11;border-color:#0d0e11}
+.gallery figure.tall.wide video{width:auto;height:min(78vh,720px);flex:none}
+.gallery figure.tall.wide figcaption{flex:1;padding:28px;color:#c9ccd3;font-size:16px;line-height:1.55}
+@media (max-width:700px){
+  .gallery figure.tall.wide{display:block}
+  .gallery figure.tall.wide video{width:100%;height:auto;max-height:82vh}
+  .gallery figure.tall.wide figcaption{padding:12px 16px;font-size:15px}
+}
 .group-title{font:600 15px/1.3 var(--text);color:var(--muted);margin:30px 0 10px}
 .group-title:first-child{margin-top:0}
 
