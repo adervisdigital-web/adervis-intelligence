@@ -66,7 +66,8 @@
   // на компьютере при наведении, на телефоне по нажатию.
   function estimate(e) {
     if (!e?.groups?.length) return '';
-    return `<section id="price"><div class="read"><h2>Стоимость</h2><div id="est"></div><div id="choose" class="choose"></div></div></section>`;
+    return `<section id="price"><div class="read"><h2>Стоимость</h2><div id="est"></div><div id="choose" class="choose"></div>
+      <p class="smetadl">Скачать смету: <button type="button" class="linkbtn" data-smeta="pdf">PDF</button> · <button type="button" class="linkbtn" data-smeta="xlsx">Excel</button></p></div></section>`;
   }
 
   function mountEstimate(e, d) {
@@ -179,6 +180,41 @@
     draw();
   }
 
+  // ---- Смета для скачивания: только смета (оба варианта, опции, условия),
+  // без всей страницы. PDF — печать скрытого блока, Excel — общий smeta.js.
+  const smetaName = (d, ext) => `Смета ${d.title}`.replace(/[\/:*?"<>|«»]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) + '.' + ext;
+  function smetaPrint(d) {
+    const e = d.estimate || {}, two = !!e.two, money = v => v === null || v === undefined ? 'не входит' : rub(v);
+    if (!e.groups?.length) return '';
+    return `<section class="smetaprint" aria-hidden="true">
+      <div class="sp-top"><img src="brand/logoB.svg" alt="ADERVIS"><span>${E(day(d.date, { day: 'numeric', month: 'long', year: 'numeric' }))}</span></div>
+      <h1>Смета: ${E(d.title)}</h1>${d.client ? `<p>Для: <b>${E(d.client)}</b></p>` : ''}
+      <table><thead><tr><th>Работа</th>${two ? `<th>Базовый${e.labels?.base ? `<small>${E(e.labels.base)}</small>` : ''}</th><th>Полный${e.labels?.full ? `<small>${E(e.labels.full)}</small>` : ''}</th>` : '<th>Стоимость</th>'}</tr></thead>
+      <tbody>${e.groups.map(g => `<tr class="g"><td colspan="${two ? 3 : 2}">${E(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${E(r.name)}</td>${two ? `<td>${money(r.base)}</td>` : ''}<td>${money(r.full)}</td></tr>`).join('')).join('')}</tbody>
+      <tfoot><tr><td>Итого</td>${two ? `<td>${rub(e.base)}</td>` : ''}<td>${rub(e.full)}</td></tr></tfoot></table>
+      ${e.options?.length ? `<h2>Дополнительно, по желанию</h2><table class="opt">${e.options.map(o => `<tr><td>${E(o.name)}${o.why ? `<small>${E(o.why)}</small>` : ''}</td><td>+ ${rub(o.price)}</td></tr>`).join('')}</table>` : ''}
+      ${d.terms?.length ? `<h2>Условия</h2><ul>${d.terms.map(t => `<li>${E(t)}</li>`).join('')}</ul>` : ''}
+      <p class="sp-foot">${d.contact ? `${E(d.contact)}, ` : ''}ADERVIS · adervis.ru${d.phone ? ` · ${E(String(d.phone).split(/[·,;]/)[0].trim())}` : ''}</p>
+    </section>`;
+  }
+  function smetaPdf(d) {
+    const title = document.title;
+    document.title = smetaName(d, 'pdf').replace(/\.pdf$/, '');
+    document.body.classList.add('print-smeta');
+    const done = () => { document.body.classList.remove('print-smeta'); document.title = title; window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    window.print();
+  }
+  function smetaXlsx(d) {
+    const e = d.estimate || {};
+    const blob = window.Smeta.xlsx({ two: !!e.two, subtotals: !!e.subtotals, groups: e.groups || [], k: { base: e.base, full: e.full }, options: e.options || [],
+      terms: d.terms || [], date: day(d.date, { day: 'numeric', month: 'long', year: 'numeric' }) }, { title: d.title, client: d.client });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = smetaName(d, 'xlsx');
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
   function render(d) {
     document.title = `${d.title} · ADERVIS`;
     const e = d.estimate || {};
@@ -218,10 +254,12 @@
       <h2>Обсудим?</h2>
       <p>${d.contact ? `${E(d.contact)}, ADERVIS. ` : ''}Ответим на вопросы и покажем, как начнём работу.</p>
       ${tel ? `<a class="btn" href="tel:${E(tel)}">Позвонить ${E(phone)}</a>` : ''}
-      <button type="button" class="btn ghost" id="pdfbtn">Скачать PDF</button>
+      <button type="button" class="btn ghost" data-smeta="pdf">Смета в PDF</button>
+      <button type="button" class="btn ghost" data-smeta="xlsx">Смета в Excel</button>
       <a class="btn ghost" href="https://adervis.ru" target="_blank" rel="noopener noreferrer">adervis.ru</a>
     </div></footer>
-    ${tel ? `<div class="bar"><a class="btn" href="tel:${E(tel)}">Позвонить</a></div>` : ''}`;
+    ${tel ? `<div class="bar"><a class="btn" href="tel:${E(tel)}">Позвонить</a></div>` : ''}
+    ${smetaPrint(d)}`;
     if (preview) root.insertAdjacentHTML('afterbegin', '<p class="teamnote">Просмотр команды: клиенту не засчитан, уведомление не придёт</p>');
     mountEstimate(e, d);
     // параллакс фона шапки: при прокрутке кадр уходит медленнее текста
@@ -232,7 +270,7 @@
       window.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(move); } }, { passive: true });
       move();
     }
-    document.getElementById('pdfbtn')?.addEventListener('click', () => window.print());
+    root.querySelectorAll('[data-smeta]').forEach(btn => btn.addEventListener('click', () => btn.dataset.smeta === 'pdf' ? smetaPdf(d) : smetaXlsx(d)));
     root.querySelectorAll('.gallery img, .gallery video, .gallery .shield, .herobg img').forEach(el => {
       el.addEventListener('contextmenu', ev => ev.preventDefault());
       el.addEventListener('dragstart', ev => ev.preventDefault());

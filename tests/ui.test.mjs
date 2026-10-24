@@ -2189,7 +2189,18 @@ check('страница КП: открыл сотрудник (входили в
   await g.waitForSelector('.chosen');
   const bsent = posts.find(p => p.action === 'budget');
   check('страница КП: свой бюджет ушёл на сервер, клиент видит подтверждение', bsent?.amount === 300000 && (await g.textContent('.chosen')).includes('Ваш бюджет'), JSON.stringify(bsent));
-  check('страница КП: есть «Скачать PDF», нет срока действия', await g.isVisible('#pdfbtn'));
+  // смета для скачивания: Excel — настоящий .xlsx со строками сметы; PDF — печатается только смета
+  const [xdl] = await Promise.all([g.waitForEvent('download'), g.click('.cta [data-smeta=xlsx]')]);
+  const xbuf = fs.readFileSync(await xdl.path()).toString('utf8');
+  check('страница КП: «Смета в Excel» — файл .xlsx со строками и итогом', xdl.suggestedFilename() === 'Смета Видеодайджест.xlsx' && xbuf.startsWith('PK')
+    && xbuf.includes('xl/worksheets/sheet1.xml') && xbuf.includes('Заставка') && xbuf.includes('205000'), xdl.suggestedFilename());
+  await g.emulateMedia({ media: 'print' });
+  await g.evaluate(() => document.body.classList.add('print-smeta'));
+  check('страница КП: «Смета в PDF» — при печати видна только смета', await g.isVisible('.smetaprint') && !(await g.isVisible('.hero')) && !(await g.isVisible('.gallery'))
+    && (await g.textContent('.smetaprint h1')).startsWith('Смета: Видеодайджест'));
+  await g.evaluate(() => document.body.classList.remove('print-smeta'));
+  await g.emulateMedia({ media: 'screen' });
+  check('страница КП: смета на экране не дублируется, ссылки «Скачать смету» под таблицей', !(await g.isVisible('.smetaprint')) && await g.isVisible('.smetadl [data-smeta=pdf]'));
   await guest.close();
 }
 check('страница КП: срок действия нигде не показан', !kpText.includes('действует'));

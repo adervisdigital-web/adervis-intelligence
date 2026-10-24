@@ -160,4 +160,19 @@ section li{margin:4px 0}
   .teamnote{bottom:84px;right:50%;transform:translateX(50%);font-size:12px}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+/* смета для скачивания: на экране скрыта, печатается одна, без страницы */
+.smetaprint{display:none}
+.smetadl{margin:16px 0 0;font-size:14px;color:var(--muted)}
+.smetadl .linkbtn{margin:0 4px;font-size:14px}
+@media print{
+  body.print-smeta #kp>*:not(.smetaprint){display:none!important}
+  body.print-smeta .smetaprint{display:block;color:#16181d;font:12px/1.45 var(--text)}
+  .smetaprint .sp-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.smetaprint .sp-top img{height:26px}
+  .smetaprint h1{font:700 20px/1.25 var(--display);margin:0 0 4px}.smetaprint h2{font:600 14px var(--text);margin:18px 0 6px}
+  .smetaprint table{width:100%;border-collapse:collapse;margin-top:12px}.smetaprint td,.smetaprint th{padding:6px 8px;border-bottom:1px solid #d9dce2;text-align:left;vertical-align:top}
+  .smetaprint td+td,.smetaprint th+th{text-align:right;white-space:nowrap;width:110px}.smetaprint th small{display:block;font-weight:400;color:#6b7280;white-space:normal}
+  .smetaprint .g td{background:#f2f3f6;font-weight:600;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .smetaprint tfoot td{font-weight:700;font-size:14px;border-top:2px solid #16181d;border-bottom:0}
+  .smetaprint .opt td small{display:block;color:#6b7280}.smetaprint ul{padding-left:18px;margin:0}.smetaprint .sp-foot{margin-top:20px;color:#6b7280}
+}
 @media print{.herobg,.bar,.cta .btn,.choose,.teamnote,.esthelp,.shield{display:none}.est tr.has .nm{text-decoration:none}.hero{background:#121316;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
