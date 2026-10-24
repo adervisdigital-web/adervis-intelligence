@@ -2141,8 +2141,8 @@ check('КП-ссылка: часов и ставок студии в снимк�
 check('КП-ссылка: ссылка скопирована и видна в окне', /kp\.html\?t=[A-Za-z0-9]{24}$/.test(await page.evaluate(() => navigator.clipboard.readText()))
   && (await page.inputValue('#kplink')).includes(share.token));
 const kpMsg = await page.inputValue('#kpmsg');
-check('КП-ссылка: сообщение клиенту — ссылка, оба варианта с описаниями, вопросы, без длинных тире', kpMsg.includes(share.token) && /Посчитали два варианта: 95\s000 ₽ \(студия в 2\.5D\) и 205\s000 ₽ \(3D-студия и 4K\)/.test(kpMsg)
-  && kpMsg.includes('подскажите, пожалуйста') && !kpMsg.includes('—') && kpMsg.endsWith('давайте созвонимся.'), kpMsg.slice(0, 400));
+check('КП-ссылка: сообщение клиенту по образцу владельцев — ссылка, «предварительный расчёт», вопросы, без цен и тире', kpMsg.includes(share.token) && kpMsg.includes('Посчитали два варианта. Чем они отличаются, расписали на странице')
+  && kpMsg.includes('Это предварительный расчёт по ТЗ') && kpMsg.includes('подскажите, пожалуйста') && !/₽/.test(kpMsg) && !kpMsg.includes('—') && !kpMsg.includes('созвонимся'), kpMsg.slice(0, 400));
 await page.click('[data-action=kpmsgcopy]');
 check('КП-ссылка: «Скопировать сообщение» кладёт текст в буфер', (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r/g, '') === kpMsg.replace(/\r/g, ''));
 await page.screenshot({ path: path.join(OUT, 'intel-kp-share.png') });
