@@ -6,6 +6,7 @@
 import { admin, secret, sameSecret, json } from '../_shared/outreach.ts';
 import { permNow } from '../_shared/digest.ts';
 import { buildDigest, sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
+import { digestVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
 
 Deno.serve(async (req) => {
   const sb = admin();
@@ -17,10 +18,18 @@ Deno.serve(async (req) => {
   if (!due.length) return json({ ok: true, sent: 0 });
   const text = await buildDigest(sb);
   let sent = 0;
+  const got: number[] = [];
   for (const s of due) {
     const r = await sendDigest(Number(s.chat_id), text);
-    if (r?.ok) { sent++; await sb.from('digest_subscribers').update({ last_sent: date }).eq('chat_id', s.chat_id); }
+    if (r?.ok) { sent++; got.push(Number(s.chat_id)); await sb.from('digest_subscribers').update({ last_sent: date }).eq('chat_id', s.chat_id); }
     else console.error('digest:', s.chat_id, r?.description);
+  }
+  // Следом — та же сводка голосом. Не вышло — текст уже у всех, просто пишем в лог.
+  if (got.length && voiceReady()) {
+    try {
+      const v = await digestVoice(sb, text);
+      for (const id of got) await sendAudio(INTEL_TOKEN, id, v.audio, 'Утренняя сводка', '');
+    } catch (e) { console.error('digest voice:', e); }
   }
   return json({ ok: true, sent });
 });

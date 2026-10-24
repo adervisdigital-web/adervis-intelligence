@@ -726,6 +726,11 @@ await page.click('tr[data-l=l3]');
 await page.waitForSelector('#lf');
 check('в форме подставлен источник обращения',
   await page.$eval('#lf select[name=source]', s => s.value === '2ГИС'));
+await page.click('#lf [data-action=leadvoice]');
+await page.waitForSelector('#leadvoice audio');
+const leadVoiceAsk = await page.evaluate(() => window.__lastAiPayload);
+check('голосовая сводка по заявке: уходит только номер заявки, плеер в окне', leadVoiceAsk.mode === 'voice' && leadVoiceAsk.lead === 'l3' && Object.keys(leadVoiceAsk).length === 2
+  && !(await page.isDisabled('#lf [data-action=leadvoice]')));
 await page.selectOption('#lf select[name=status]', 'Сделка');
 await page.fill('#lf input[name=amount]', '15000');
 await page.click('#lf button.primary');

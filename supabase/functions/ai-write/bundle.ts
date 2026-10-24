@@ -765,10 +765,12 @@ export function buildCasePrompt(t: CaseTask, facts: Fact[]): string {
 // брифа и заявки, Gemini TTS читает его живым голосом. Данные собирает функция
 // из базы сама — от браузера приходит только номер брифа.
 
+// Сводка по брифу или по заявке, у которой брифа ещё нет.
 export function sanitizeVoiceTask(input: any) {
-  const brief = typeof input?.brief === 'string' ? input.brief.trim().slice(0, 80) : '';
-  if (!brief) throw new Error('Не указан бриф');
-  return { brief };
+  const id = (v: unknown) => typeof v === 'string' ? v.trim().slice(0, 80) : '';
+  const brief = id(input?.brief), lead = id(input?.lead);
+  if (!brief && !lead) throw new Error('Не указан клиент');
+  return { brief, lead };
 }
 
 const clip = (v: unknown, n: number) => (typeof v === 'string' ? v : v == null ? '' : String(v)).replace(/\s+/g, ' ').trim().slice(0, n);
@@ -840,17 +842,47 @@ export function pickTtsModel(names: string[]): string {
 }
 
 // Gemini 2.5 отдаёт голый PCM (audio/L16;rate=24000), 3.x — готовый WAV.
+// pcmOf достаёт из ответа сами отсчёты (16 бит, моно) и частоту — для WAV и MP3.
+export function pcmOf(bytes: Uint8Array, mime: string): { pcm: Uint8Array; rate: number } {
+  if (bytes.length > 12 && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF') {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let rate = 24000;
+    for (let o = 12; o + 8 <= bytes.length;) {
+      const id = String.fromCharCode(...bytes.subarray(o, o + 4)), size = dv.getUint32(o + 4, true);
+      if (id === 'fmt ') rate = dv.getUint32(o + 12, true);
+      if (id === 'data') return { pcm: bytes.subarray(o + 8, Math.min(bytes.length, o + 8 + size)), rate };
+      o += 8 + size + (size % 2);
+    }
+    return { pcm: bytes.subarray(44), rate };
+  }
+  return { pcm: bytes, rate: Number((mime.match(/rate=(\d+)/) || [])[1] || 24000) };
+}
+
 export function toWav(bytes: Uint8Array, mime: string): Uint8Array {
   if (bytes.length > 4 && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF') return bytes;
-  const rate = Number((mime.match(/rate=(\d+)/) || [])[1] || 24000);
+  const { pcm, rate } = pcmOf(bytes, mime);
   const head = new DataView(new ArrayBuffer(44));
   const str = (o: number, s: string) => { for (let i = 0; i < s.length; i++) head.setUint8(o + i, s.charCodeAt(i)); };
-  str(0, 'RIFF'); head.setUint32(4, 36 + bytes.length, true); str(8, 'WAVE'); str(12, 'fmt ');
+  str(0, 'RIFF'); head.setUint32(4, 36 + pcm.length, true); str(8, 'WAVE'); str(12, 'fmt ');
   head.setUint32(16, 16, true); head.setUint16(20, 1, true); head.setUint16(22, 1, true);
   head.setUint32(24, rate, true); head.setUint32(28, rate * 2, true); head.setUint16(32, 2, true); head.setUint16(34, 16, true);
-  str(36, 'data'); head.setUint32(40, bytes.length, true);
-  const out = new Uint8Array(44 + bytes.length); out.set(new Uint8Array(head.buffer)); out.set(bytes, 44);
+  str(36, 'data'); head.setUint32(40, pcm.length, true);
+  const out = new Uint8Array(44 + pcm.length); out.set(new Uint8Array(head.buffer)); out.set(pcm, 44);
   return out;
+}
+
+// Утренняя сводка голосом: пересказ того же текста, что приходит в Telegram.
+export function buildDigestVoicePrompt(digest: string): string {
+  return [
+    'Ты продюсер видеостудии ADERVIS. Перескажи утреннюю сводку коллегам коротким голосовым сообщением.',
+    'Правила:',
+    '- 60–110 слов, до 45 секунд речи. Живо и по-человечески, как бодрое утреннее голосовое в рабочем чате.',
+    '- Начни с «Доброе утро!». Сначала самое срочное: кому ответить, что просрочено, кто открыл КП. Потом остальное одной-двумя фразами.',
+    '- Только факты из сводки. Ничего не придумывай. Ссылки, эмодзи и списки не читай.',
+    '- Числа пиши словами. Закончи одной фразой, с чего начать день.',
+    'Верни строго JSON: {"text":"текст сообщения"}',
+    '', 'СВОДКА:', digest.slice(0, 6000)
+  ].join('\n');
 }
 
 // Серверная функция: пишет черновики текстов по проверенным фактам базы.
@@ -973,10 +1005,13 @@ Deno.serve(async (req) => {
     if (input?.mode === 'voice') {
       if (!VOICE_KEY) return json({ error: 'Для голоса нужен ключ Gemini: секрет VOICE_AI_KEY.' }, 500);
       const task = sanitizeVoiceTask(input);
-      const { data: brief } = await supabase.from('briefs').select('*').eq('id', task.brief).maybeSingle();
-      if (!brief) return json({ error: 'Бриф не найден' }, 404);
-      const { data: lead } = brief.lead_id ? await supabase.from('leads').select('*').eq('id', brief.lead_id).maybeSingle() : { data: null };
-      const prompt = buildVoicePrompt(voiceContext(brief, lead));
+      // по заявке берём и её бриф, если он есть: там разбор, КП и вопросы
+      const { data: brief } = task.brief ? await supabase.from('briefs').select('*').eq('id', task.brief).maybeSingle()
+        : await supabase.from('briefs').select('*').eq('lead_id', task.lead).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      const leadId = task.lead || brief?.lead_id;
+      const { data: lead } = leadId ? await supabase.from('leads').select('*').eq('id', leadId).maybeSingle() : { data: null };
+      if (!brief && !lead) return json({ error: 'Клиент не найден' }, 404);
+      const prompt = buildVoicePrompt(voiceContext(brief || {}, lead));
 
       const claude = !!BRIEF_KEY, provider = claude ? BRIEF_PROVIDER : PROVIDER;
       let script = '', usedModel = '', lastStatus = 0;

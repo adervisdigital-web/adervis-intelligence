@@ -121,10 +121,13 @@ Deno.serve(async (req) => {
     if (input?.mode === 'voice') {
       if (!VOICE_KEY) return json({ error: 'Для голоса нужен ключ Gemini: секрет VOICE_AI_KEY.' }, 500);
       const task = sanitizeVoiceTask(input);
-      const { data: brief } = await supabase.from('briefs').select('*').eq('id', task.brief).maybeSingle();
-      if (!brief) return json({ error: 'Бриф не найден' }, 404);
-      const { data: lead } = brief.lead_id ? await supabase.from('leads').select('*').eq('id', brief.lead_id).maybeSingle() : { data: null };
-      const prompt = buildVoicePrompt(voiceContext(brief, lead));
+      // по заявке берём и её бриф, если он есть: там разбор, КП и вопросы
+      const { data: brief } = task.brief ? await supabase.from('briefs').select('*').eq('id', task.brief).maybeSingle()
+        : await supabase.from('briefs').select('*').eq('lead_id', task.lead).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      const leadId = task.lead || brief?.lead_id;
+      const { data: lead } = leadId ? await supabase.from('leads').select('*').eq('id', leadId).maybeSingle() : { data: null };
+      if (!brief && !lead) return json({ error: 'Клиент не найден' }, 404);
+      const prompt = buildVoicePrompt(voiceContext(brief || {}, lead));
 
       const claude = !!BRIEF_KEY, provider = claude ? BRIEF_PROVIDER : PROVIDER;
       let script = '', usedModel = '', lastStatus = 0;

@@ -7424,6 +7424,26 @@ function renderLeads() {
   return head + metrics + leadFunnelCard() + lostCard() + sources + list;
 }
 
+// Голосовая сводка по заявке: окно заявки не перерисовывается, поэтому плеер
+// живёт прямо в нём. Есть у заявки бриф — сервер возьмёт и его.
+async function leadVoiceNote(id, btn) {
+  const label = btn.innerHTML;
+  btn.disabled = true; btn.textContent = 'Записываю… до минуты';
+  $('#leadvoice').innerHTML = '';
+  let html;
+  try {
+    const r = await api.generate({ mode: 'voice', lead: id });
+    const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(r.audio), c => c.charCodeAt(0))], { type: r.mime || 'audio/wav' }));
+    html = `<div class="card bfvoice"><audio controls autoplay src="${E(url)}"></audio>
+      <details><summary class="muted">Текст сводки</summary><p>${E(r.text || '')}</p></details></div>`;
+  } catch (err) {
+    html = `<div class="notice error">${E('Сводка не получилась: ' + (err.message || 'ошибка сервера'))}</div>`;
+  }
+  btn.disabled = false; btn.innerHTML = label;
+  const box = $('#leadvoice');   // окно могли закрыть, пока шла запись
+  if (box) box.innerHTML = html;
+}
+
 function editLead(id) {
   const exists = db.leads.some(l => l.id === id);
   const l = db.leads.find(l => l.id === id) || {
@@ -7463,6 +7483,7 @@ function editLead(id) {
     ${exists ? (() => { const br = db.briefs.find(x => x.lead_id === l.id);
       return br ? `<div class="notice">Бриф и КП: <button type="button" class="linkbtn" data-action="openbrief" data-id="${E(br.id)}">${E(br.title)} · ${E(br.stage)}</button></div>`
         : `<p><button type="button" data-action="newbrieffor" data-id="${E(l.id)}">${icon('proposal', 15)} Есть ТЗ — разобрать и посчитать</button></p>`; })() : ''}
+    ${exists ? `<p><button type="button" data-action="leadvoice" data-id="${E(l.id)}">${icon('sound', 15)} Голосовая сводка</button></p><div id="leadvoice" aria-live="polite"></div>` : ''}
     ${exists ? `<p class="muted">Последняя правка: ${E(memberName(l._by))}, ${ago(l._at)}</p>` : ''}
     <div class="formactions"><button class="primary">Сохранить</button>
       ${exists ? `<button type="button" class="danger" data-action="dellead" data-id="${E(l.id)}">Удалить</button>` : ''}</div></form>`);
@@ -8129,6 +8150,7 @@ document.addEventListener('click', async e => {
     case 'pitchai': pitchAi(b); break;
     case 'pitchsent': pitchCopy(true); break;
     case 'openlead': go('leads'); editLead(b.dataset.id); break;
+    case 'leadvoice': await leadVoiceNote(b.dataset.id, b); break;
     case 'contentnet': contentNet = b.dataset.id; render(); break;
     case 'contentview': contentView = b.dataset.id; render(); break;
     case 'contentrange': contentRange = b.dataset.id; render(); break;

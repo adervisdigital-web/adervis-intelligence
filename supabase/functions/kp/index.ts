@@ -8,6 +8,7 @@
 import { admin, json, CORS } from '../_shared/outreach.ts';
 import { sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
 import { choiceOf, budgetOf, rub } from '../_shared/kp-choice.ts';
+import { clientVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
 
 const AGAIN_AFTER = 2 * 3600e3;   // повторное открытие — уведомляем не чаще раза в 2 часа
 const CHOICE_AGAIN = 60e3;        // двойной клик по «Отправить» — второй раз не шлём
@@ -66,6 +67,17 @@ Deno.serve(async (req) => {
       if (INTEL_TOKEN && (!last || now.getTime() - last > AGAIN_AFTER)) {
         const text = `👀 ${views === 1 ? 'Клиент открыл КП' : `КП открыли снова (${views}-й раз)`}: «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}.\nСамое время написать и предложить созвон.`;
         for (const s of await subs()) await sendDigest(Number(s.chat_id), text);
+        // в первый раз — ещё и голосовое «кто это за клиент». Готовится в фоне:
+        // страница КП у клиента открывается без задержки.
+        if (views === 1 && voiceReady()) {
+          const job = (async () => {
+            try {
+              const v = await clientVoice(sb, row.brief_id);
+              for (const s of await subs()) await sendAudio(INTEL_TOKEN, Number(s.chat_id), v.audio, `Кто это: ${d.client || d.title || 'клиент'}`, v.text);
+            } catch (e) { console.error('kp voice:', e); }
+          })();
+          (globalThis as any).EdgeRuntime?.waitUntil?.(job);
+        }
       }
     }
     return json({ ok: true, data: d, updated_at: row.updated_at });

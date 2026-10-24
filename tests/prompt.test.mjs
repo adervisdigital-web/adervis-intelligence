@@ -5,7 +5,7 @@ import {
   sanitizeAdTask, buildKeywordPrompt, parseKeywords, buildAdPrompt, parseAds, DIRECT_LIMITS,
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost, RUBRICS,
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
-  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav
+  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav, pcmOf, buildDigestVoicePrompt
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -286,6 +286,14 @@ check('сводка: моделей озвучки нет — пусто', pickT
 const w = toWav(new Uint8Array(480), 'audio/L16;codec=pcm;rate=24000');
 check('сводка: PCM оборачиваем в WAV', w.length === 524 && String.fromCharCode(...w.subarray(0, 4)) === 'RIFF' && new DataView(w.buffer).getUint32(24, true) === 24000);
 check('сводка: готовый WAV не трогаем', toWav(w, 'audio/wav') === w);
+check('сводка: по заявке без брифа', sanitizeVoiceTask({ lead: 'l1' }).lead === 'l1' && sanitizeVoiceTask({ lead: 'l1' }).brief === '');
+const lc = voiceContext({}, { name: 'Оксана', status: 'Новое', request: 'Сайт с записью' });
+check('сводка: без брифа — контекст из заявки', lc.lead.name === 'Оксана' && lc.client === '' && lc.price.length === 0);
+const pw = pcmOf(w, 'audio/wav'), praw = pcmOf(new Uint8Array(10), 'audio/L16;rate=16000');
+check('голос: из WAV — отсчёты и частота', pw.pcm.length === 480 && pw.rate === 24000);
+check('голос: голый PCM — частота из mime', praw.pcm.length === 10 && praw.rate === 16000);
+const dv = buildDigestVoicePrompt('На сегодня: 2 заявки ждут ответа. https://hub.adervis.ru/');
+check('голос утром: пересказ сводки, «Доброе утро», без ссылок и выдумок', dv.includes('Доброе утро') && dv.includes('2 заявки ждут ответа') && dv.includes('Ничего не придумывай') && dv.includes('Ссылки'));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

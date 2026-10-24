@@ -9,11 +9,12 @@ import { admin, secret, settings, sameSecret, tgApi, permToday, type Sb } from '
 import { buildDigest, sendDigest, INTEL_TOKEN, APP_URL } from '../_shared/digest-run.ts';
 import { GO, CANCEL, KEYBOARD, NO_KEYBOARD, senderOf, pieceOf, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, type Item } from '../_shared/intake.ts';
 import { analyzeBrief, readWithAi, askModel } from '../_shared/brief-ai.ts';
+import { digestVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
 import { ANSWERS, PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../_shared/answers.ts';
 
 const HELP = 'Перешлите сюда ТЗ, голосовые, PDF, скриншоты переписки и сообщения клиента — я соберу их в бриф с разбором и сметой. Когда всё прислали — «🧠 Разобрать».\n' +
   'Клиент ответил на вопросы? Перешлите ответ и нажмите «📝 Ответы к брифу» — разложу ответы по вопросам брифа.\n\n' +
-  'Команды:\n/today — сводка «На сегодня» сейчас\n/new — начать новую заявку\n/stop — не присылать утреннюю сводку';
+  'Команды:\n/today — сводка «На сегодня» сейчас, текстом и голосом\n/new — начать новую заявку\n/stop — не присылать утреннюю сводку';
 
 // Тяжёлую работу (скачать, расшифровать, разобрать) делаем после ответа
 // Telegram: иначе он посчитает запрос зависшим и пришлёт его повторно.
@@ -49,7 +50,10 @@ Deno.serve(async (req) => {
       // Чужим — ни сводки, ни приёма заявок: в бриф попадает только то, что прислали руководители.
       await reply('Это служебный бот Hub ADERVIS. Подключить утреннюю сводку: в приложении «Настройки» → «Утренняя сводка».');
     } else if (/^\/today/.test(text)) {
-      await reply(await buildDigest(sb));
+      const digest = await buildDigest(sb);
+      await reply(digest);
+      // голос готовится полминуты — отвечаем Telegram сразу, голосовое приходит следом
+      if (voiceReady()) later(digestVoice(sb, digest).then(v => sendAudio(INTEL_TOKEN, chat, v.audio, 'Сводка на сегодня')));
     } else if (/^\/stop/.test(text)) {
       await sb.from('digest_subscribers').delete().eq('chat_id', chat);
       await reply('Хорошо, утреннюю сводку больше не присылаю. Вернуть — новой ссылкой из приложения.');
