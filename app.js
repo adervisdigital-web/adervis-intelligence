@@ -261,8 +261,8 @@ function createApi(cfg) {
       return { path, url: sb.storage.from('kp-media').getPublicUrl(path).data.publicUrl };
     },
     async removeKpMedia(paths) { if (paths.length) await sb.storage.from('kp-media').remove(paths); },
-    async kpShareGet(token) { return must(await sb.from('kp_shares').select('token,views,first_view_at,last_view_at,updated_at,choice,chosen_at').eq('token', token).maybeSingle()); },
-    async kpShareList() { return must(await sb.from('kp_shares').select('token,brief_id,views,last_view_at,choice,chosen_at')); },
+    async kpShareGet(token) { return must(await sb.from('kp_shares').select('token,views,first_view_at,last_view_at,updated_at,choice,chosen_at,engagement').eq('token', token).maybeSingle()); },
+    async kpShareList() { return must(await sb.from('kp_shares').select('token,brief_id,views,last_view_at,choice,chosen_at,engagement')); },
     async kpSharePut(row) { return must(await sb.from('kp_shares').upsert(row).select('token,views,first_view_at,last_view_at,updated_at').single()); },
 
     async insert(table, o) {
@@ -4024,13 +4024,24 @@ function ensureKpStats() {
     if (page === 'briefs' && !db.briefs.some(x => x.id === briefView.id)) render();
   }).catch(() => { kpStats.at = Date.now(); kpStats.loading = false; });
 }
+// Как клиент читал КП — та же строка, что приходит в Telegram (engageLine в функции kp).
+function kpEngage(e) {
+  const sec = Number(e?.total_sec) || 0;
+  if (!sec) return '';
+  const seen = e.seen || [], ev = e.events || [];
+  return [`читали ${sec < 60 ? `${Math.max(1, Math.round(sec))} с` : `${Math.round(sec / 60)} мин`}`,
+    seen.includes('Стоимость') ? 'дошли до сметы' : seen.length ? `видели ${seen.length} ${plural(seen.length, 'раздел', 'раздела', 'разделов')}` : '',
+    e.ended ? 'ролик досмотрели' : e.played ? 'запускали ролик' : '',
+    ev.includes('pdf') || ev.includes('xlsx') ? 'скачали смету' : '',
+    ev.includes('call') ? 'нажали «Позвонить»' : ''].filter(Boolean).join(' · ');
+}
 function kpBadge(x) {
   const s = x.kp?.share_token && kpStats.by[x.id];
   if (!s) return '';
-  const c = s.choice;
-  if (c?.type === 'budget') return `<span class="kpbadge tone-violet">${icon('chat', 13)} Предложил бюджет: ${rub(c.amount)}</span>`;
-  if (c) return `<span class="kpbadge tone-green">${icon('check', 13)} Выбрал: ${E(String(c.label || '').replace(' вариант', ''))}${c.options?.length ? ` + ${c.options.length}` : ''}, ${rub(c.total)}</span>`;
-  if (s.views) return `<span class="kpbadge tone-gold">${icon('eye', 13)} КП открыли ${s.views} ${plural(s.views, 'раз', 'раза', 'раз')}, ${E(ago(s.last_view_at))}</span>`;
+  const c = s.choice, eng = kpEngage(s.engagement), how = eng ? `<small class="kpeng">${E(eng)}</small>` : '';
+  if (c?.type === 'budget') return `<span class="kpbadge tone-violet">${icon('chat', 13)} Предложил бюджет: ${rub(c.amount)}</span>${how}`;
+  if (c) return `<span class="kpbadge tone-green">${icon('check', 13)} Выбрал: ${E(String(c.label || '').replace(' вариант', ''))}${c.options?.length ? ` + ${c.options.length}` : ''}, ${rub(c.total)}</span>${how}`;
+  if (s.views) return `<span class="kpbadge tone-gold">${icon('eye', 13)} КП открыли ${s.views} ${plural(s.views, 'раз', 'раза', 'раз')}, ${E(ago(s.last_view_at))}</span>${how}`;
   return `<span class="kpbadge">${icon('link', 13)} КП-ссылку ещё не открывали</span>`;
 }
 
@@ -4572,6 +4583,8 @@ async function kpShareModal(b) {
         <button data-action="kpcopy">${icon('copy', 15)} Скопировать</button>
         <a class="btnlink" href="${E(kpLink(kp.share_token, true))}" target="_blank" rel="noopener">${icon('external', 15)} Открыть</a></div>
       <p class="muted">${icon('eye', 14)} Клиент ${E(views)}. Когда откроет, придёт сообщение в Telegram служебного бота.</p>
+      ${kpEngage(info?.engagement) ? `<div class="kpvisits"><p><b>Как читали:</b> ${E(kpEngage(info.engagement))}</p>
+        <ul>${(info.engagement.visits || []).slice(-5).reverse().map(v => `<li>${E(ago(v.at || v.from))}: ${E(kpEngage({ total_sec: v.sec, seen: v.seen, played: v.played, ended: v.ended, events: v.events }))}${v.variant ? `, смотрели ${v.variant === 'base' ? 'базовый' : 'полный'} вариант` : ''}</li>`).join('')}</ul></div>` : ''}
       ${info?.choice?.type === 'budget' ? `<div class="notice kpchoice"><b>${icon('chat', 15)} Клиент предложил свой бюджет ${E(ago(info.chosen_at))}:</b> ${rub(info.choice.amount)}. Наша цена: ${info.choice.from ? 'от ' : ''}${rub(info.choice.ours)}.</div>`
         : info?.choice ? `<div class="notice kpchoice"><b>${icon('check', 15)} Клиент выбрал ${E(ago(info.chosen_at))}:</b> ${E([info.choice.label, ...(info.choice.options || []).map(o => o.name)].join(' + '))}, ${rub(info.choice.total)}${info.choice.comment ? `<br>Комментарий: «${E(info.choice.comment)}»` : ''}</div>` : ''}` : ''}
     ${kp.share_token ? `<h3>Сообщение клиенту</h3>

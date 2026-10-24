@@ -298,6 +298,47 @@
       el.addEventListener('contextmenu', ev => ev.preventDefault());
       el.addEventListener('dragstart', ev => ev.preventDefault());
     });
+    watch();
+  }
+
+  // Как клиент читает КП: время (только пока вкладка на экране), разделы,
+  // прошедшие через середину экрана, ролик, скачивание сметы, «Позвонить».
+  // Раз в 20 секунд и при уходе со страницы — в функцию kp. Просмотр команды не считаем.
+  function watch() {
+    if (preview) return;
+    const visit = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => (b % 36).toString(36)).join('');
+    const s = { sec: 0, seen: new Set(), played: false, ended: false, events: new Set(), variant: '' };
+    let lastSent = 0, sentBody = '';
+    const send = keepalive => {
+      const body = JSON.stringify({ token, action: 'track', visit, sec: s.sec, seen: [...s.seen], video: { played: s.played, ended: s.ended }, events: [...s.events], variant: s.variant });
+      if (body === sentBody) return;
+      sentBody = body; lastSent = s.sec;
+      fetch(`${cfg.supabaseUrl}/functions/v1/kp`, { method: 'POST', keepalive, headers: { 'Content-Type': 'application/json', apikey: cfg.supabaseAnonKey }, body }).catch(() => {});
+    };
+    setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      s.sec++;
+      if (s.sec - lastSent >= 20) send(false);
+    }, 1000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') send(true); });
+    const io = new IntersectionObserver(list => list.forEach(x => {
+      const h = x.isIntersecting && x.target.querySelector('h2');
+      if (h) s.seen.add(h.textContent.trim());
+    }), { rootMargin: '-45% 0px -45% 0px' });
+    root.querySelectorAll('section:not(.smetaprint), footer.cta').forEach(x => io.observe(x));
+    // ролики в КП зациклены, «ended» у них не наступает — смотрим, дошли ли до конца
+    root.querySelectorAll('.gallery video').forEach(v => {
+      v.addEventListener('play', () => { s.played = true; });
+      v.addEventListener('timeupdate', () => { if (!s.ended && v.duration && v.currentTime > v.duration - 0.8) { s.ended = true; send(false); } });
+    });
+    root.addEventListener('click', ev => {
+      const t = ev.target.closest('[data-smeta], a[href^="tel:"], [data-v]');
+      if (!t) return;
+      if (t.dataset.smeta) s.events.add(t.dataset.smeta);
+      else if (t.dataset.v) s.variant = t.dataset.v;
+      else s.events.add('call');
+      send(false);
+    });
   }
 
   async function load() {

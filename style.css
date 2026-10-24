@@ -2094,3 +2094,9 @@ html[data-theme=dark] .kpchecks li.warn{background:rgba(246,189,58,.12)}
 .bfvoice{display:grid;gap:8px;margin:0 0 12px}
 .bfvoice audio{width:100%;max-width:560px}
 .bfvoice details p{margin:6px 0 0;line-height:1.55}
+
+/* как клиент читал КП */
+.kpeng{display:block;margin-top:4px;font-size:12px;color:var(--muted)}
+.kpvisits{margin:10px 0;padding:10px 14px;border:1px solid var(--line);border-radius:12px}
+.kpvisits p{margin:0 0 6px}
+.kpvisits ul{margin:0;padding-left:18px;font-size:13px;color:var(--muted)}

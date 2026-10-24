@@ -1,6 +1,8 @@
 // Утренняя сводка «На сегодня» для Telegram — те же правила, что у списка
 // «На сегодня» в приложении. Без сети и базы: проверяется тестами.
 
+import { engageLine } from './kp-engage.ts';
+
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
 
@@ -71,7 +73,7 @@ export function kpLines(d: DigestData): string[] {
   for (const k of d.kp || []) {
     const c = k.choice;
     if (c && fresh(k.chosen_at)) out.push(c.type === 'budget' ? `• ${name(k)}: клиент предложил бюджет ${rub(c.amount)}` : `• ${name(k)}: клиент выбрал ${c.label || 'вариант'}${c.options?.length ? ` + ${c.options.length}` : ''}, ${rub(c.total)}`);
-    else if (fresh(k.last_view_at)) out.push(`• ${name(k)}: КП открыли, всего ${k.views} ${plural(k.views, 'раз', 'раза', 'раз')}`);
+    else if (fresh(k.last_view_at)) { const how = engageLine(k.engagement); out.push(`• ${name(k)}: КП открыли, всего ${k.views} ${plural(k.views, 'раз', 'раза', 'раз')}${how ? `; ${how}` : ''}`); }
     else if (!k.views && k.created_at && d.now - Date.parse(k.created_at) >= 3 * DAY) out.push(`• ${name(k)}: КП не открывали ${days(Math.floor((d.now - Date.parse(k.created_at)) / DAY))}, стоит переспросить`);
   }
   return out.slice(0, 6);

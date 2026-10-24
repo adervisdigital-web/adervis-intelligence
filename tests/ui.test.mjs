@@ -305,7 +305,7 @@ const fake = (seedData) => {
       return { path: `${briefId}/${file.name}`, url: 'https://x.supabase.co/storage/v1/object/public/kp-media/' + encodeURIComponent(briefId + '/' + file.name) };
     },
     async removeKpMedia(paths) { window.__KPREMOVED__ = paths; },
-    async kpShareGet(token) { return (window.__KPSHARES__ || {})[token] ? { token, views: 2, last_view_at: now(), first_view_at: now(), ...(window.__KPCHOICE__ ? { choice: window.__KPCHOICE__, chosen_at: now() } : {}) } : null; },
+    async kpShareGet(token) { return (window.__KPSHARES__ || {})[token] ? { token, views: 2, last_view_at: now(), first_view_at: now(), ...(window.__KPCHOICE__ ? { choice: window.__KPCHOICE__, chosen_at: now() } : {}), ...(window.__KPENG__ ? { engagement: window.__KPENG__ } : {}) } : null; },
     async kpShareList() { return Object.values(window.__KPSHARES__ || {}).map(r => ({ token: r.token, brief_id: r.brief_id, views: window.__KPVIEWS__ || 0, last_view_at: now(), choice: window.__KPCHOICE__ || null })); },
     async kpSharePut(row) { (window.__KPSHARES__ ||= {})[row.token] = clone(row); return { token: row.token, views: 0 }; },
     async user() { return session ? { email: session } : null; },
@@ -2146,12 +2146,15 @@ await page.waitForSelector('.kpmedia li');
 check('КП-ссылка: пример загружен, подпись из имени файла', (await page.inputValue('.kpmedia [data-k=caption]')) === 'заставка стекло');
 await page.fill('.kpmedia [data-k=group]', 'Направление 1 «Технологичное стекло»');
 // клиент уже выбрал вариант на странице: после публикации окно показывает выбор
-await page.evaluate(() => { window.__KPCHOICE__ = { label: 'Базовый вариант', options: [{ name: 'Звук', price: 20000 }], total: 115000, comment: 'Созвонимся в понедельник' }; });
+await page.evaluate(() => { window.__KPCHOICE__ = { label: 'Базовый вариант', options: [{ name: 'Звук', price: 20000 }], total: 115000, comment: 'Созвонимся в понедельник' };
+  window.__KPENG__ = { total_sec: 190, seen: ['Стоимость', 'Как видим оформление'], ended: true, events: ['pdf'], visits: [{ id: 'v1', at: new Date().toISOString(), sec: 190, seen: ['Стоимость'], ended: true, events: ['pdf'], variant: 'base' }] }; });
 await page.click('#kppublish');
 await page.waitForFunction(() => Object.keys(window.__KPSHARES__ || {}).length === 1);
 await page.waitForSelector('.kpchoice');
 check('КП-ссылка: в Hub виден выбор клиента, сумма и комментарий', /Базовый вариант \+ Звук, 115\s000\s₽/.test(await page.textContent('.kpchoice')) && (await page.textContent('.kpchoice')).includes('Созвонимся'), await page.textContent('.kpchoice'));
-await page.evaluate(() => { window.__KPCHOICE__ = null; });
+check('КП-ссылка: в Hub видно, как клиент читал КП — время, смета, ролик, скачивание', (await page.textContent('.kpvisits')).includes('читали 3 мин · дошли до сметы · ролик досмотрели · скачали смету')
+  && (await page.textContent('.kpvisits')).includes('базовый вариант'), await page.textContent('.kpvisits'));
+await page.evaluate(() => { window.__KPCHOICE__ = null; window.__KPENG__ = null; });
 const share = Object.values(await page.evaluate(() => window.__KPSHARES__))[0];
 const shareJson = JSON.stringify(share.data);
 check('КП-ссылка: снимок — смета как у клиента, пример, сроки', share.data.estimate.full === 205000 && share.data.media.length === 1
@@ -2182,6 +2185,9 @@ check('страница КП: название, клиент, цена, смет
   && kpText.includes('205000₽') && (await kpPage.$$('.est tbody tr')).length > 2 && (await kpPage.$$('.plan li')).length > 0 && (await kpPage.$$('.gallery img')).length === 1);
 const estTotal = () => kpPage.$eval('.est tfoot .num', x => x.textContent.replace(/\s/g, ''));
 check('страница КП: открыл сотрудник (входили в Hub) — просмотр не засчитан, плашка «Просмотр команды»', kpPosts[0]?.preview === true && await kpPage.isVisible('.teamnote'));
+await kpPage.click('[data-v=base]').catch(() => {});
+check('страница КП: просмотр команды не шлёт сигналов «как читали»', !kpPosts.some(p => p.action === 'track'));
+await kpPage.click('[data-v=full]').catch(() => {});
 {
   // клиент: чужой браузер без входа в Hub — просмотр считается, плашки нет
   const guest = await browser.newContext();
@@ -2193,6 +2199,9 @@ check('страница КП: открыл сотрудник (входили в
   // клиент выбирает базовый вариант и первую опцию, пишет комментарий и отправляет
   await g.click('[data-v=base]');
   await g.check('.opts input >> nth=0');
+  const track = posts.find(p => p.action === 'track');
+  check('страница КП: клиент переключил вариант — ушёл сигнал «как читали» с визитом и вариантом', track && /^[a-z0-9]{12}$/.test(track.visit) && track.variant === 'base'
+    && Number.isInteger(track.sec) && Array.isArray(track.seen) && track.preview === undefined, JSON.stringify(track));
   check('страница КП: кнопка выбора показывает вариант и сумму', /Базовый вариант \+ .+, 115\s000\s₽/.test(await g.textContent('[data-choose]')), await g.textContent('[data-choose]'));
   await g.click('[data-choose]');
   await g.waitForSelector('.chosen');

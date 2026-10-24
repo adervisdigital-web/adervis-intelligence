@@ -1,6 +1,7 @@
 // Приём заявок через служебного бота: что пришло, как читается, во что складывается.
 import zlib from 'node:zlib';
 import { choiceOf, budgetOf } from '../supabase/functions/_shared/kp-choice.ts';
+import { sanitizeTrack, mergeTrack, engageLine } from '../supabase/functions/_shared/kp-engage.ts';
 import { ANSWERS, WHO, WHO_PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../supabase/functions/_shared/answers.ts';
 import { senderOf, pieceOf, wordXmlText, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, GO, CANCEL, KEYBOARD } from '../supabase/functions/_shared/intake.ts';
 
@@ -19,6 +20,24 @@ check('автор: скрытый профиль, канал, старый фо�
   check('КП, бюджет: «300 000 ₽» → 300000, наша цена «от» базового; мусор и мелочь отклоняются', budgetOf(data, { amount: '300 000 ₽' })?.amount === 300000
     && budgetOf(data, { amount: '300 000' }).ours === 365000 && budgetOf(data, { amount: 'abc' }) === null && budgetOf(data, { amount: 500 }) === null);
   check('КП, выбор: без второго варианта всегда полный', choiceOf({ estimate: { two: false, full: 100000 } }, { variant: 'base' }).total === 100000);
+
+  // как клиент читал КП: сигналы страницы складываются по визитам
+  check('КП, чтение: мусор отбрасывается — чужие разделы, события, огромное время, кривой визит',
+    sanitizeTrack({ visit: 'x' }) === null && JSON.stringify(sanitizeTrack({ visit: 'abc12345', sec: 99999, seen: ['Стоимость', '<script>'], events: ['pdf', 'hack'], variant: 'zzz' }))
+      === JSON.stringify({ visit: 'abc12345', sec: 7200, seen: ['Стоимость'], played: false, ended: false, events: ['pdf'], variant: '' }));
+  const t = (o) => sanitizeTrack({ visit: 'visit0001', ...o });
+  let m = mergeTrack({}, t({ sec: 40, seen: ['Как видим оформление'] }), '2026-10-25T10:00:00Z');
+  check('КП, чтение: первый сигнал — ещё не «горячий»', !m.hot && m.eng.total_sec === 40 && m.eng.visits.length === 1);
+  m = mergeTrack(m.eng, t({ sec: 130, seen: ['Стоимость'], video: { played: true } }), '2026-10-25T10:02:00Z');
+  check('КП, чтение: перевалили за 2 минуты — «горячий» визит, разделы копятся', m.hot && m.eng.seen.length === 2 && m.eng.played && !m.eng.ended);
+  m = mergeTrack(m.eng, t({ sec: 100, events: ['xlsx'] }), '2026-10-25T10:03:00Z');
+  check('КП, чтение: второй раз «горячим» не становится, время не уменьшается', !m.hot && m.eng.total_sec === 130 && m.eng.events[0] === 'xlsx');
+  m = mergeTrack(m.eng, sanitizeTrack({ visit: 'visit0002', sec: 30, video: { ended: true } }), '2026-10-26T09:00:00Z');
+  check('КП, чтение: новый визит суммируется, ролик досмотрен', m.eng.visits.length === 2 && m.eng.total_sec === 160 && m.eng.ended && m.eng.last_at === '2026-10-26T09:00:00Z');
+  check('КП, чтение: одной строкой для Telegram и сводки', engageLine(m.eng) === 'читали 3 мин · дошли до сметы · ролик досмотрели · скачали смету' && engageLine({}) === '');
+  let many = {};
+  for (let i = 0; i < 25; i++) many = mergeTrack(many, sanitizeTrack({ visit: 'visit' + String(i).padStart(4, '0'), sec: 10 }), '2026-10-25T10:00:00Z').eng;
+  check('КП, чтение: храним только последние 20 визитов', many.visits.length === 20 && many.visits[0].id === 'visit0005');
 }
 check('автор: своё сообщение — без автора', senderOf({ text: 'привет' }) === '');
 

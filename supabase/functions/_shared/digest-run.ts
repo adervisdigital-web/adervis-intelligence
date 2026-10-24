@@ -19,7 +19,7 @@ export async function buildDigest(sb: Sb): Promise<string> {
     sb.from('content').select('title,status,publish_on,channel').lte('publish_on', date).neq('status', 'Опубликовано'),
     sb.from('leads').select('*', { count: 'exact', head: true }).eq('came_on', yesterday),
     sb.from('messages').select('*', { count: 'exact', head: true }).eq('direction', 'in').gte('created_at', new Date(now - 864e5).toISOString()),
-    sb.from('kp_shares').select('views,last_view_at,choice,chosen_at,created_at,title:data->>title,client:data->>client')
+    sb.from('kp_shares').select('views,last_view_at,choice,chosen_at,created_at,engagement,title:data->>title,client:data->>client')
   ]);
   return digestText({
     today: date, now, leads: rows(leads), prospects: rows(prospects), briefs: rows(briefs), campaigns: rows(campaigns),
