@@ -1,5 +1,5 @@
 // Утренняя сводка: те же правила, что «На сегодня» в приложении.
-import { digestItems, digestText, permNow } from '../supabase/functions/_shared/digest.ts';
+import { digestItems, digestText, permNow, stockLines } from '../supabase/functions/_shared/digest.ts';
 
 let fails = 0;
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
@@ -52,6 +52,18 @@ check('больше 12 дел — остальные «в приложении»
 const away = digestItems({ ...base, prospects: [{ name: 'В личке', status: 'Ответили', vk_peer_id: 3, bot_mode: 'human', elsewhere: 'ВК, личная страница', last_direction: 'in', last_message_at: '2026-10-18T12:00:00Z' }] });
 check('ушёл в личную переписку — не «ждёт ответа» и не просрочено', away.length === 0);
 check('пермский час', permNow(now).hour === 9 && permNow(Date.parse('2026-10-20T20:30:00Z')).date === '2026-10-21');
+
+
+// Adervis Stock в утренней сводке: тревоги первыми, ключ не подключён — молчим
+const okStock = { state: 'ok', data: { engine: { ok: true }, problems: [], envato: { daysLeft: 12 }, keysInStock: 8, sales: { day: 2 }, newAccounts: { day: 1 }, downloads: { day: 14 },
+  money: { revenueMonth: 4500, profitMonth: 1500 }, activePlans: 6 } };
+check('Stock: ключ не подключён — блока нет', stockLines({ state: 'off' }).length === 0 && stockLines(undefined).length === 0);
+check('Stock: всё в порядке — продажи за сутки и деньги за месяц, без тревог', stockLines(okStock).join('|').replace(/\s/g, ' ') === '• За сутки: 2 продажи, 1 новый клиент, скачиваний 14|• За месяц: выручка 4 500 ₽, прибыль 1 500 ₽, активных подписок 6', stockLines(okStock).join('|'));
+const badStock = stockLines({ state: 'ok', data: { ...okStock.data, engine: { ok: false }, problems: [{ title: 'Прокси не отвечает' }], envato: { daysLeft: 2 }, keysInStock: 0 } });
+check('Stock: движок, поломка, подписка Envato и ключи — тревогами впереди', badStock[0].includes('Движок Envato не работает') && badStock[1] === '• ⚠️ Прокси не отвечает'
+  && badStock[2].includes('через 2 дня') && badStock[3].includes('Ключи для продажи закончились'), badStock.join(' | '));
+check('Stock: сайт не отвечает и неверный ключ — понятными словами', stockLines({ state: 'down' })[0].includes('не отвечает') && stockLines({ state: 'bad_token' })[0].includes('Ключ Stock не подходит'));
+check('Stock: блок в тексте сводки', digestText({ ...base, stock: okStock }).includes('🧩 Adervis Stock'));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

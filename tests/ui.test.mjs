@@ -384,6 +384,14 @@ const fake = (seedData) => {
       if (window.__FEEDFAIL__) throw new Error(window.__FEEDFAIL__);
       return { ok: true, network: payload.network, posts: clone(window.__FEED__ || []), at: now() };
     },
+    async stock() {
+      window.__stockCalls = (window.__stockCalls || 0) + 1;
+      if (!(window.__SECRETS__ || {}).stock_hub_token) return { state: 'off' };
+      const now = Date.now();
+      return { state: 'ok', data: { ok: true, at: now, startedAt: now - 3600e3, accounts: 12, newAccounts: { day: 1, week: 3 }, activePlans: 6, keysInStock: 0,
+        sales: { day: 2, week: 9 }, downloads: { day: 14, total: 400 }, money: { currency: '₽', revenueToday: 299, revenueMonth: 4500, expenseMonth: 3000, profitMonth: 1500, avgCheck: 450 },
+        envato: { daysLeft: 12 }, engine: { ok: true, reason: '', checkedAt: now - 600e3 }, problems: [] } };
+    },
     async site(payload) {
       window.__lastSitePayload = payload;
       const P = (u, title, problems = [], status = 200, ms = 300) => ({ url: 'https://adervis.ru' + u, status, title, description: title + ' — описание', h1: 1, ogImage: '/og.png', problems, ms });
@@ -523,7 +531,7 @@ check('с плитки можно уйти в её раздел',
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textContent));
 check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 23,
+check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 24,
   String((await page.$$('#nav button')).length));
 // Меню длиннее экрана — прокручивается само, а не срезается краем.
 check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
@@ -1044,6 +1052,17 @@ await page.fill('#siteask input[name=ask]', 'обновить цены на ст
 await page.click('#siteask button');
 await page.waitForFunction(() => window.__STATE__.tasks.some(t => t.title === 'Сайт: обновить цены на странице видео'));
 check('сайт: просьба о правке стала задачей «Сайт: …» и видна в панели', (await page.textContent('.siteask ~ .sitelist')).includes('обновить цены на странице видео'));
+
+// --- Adervis Stock: ключ из админки Stock → сводка с тревогами
+await nav('stock');
+await page.waitForSelector('#stockkey');
+check('Stock: без ключа — шаги подключения и поле для ключа', (await page.textContent('.pagehead ~ .card')).includes('Связь с Hub ADERVIS'));
+await page.fill('#stockkey input[name=key]', 'test-key-0123456789abcdefghij');
+await page.click('#stockkey button');
+await page.waitForSelector('.sitestats');
+check('Stock: ключ ушёл на сервер, сводка показана, закончившиеся ключи — тревогой', (await page.evaluate(() => window.__SECRETS__.stock_hub_token)) === 'test-key-0123456789abcdefghij'
+  && /4\s500\s₽/.test(await page.textContent('.sitestats')) && (await page.textContent('.notice.error')).includes('Ключи для продажи закончились'), await page.textContent('.pagehead ~ *'));
+await page.evaluate(() => { window.__SECRETS__ = undefined; });
 
 // --- 5. публикация, замеры, каскад
 await nav('content');

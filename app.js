@@ -28,7 +28,7 @@ function toast(text, ms = 3500) {
 // каждый на своей сетке и со своей толщиной линии.
 const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
 // Старые имена из кода приложения, чтобы не переписывать все вызовы.
-const ICON_ALIAS = { site: 'website', mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat', briefs: 'proposal' };
+const ICON_ALIAS = { site: 'website', stock: 'download', mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat', briefs: 'proposal' };
 const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
 const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
@@ -283,6 +283,7 @@ function createApi(cfg) {
     feed: payload => callFn('feed', payload),
     prospect: payload => callFn('prospect', payload),
     site: payload => callFn('site', payload),
+    stock: () => callFn('stock', {}),
     // У аккаунта площадки ключ — сама площадка, поэтому запись, а не правка по номеру.
     async saveAccount(a) {
       return must(await sb.from('social_accounts').upsert({ network: a.network, handle: a.handle })
@@ -327,7 +328,7 @@ let ai = {
 const SECTION_TITLE = {
   home: 'Обзор', survey: 'Анкета', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', briefs: 'Брифы и КП', dialogs: 'Диалоги', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
-  cases: 'Кейсы', site: 'Сайт', competitors: 'Конкуренты',
+  cases: 'Кейсы', site: 'Сайт', stock: 'Adervis Stock', competitors: 'Конкуренты',
   content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
   chain: 'Нейроцепочка', tasks: 'Задачи и рост', roadmap: 'Развитие системы', settings: 'Настройки'
 };
@@ -338,7 +339,7 @@ const NAV = [
   ['Реклама', ['ads', 'keywords']],
   ['Контент', ['content', 'assistant']],
   ['Аналитика', ['analytics', 'decisions']],
-  ['Компания', ['knowledge', 'cases', 'site', 'products', 'competitors', 'brand']],
+  ['Компания', ['knowledge', 'cases', 'site', 'stock', 'products', 'competitors', 'brand']],
   ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
 ];
 // У каждой группы меню — свой цвет из брендбука (цвета направлений): по
@@ -347,7 +348,7 @@ const GROUP_TONE = { '': 'gold', 'Продажи': 'gold', 'Реклама': 're
 const groupOf = id => NAV.find(([, ids]) => ids.includes(id))?.[0] ?? '';
 const toneOf = id => GROUP_TONE[groupOf(id)] || 'gold';
 // В меню пункт короче заголовка раздела: группа уже говорит, о чём речь.
-const NAV_LABEL = { ads: 'Кампании', assistant: 'ИИ-помощник', products: 'Услуги и продукты', tasks: 'Задачи' };
+const NAV_LABEL = { stock: 'Stock', ads: 'Кампании', assistant: 'ИИ-помощник', products: 'Услуги и продукты', tasks: 'Задачи' };
 // На телефоне — нижняя панель: четыре главных раздела и «Ещё». Отвечать
 // клиентам с телефона нужнее, чем править кампании, — поэтому «Диалоги».
 const TABBAR = ['home', 'leads', 'dialogs', 'content'];
@@ -2676,6 +2677,71 @@ async function siteAsk(text) {
     render();
     toast('Записал. Правку сайта сделаю и выложу, когда попросите «сделай правки сайта»');
   } catch (e) { handleError(e); }
+}
+
+// ---- Adervis Stock
+// Сводка stock.adervis.ru по ключу «только для чтения» из админки Stock
+// (функция stock). Ключ вставляют здесь же, на сервер; обратно его не прочитать.
+const STOCK_URL = 'https://stock.adervis.ru';
+let stockView = { busy: false, error: '', res: null, at: 0, editKey: false };
+
+function ensureStock() {
+  if (stockView.busy || (stockView.res && Date.now() - stockView.at < 120e3)) return;
+  stockLoad();
+}
+async function stockLoad() {
+  stockView = { ...stockView, busy: true, error: '' };
+  try { stockView.res = await api.stock(); stockView.at = Date.now(); }
+  catch (e) { stockView.error = 'Сводка не загрузилась: ' + (e.message || 'ошибка сервера'); }
+  finally { stockView.busy = false; if (page === 'stock') render(); }
+}
+async function stockSaveKey(key) {
+  try {
+    await api.setChannelSecret('stock_hub_token', key.trim());
+    stockView = { ...stockView, editKey: false, res: null };
+    toast('Ключ Stock сохранён на сервере');
+    await stockLoad();
+  } catch (e) { handleError(e); }
+}
+
+function renderStock() {
+  ensureStock();
+  const v = stockView, r = v.res, s = r?.data;
+  const rub = n => `${Math.round(Number(n) || 0).toLocaleString('ru-RU')} ₽`;
+  const keyForm = (lead) => `<div class="card"><h2>${lead}</h2>
+    <ol class="stocksteps"><li>Откройте <a href="${STOCK_URL}/admin.html" target="_blank" rel="noopener">админку Stock</a> и войдите.</li>
+      <li>В блоке «Связь с Hub ADERVIS» нажмите «Выдать ключ для Hub» и скопируйте его.</li><li>Вставьте ключ сюда. Он даёт только чтение сводки: без почт и имён клиентов.</li></ol>
+    <form id="stockkey" class="siteask"><input class="input secretfield" name="key" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" required minlength="20" maxlength="200" aria-label="Ключ из админки Stock" placeholder="Ключ из админки Stock"><button class="primary">Сохранить</button></form></div>`;
+  const card = (label, value, hint, tone = '') => `<div class="card sitestat ${tone}"><small>${label}</small><b>${value}</b><span class="muted">${hint}</span></div>`;
+  let body = '';
+  if (!r) body = v.error ? `<div class="notice error">${E(v.error)}</div>` : '<p class="muted">Загружаю сводку Stock…</p>';
+  else if (r.state === 'off' || v.editKey) body = keyForm(r.state === 'off' ? 'Подключите Adervis Stock' : 'Новый ключ Stock');
+  else if (r.state === 'bad_token') body = `<div class="notice error">Ключ Stock не подходит: возможно, в админке выдали новый.</div>` + keyForm('Вставьте новый ключ');
+  else if (r.state === 'down') body = `<div class="notice error">${icon('warn', 15)} stock.adervis.ru не отвечает. Клиенты сейчас не могут войти и скачивать.</div>`;
+  else if (s) {
+    const alerts = [
+      ...(s.engine?.ok === false ? [`Движок Envato не работает${s.engine.reason ? ` (${s.engine.reason})` : ''}: скачивания стоят`] : []),
+      ...(s.problems || []).map(p => `${p.title}, с ${ago(new Date(p.since).toISOString())}`),
+      ...(s.envato?.daysLeft != null && s.envato.daysLeft <= 3 ? [`Подписка Envato кончается через ${s.envato.daysLeft} ${plural(s.envato.daysLeft, 'день', 'дня', 'дней')}`] : []),
+      ...(s.keysInStock === 0 ? ['Ключи для продажи закончились'] : [])
+    ];
+    body = (alerts.length ? `<div class="notice error"><b>${icon('warn', 15)} Требует внимания</b><ul>${alerts.map(a => `<li>${E(a)}</li>`).join('')}</ul></div>` : '')
+      + `<div class="sitestats">
+        ${card('Продажи', `${s.sales?.day ?? 0}`, `за сутки, за неделю ${s.sales?.week ?? 0}`)}
+        ${card('Выручка за месяц', rub(s.money?.revenueMonth), `сегодня ${rub(s.money?.revenueToday)}, средний чек ${rub(s.money?.avgCheck)}`)}
+        ${card('Прибыль за месяц', rub(s.money?.profitMonth), `расходы ${rub(s.money?.expenseMonth)}`, (s.money?.profitMonth || 0) < 0 ? 'tone-red' : 'tone-green')}
+        ${card('Активные подписки', `${s.activePlans ?? 0}`, `клиентов всего ${s.accounts ?? 0}, новых за неделю ${s.newAccounts?.week ?? 0}`)}
+        ${card('Скачивания', `${s.downloads?.day ?? 0}`, `за сутки, всего ${s.downloads?.total ?? 0}`)}
+        ${card('Ключи в запасе', `${s.keysInStock ?? 0}`, 'не проданы', s.keysInStock === 0 ? 'tone-red' : s.keysInStock < 5 ? 'tone-gold' : '')}
+        ${card('Подписка Envato', s.envato?.daysLeft != null ? `${s.envato.daysLeft} ${plural(s.envato.daysLeft, 'день', 'дня', 'дней')}` : '—', 'до продления', s.envato?.daysLeft != null && s.envato.daysLeft <= 3 ? 'tone-red' : '')}
+        ${card('Движок Envato', s.engine?.ok === false ? 'не работает' : s.engine?.ok ? 'работает' : 'не проверен', s.engine?.checkedAt ? `проверен ${ago(new Date(s.engine.checkedAt).toISOString())}` : 'откройте админку Stock', s.engine?.ok === false ? 'tone-red' : s.engine?.ok ? 'tone-green' : '')}
+      </div>
+      <p class="muted">Сводка ${E(ago(new Date(s.at).toISOString()))}${s.startedAt ? `, сервер Stock запущен ${E(ago(new Date(s.startedAt).toISOString()))}` : ''}. Свои и тестовые аккаунты не считаются.
+        <button class="linkbtn" data-action="stockkey">Сменить ключ</button></p>`;
+  }
+  return heading('Adervis Stock', 'stock.adervis.ru: продажи, деньги, подписка Envato и состояние движка.',
+    `<span class="headactions"><a class="btnlink" href="${STOCK_URL}/admin.html" target="_blank" rel="noopener">${icon('external', 15)} Админка Stock</a>
+      <button class="primary" data-action="stockreload" ${v.busy ? 'disabled' : ''}>${icon('refresh', 15)} ${v.busy ? 'Обновляю…' : 'Обновить'}</button></span>`) + body;
 }
 
 function renderMagnets() {
@@ -6718,6 +6784,7 @@ function render() {
   if (page === 'prospects') s = renderProspects();
   if (page === 'magnets') s = renderMagnets();
   if (page === 'site') s = renderSite();
+  if (page === 'stock') s = renderStock();
   if (page === 'decisions') s = renderDecisions();
   if (page === 'chain') s = renderChain();
   if (page === 'brand') { loadBrandFonts(); setTimeout(loadShots, 0); }
@@ -7029,6 +7096,8 @@ function render() {
   };
   const c = $('#category');
   if (c) c.onchange = e => { category = e.target.value; render(); };
+  const sk = $('#stockkey');
+  if (sk) sk.onsubmit = e => { e.preventDefault(); const v = sk.elements.key.value.trim(); if (v) stockSaveKey(v); };
   const sa = $('#siteask');
   if (sa) sa.onsubmit = e => { e.preventDefault(); const v = sa.elements.ask.value.trim(); if (v) siteAsk(v); };
   const vslot = $('#bfvoiceslot');
@@ -8252,6 +8321,8 @@ document.addEventListener('click', async e => {
     case 'openlead': go('leads'); editLead(b.dataset.id); break;
     case 'leadvoice': await leadVoiceNote(b.dataset.id, b); break;
     case 'sitecheck': await siteCheck(); break;
+    case 'stockreload': stockView.at = 0; await stockLoad(); break;
+    case 'stockkey': stockView.editKey = true; render(); break;
     case 'sitecase': await siteCaseAdd(b.dataset.url); break;
     case 'contentnet': contentNet = b.dataset.id; render(); break;
     case 'contentview': contentView = b.dataset.id; render(); break;

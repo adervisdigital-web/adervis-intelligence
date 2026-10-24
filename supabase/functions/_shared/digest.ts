@@ -17,6 +17,7 @@ export type DigestData = {
   newLeads: number;       // заявок за вчера
   inbound: number;        // сообщений клиентов за сутки
   kp?: Row[];             // КП-ссылки: title, client, views, last_view_at, choice, chosen_at, created_at
+  stock?: { state: string; data?: Row };   // сводка Adervis Stock (stockSummary)
   appUrl: string;
 };
 
@@ -64,6 +65,23 @@ export function digestItems(d: DigestData): Item[] {
   return out.sort((a, b) => Number(b.late) - Number(a.late) || a.when.localeCompare(b.when));
 }
 
+// Adervis Stock: сначала тревоги (движок, поломки, ключи, подписка Envato),
+// потом продажи за сутки и деньги за месяц. Ключ не подключён — молчим.
+export function stockLines(st?: { state: string; data?: Row }): string[] {
+  if (!st || st.state === 'off') return [];
+  if (st.state === 'bad_token') return ['• ⚠️ Ключ Stock не подходит: выдайте новый в админке Stock и вставьте в Hub'];
+  if (st.state !== 'ok' || !st.data) return ['• ⚠️ stock.adervis.ru не отвечает: клиенты не могут скачивать'];
+  const s = st.data, out: string[] = [];
+  const rub = (n: number) => `${Math.round(Number(n) || 0).toLocaleString('ru-RU')} ₽`;
+  if (s.engine?.ok === false) out.push('• ⚠️ Движок Envato не работает: скачивания стоят, проверьте админку Stock');
+  for (const p of (s.problems || []).slice(0, 3)) out.push(`• ⚠️ ${p.title}`);
+  if (s.envato?.daysLeft != null && s.envato.daysLeft <= 3) out.push(`• ⚠️ Подписка Envato кончается через ${days(s.envato.daysLeft)}`);
+  if (s.keysInStock === 0) out.push('• Ключи для продажи закончились: выпустите новые в админке');
+  out.push(`• За сутки: ${s.sales?.day ?? 0} ${plural(s.sales?.day ?? 0, 'продажа', 'продажи', 'продаж')}, ${s.newAccounts?.day ?? 0} ${plural(s.newAccounts?.day ?? 0, 'новый клиент', 'новых клиента', 'новых клиентов')}, скачиваний ${s.downloads?.day ?? 0}`);
+  out.push(`• За месяц: выручка ${rub(s.money?.revenueMonth)}, прибыль ${rub(s.money?.profitMonth)}, активных подписок ${s.activePlans ?? 0}`);
+  return out;
+}
+
 // Что клиенты сделали с КП-ссылками за сутки и какие КП давно не открывали.
 export function kpLines(d: DigestData): string[] {
   const rub = (n: number) => `${Math.round(Number(n) || 0).toLocaleString('ru-RU')} ₽`;
@@ -93,6 +111,8 @@ export function digestText(d: DigestData): string {
   if (!items.length) lines.push('', 'Хорошее время написать новым компаниям из «Поиска клиентов».');
   const kp = kpLines(d);
   if (kp.length) lines.push('', '📨 КП', ...kp);
+  const stock = stockLines(d.stock);
+  if (stock.length) lines.push('', '🧩 Adervis Stock', ...stock);
   lines.push('', `📈 За сутки: ${d.newLeads} ${plural(d.newLeads, 'новая заявка', 'новые заявки', 'новых заявок')}, ${d.inbound} ${plural(d.inbound, 'сообщение', 'сообщения', 'сообщений')} от клиентов`);
   lines.push(d.appUrl);
   return lines.join('\n').slice(0, 4000);

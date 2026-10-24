@@ -10,7 +10,7 @@
 - `index.html`, `config.js` (адрес и публичный ключ Supabase), `icons-data.js` (иконки — `icon('name', size)`), `brand/`.
 - `survey-*-data.js` — анкеты владельцев.
 - `supabase/migrations/*.sql` — схема (RLS через `is_member()`), `supabase/cron/digest.sql` — расписания.
-- `supabase/functions/` — edge-функции: `ai-write` (ИИ: тексты, план, посты, разбор ТЗ, расшифровка голоса), `channels`, `tg-bot`, `vk-bot`, `intel-bot` (служебный бот: сводка и приём заявок), `digest`, `crm` (связь с ADERVIS CRM), `feed`, `prospect`, `publish`, `site` (проверка сайта для панели «Сайт»), `site-lead` (заявки с формы adervis.ru). Общий код — `_shared/` (`bot.ts`, `flow.ts`, `outreach.ts`, `crm.ts`, `intake.ts`, `brief-ai.ts`, `digest*.ts`, `voice.ts`, `kp-engage.ts`, `site.ts`).
+- `supabase/functions/` — edge-функции: `ai-write` (ИИ: тексты, план, посты, разбор ТЗ, расшифровка голоса), `channels`, `tg-bot`, `vk-bot`, `intel-bot` (служебный бот: сводка и приём заявок), `digest`, `crm` (связь с ADERVIS CRM), `feed`, `prospect`, `publish`, `site` (проверка сайта для панели «Сайт»), `site-lead` (заявки с формы adervis.ru), `stock` (сводка Adervis Stock). Общий код — `_shared/` (`bot.ts`, `flow.ts`, `outreach.ts`, `crm.ts`, `intake.ts`, `brief-ai.ts`, `digest*.ts`, `voice.ts`, `kp-engage.ts`, `site.ts`).
 - `ai-write/compose.ts`, `feed/`, `prospect/`, `publish/` собираются в `bundle.ts` командой `node tools/bundle.mjs` — после правок пересобрать.
 
 ## Разделы app.js (по заголовкам)
@@ -25,7 +25,8 @@
 
 ## Правила
 - Сайт adervis.ru (`Desktop\Сайт ADERVIS\Adervis-website`, репозиторий `adervisdigital-web/Adervis-website`) с 2026-10-25 ведём мы: правки — по задачам «Сайт: …» из раздела Hub «Сайт», сборка `npm run build`, затем `git push`; итоги — в `PROJECT_LOG.md` сайта. Заявки с формы сайта приходят в Hub функцией `site-lead`.
-- Код ADERVIS CRM и ADERVIS Stock не меняем — только читаем. В CRM пишем входом студии, состояние меняем с проверкой версии и будим открытые вкладки сигналом `state-sync`.
+- Adervis Stock (`Desktop\PremiumStok\envato-portal`, репозиторий `adervisdigital-web/envato-portal`, ветка `master`) с 2026-10-25 тоже ведём мы: сервер сам забирает `master` раз в 10 минут (`scripts/autodeploy.sh`) и откатывается, если не поднялся — поэтому перед пушем `npm test`. Hub читает сводку `GET /api/hub/summary` по ключу из админки Stock (секрет `stock_hub_token`, функция `stock`). Файлы с доступами в `Desktop\PremiumStok` не открываем.
+- Код ADERVIS CRM не меняем — только читаем. В CRM пишем входом студии, состояние меняем с проверкой версии и будим открытые вкладки сигналом `state-sync`.
 - Ключи и пароли — только в `channel_secrets` / секретах Supabase через интерфейс; в коде, чате и логах их нет.
 - Тексты для клиентов — только по проверенным фактам базы знаний; клиентов называем публично только с разрешения.
 - Смета для клиента — без часов и ставок студии; итог всегда равен цене из КП.
