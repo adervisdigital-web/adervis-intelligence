@@ -3,3 +3,7 @@ tests/screenshots/
 supabase/.temp/
 .DS_Store
 Thumbs.db
+
+# исходники сцен Blender — большие, собираются скриптом tools/brand3d
+brand/social/3d/*.blend
+brand/social/3d/*.blend1
