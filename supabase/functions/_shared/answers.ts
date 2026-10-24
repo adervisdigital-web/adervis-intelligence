@@ -7,8 +7,11 @@ type Row = Record<string, any>;
 
 export const ANSWERS = '📝 Ответы к брифу';
 export const PICK = '↳ ';
+// «Кто это?»: тот же выбор брифа, но своя метка — бот понимает, что прислать голосовое.
+export const WHO = '🔊 Кто это?';
+export const WHO_PICK = '🔊 ';
 const CUT = 48;
-const label = (b: Row) => PICK + String(b.title || 'Бриф').slice(0, CUT);
+const label = (b: Row, mark = PICK) => mark + String(b.title || 'Бриф').slice(0, CUT);
 
 // Чей это ответ: фамилия или имя отправителя в названии заявки или в клиенте брифа.
 export function guessBrief(sender: string, briefs: Row[], leads: Row[]): Row | null {
@@ -20,11 +23,11 @@ export function guessBrief(sender: string, briefs: Row[], leads: Row[]): Row | n
 }
 
 // Кнопки выбора брифа: угаданный — первым, дальше свежие; внизу «Отмена».
-export function briefKeyboard(briefs: Row[], guess: Row | null, cancel: string) {
+export function briefKeyboard(briefs: Row[], guess: Row | null, cancel: string, mark = PICK) {
   const list = guess ? [guess, ...briefs.filter(b => b.id !== guess.id)] : briefs;
-  return { keyboard: [...list.slice(0, 8).map(b => [{ text: label(b) }]), [{ text: cancel }]], resize_keyboard: true, one_time_keyboard: true };
+  return { keyboard: [...list.slice(0, 8).map(b => [{ text: label(b, mark) }]), [{ text: cancel }]], resize_keyboard: true, one_time_keyboard: true };
 }
-export const pickBrief = (text: string, briefs: Row[]) => text.startsWith(PICK) ? briefs.find(b => label(b) === text) || null : null;
+export const pickBrief = (text: string, briefs: Row[], mark = PICK) => text.startsWith(mark) ? briefs.find(b => label(b, mark) === text) || null : null;
 
 export function buildAnswersPrompt(questions: string[], text: string): string {
   return [

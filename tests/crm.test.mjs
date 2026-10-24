@@ -59,7 +59,7 @@ check('остальное состояние CRM не тронуто', r1.state.
 const r2 = withDeal(r1.state, { ...p, lines: [{ name: 'Всё', price: 120000, note: '' }], total: 120000 }, { deal: 'proj_2', client: 'client_2' }, '2026-10-23T10:00:00Z', 'proj_1');
 check('повторная отправка обновляет ту же сделку и того же клиента', r2.mode === 'updated' && r2.dealId === 'proj_1' && !r2.clientCreated
   && r2.state.savedProjects.length === 2 && r2.state.savedProjects[0].total === 120000 && r2.state.clients.length === 2);
-const byPhone = withDeal({ clients: [{ id: 'cp', name: 'Константин', phone: '8 (900) 555-01-23' }] }, { ...p, email: '' }, { deal: 'd', client: 'c' }, 'now');
+const byPhone = withDeal({ clients: [{ id: 'cp', name: 'Олег', phone: '8 (900) 555-01-23' }] }, { ...p, email: '' }, { deal: 'd', client: 'c' }, 'now');
 check('клиент находится по телефону в любом написании', !byPhone.clientCreated && byPhone.clientId === 'cp');
 const done = { savedProjects: [{ id: 'proj_1', intelBriefId: 'brief-1', snapshot: { selected: { custom_1: { qty: 1 } } } }] };
 check('развёрнутую в CRM смету не трогаем', /уже развёрнута/.test((() => { try { withDeal(done, p, { deal: 'x', client: 'y' }, 'now'); } catch (e) { return e.message; } })()));

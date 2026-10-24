@@ -9,11 +9,12 @@ import { admin, secret, settings, sameSecret, tgApi, permToday, type Sb } from '
 import { buildDigest, sendDigest, INTEL_TOKEN, APP_URL } from '../_shared/digest-run.ts';
 import { GO, CANCEL, KEYBOARD, NO_KEYBOARD, senderOf, pieceOf, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, type Item } from '../_shared/intake.ts';
 import { analyzeBrief, readWithAi, askModel } from '../_shared/brief-ai.ts';
-import { digestVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
-import { ANSWERS, PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../_shared/answers.ts';
+import { digestVoice, clientVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
+import { ANSWERS, PICK, WHO, WHO_PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../_shared/answers.ts';
 
 const HELP = 'Перешлите сюда ТЗ, голосовые, PDF, скриншоты переписки и сообщения клиента — я соберу их в бриф с разбором и сметой. Когда всё прислали — «🧠 Разобрать».\n' +
-  'Клиент ответил на вопросы? Перешлите ответ и нажмите «📝 Ответы к брифу» — разложу ответы по вопросам брифа.\n\n' +
+  'Клиент ответил на вопросы? Перешлите ответ и нажмите «📝 Ответы к брифу» — разложу ответы по вопросам брифа.\n' +
+  'Забыли, что за клиент? «🔊 Кто это?» — пришлю короткое голосовое.\n\n' +
   'Команды:\n/today — сводка «На сегодня» сейчас, текстом и голосом\n/new — начать новую заявку\n/stop — не присылать утреннюю сводку';
 
 // Тяжёлую работу (скачать, расшифровать, разобрать) делаем после ответа
@@ -60,6 +61,18 @@ Deno.serve(async (req) => {
     } else if (text === CANCEL || /^\/new/.test(text)) {
       await sb.from('bot_intake_items').delete().eq('chat_id', chat);
       await send(chat, text === CANCEL ? 'Заявку очистил.' : 'Начинаем новую заявку — пересылайте материалы.', text === CANCEL ? NO_KEYBOARD : undefined);
+    } else if (text === WHO || /^\/who/.test(text)) {
+      const { briefs } = await activeBriefs(sb);
+      if (!briefs.length) { await reply('Брифов в работе нет.'); return new Response('ok'); }
+      await send(chat, 'Про какого клиента рассказать?', briefKeyboard(briefs, null, CANCEL, WHO_PICK));
+    } else if (text.startsWith(WHO_PICK)) {
+      const brief = pickBrief(text, (await activeBriefs(sb)).briefs, WHO_PICK);
+      if (!brief) { await send(chat, 'Не нашёл такой бриф в работе. Нажмите «🔊 Кто это?» ещё раз.', KEYBOARD); return new Response('ok'); }
+      if (!voiceReady()) { await send(chat, 'Голос не подключён: нет ключа Gemini.', KEYBOARD); return new Response('ok'); }
+      await send(chat, `Записываю голосовое про «${brief.title}», полминуты…`, KEYBOARD);
+      later(clientVoice(sb, brief.id)
+        .then(v => sendAudio(INTEL_TOKEN, chat, v.audio, `Кто это: ${brief.client || brief.title}`, v.text))
+        .catch(e => send(chat, `Голосовое не получилось: ${e instanceof Error ? e.message : 'ошибка'}`, KEYBOARD)));
     } else if (text === ANSWERS) {
       const { count } = await sb.from('bot_intake_items').select('*', { count: 'exact', head: true }).eq('chat_id', chat);
       if (!count) { await reply('Сначала перешлите ответ клиента: сообщения, скриншоты или голосовое. Потом нажмите «📝 Ответы к брифу».'); return new Response('ok'); }

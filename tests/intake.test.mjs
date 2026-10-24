@@ -1,14 +1,14 @@
 // Приём заявок через служебного бота: что пришло, как читается, во что складывается.
 import zlib from 'node:zlib';
 import { choiceOf, budgetOf } from '../supabase/functions/_shared/kp-choice.ts';
-import { ANSWERS, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../supabase/functions/_shared/answers.ts';
+import { ANSWERS, WHO, WHO_PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../supabase/functions/_shared/answers.ts';
 import { senderOf, pieceOf, wordXmlText, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, GO, CANCEL, KEYBOARD } from '../supabase/functions/_shared/intake.ts';
 
 let fails = 0;
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
 
 // кто автор пересланного
-check('автор: пересланное от человека', senderOf({ forward_origin: { type: 'user', sender_user: { first_name: 'Константин', last_name: 'Петров' } } }) === 'Олег Петров');
+check('автор: пересланное от человека', senderOf({ forward_origin: { type: 'user', sender_user: { first_name: 'Олег', last_name: 'Петров' } } }) === 'Олег Петров');
 check('автор: скрытый профиль, канал, старый формат', senderOf({ forward_origin: { type: 'hidden_user', sender_user_name: 'Паша' } }) === 'Паша'
   && senderOf({ forward_origin: { type: 'channel', chat: { title: 'Химпром' } } }) === 'Химпром' && senderOf({ forward_sender_name: 'Анастасия' }) === 'Анастасия');
 {
@@ -82,7 +82,7 @@ check('вилка: часы × ставки + 10%, вверх до 5 000', range
 const msg = summaryText({ title: 'Два AI-ролика', client: 'СтройГрупп', analysis: b.analysis, questions: b.questions, range, link: 'https://app/#brief=x', parts: 3, model: 'Claude' });
 check('сообщение: суть, вилка, вопросы, ссылка на бриф', msg.includes('Бриф готов: Два AI-ролика — СтройГрупп') && msg.includes('110 000 ₽ – 155 000 ₽')
   && msg.includes('1. Вертикальные') && msg.includes('#brief=x'), msg);
-check('кнопки: «Разобрать», «Ответы к брифу», «Отмена»', KEYBOARD.keyboard.flat().map(x => x.text).join() === [GO, ANSWERS, CANCEL].join());
+check('кнопки: «Разобрать», «Ответы к брифу», «Кто это?», «Отмена»', KEYBOARD.keyboard.flat().map(x => x.text).join() === [GO, ANSWERS, WHO, CANCEL].join());
 {
   // ответы клиента к брифу
   const briefs = [{ id: 'u', title: 'Оформление видеодайджеста «PRO Химпром» для сотрудников группы', client: 'Химпром', lead_id: 'l1' },
@@ -92,6 +92,9 @@ check('кнопки: «Разобрать», «Ответы к брифу», «�
   const kb = briefKeyboard(briefs, briefs[1], CANCEL);
   check('ответы: угаданный бриф первой кнопкой, «Отмена» последней, выбор по кнопке', kb.keyboard[0][0].text.includes('Два AI-ролика') && kb.keyboard.at(-1)[0].text === CANCEL
     && pickBrief(kb.keyboard[1][0].text, briefs)?.id === 'u' && pickBrief('Два AI-ролика', briefs) === null);
+  const who = briefKeyboard(briefs, null, CANCEL, WHO_PICK).keyboard[0][0].text;
+  check('«Кто это?»: своя метка, с выбором ответов не путается', who.startsWith(WHO_PICK) && pickBrief(who, briefs, WHO_PICK)?.id === 'u'
+    && pickBrief(who, briefs) === null && pickBrief(kb.keyboard[1][0].text, briefs, WHO_PICK) === null && !WHO.startsWith(WHO_PICK + 'Оформ'));
   const prompt = buildAnswersPrompt(['Какие сроки?', 'Хромакей или LED?'], 'Анастасия: снимаем на хромакее, старт в декабре');
   check('ответы: в запросе вопросы по номерам и переписка', prompt.includes('1. Какие сроки?') && prompt.includes('снимаем на хромакее'));
   const parsed = parseAnswers('```json\n{"answers":[{"n":2,"answer":"Хромакей"},{"n":9,"answer":"лишний"},{"n":1,"answer":""}],"other":"Старт в декабре"}\n```', 2);
