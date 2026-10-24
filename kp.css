@@ -172,7 +172,9 @@ section li{margin:4px 0}
   .smetaprint table{width:100%;border-collapse:collapse;margin-top:12px}.smetaprint td,.smetaprint th{padding:6px 8px;border-bottom:1px solid #d9dce2;text-align:left;vertical-align:top}
   .smetaprint td+td,.smetaprint th+th{text-align:right;white-space:nowrap;width:110px}.smetaprint th small{display:block;font-weight:400;color:#6b7280;white-space:normal}
   .smetaprint .g td{background:#f2f3f6;font-weight:600;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .smetaprint tfoot td{font-weight:700;font-size:14px;border-top:2px solid #16181d;border-bottom:0}
+  .smetaprint .total td{font-weight:700;font-size:14px;border-top:2px solid #16181d;border-bottom:0;break-inside:avoid}
+  .smetaprint tr{break-inside:avoid}
+  html:has(body.print-smeta),body.print-smeta{background:#fff}
   .smetaprint .opt td small{display:block;color:#6b7280}.smetaprint ul{padding-left:18px;margin:0}.smetaprint .sp-foot{margin-top:20px;color:#6b7280}
 }
 @media print{.herobg,.bar,.cta .btn,.choose,.teamnote,.esthelp,.shield{display:none}.est tr.has .nm{text-decoration:none}.hero{background:#121316;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
