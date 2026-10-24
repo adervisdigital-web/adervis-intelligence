@@ -2736,6 +2736,9 @@ function renderStock() {
         ${card('Подписка Envato', s.envato?.daysLeft != null ? `${s.envato.daysLeft} ${plural(s.envato.daysLeft, 'день', 'дня', 'дней')}` : '—', 'до продления', s.envato?.daysLeft != null && s.envato.daysLeft <= 3 ? 'tone-red' : '')}
         ${card('Движок Envato', s.engine?.ok === false ? 'не работает' : s.engine?.ok ? 'работает' : 'не проверен', s.engine?.checkedAt ? `проверен ${ago(new Date(s.engine.checkedAt).toISOString())}` : 'откройте админку Stock', s.engine?.ok === false ? 'tone-red' : s.engine?.ok ? 'tone-green' : '')}
       </div>
+      ${(s.bySource || []).length ? `<div class="card"><h2>Продажи по площадкам</h2>
+        <p class="muted">За всё время. Сумма — по цене, указанной при выпуске ключа, а если её не указали — по цене тарифа на сайте. Комиссию площадок Stock не вычитает.</p>
+        <ul class="sitelist">${s.bySource.map(b => `<li><b>${E(b.label)}</b><span class="muted">${b.sold} ${plural(b.sold, 'продажа', 'продажи', 'продаж')} · ${rub(b.revenue)}</span></li>`).join('')}</ul></div>` : ''}
       <p class="muted">Сводка ${E(ago(new Date(s.at).toISOString()))}${s.startedAt ? `, сервер Stock запущен ${E(ago(new Date(s.startedAt).toISOString()))}` : ''}. Свои и тестовые аккаунты не считаются.
         <button class="linkbtn" data-action="stockkey">Сменить ключ</button></p>`;
   }

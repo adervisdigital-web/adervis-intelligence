@@ -390,7 +390,7 @@ const fake = (seedData) => {
       const now = Date.now();
       return { state: 'ok', data: { ok: true, at: now, startedAt: now - 3600e3, accounts: 12, newAccounts: { day: 1, week: 3 }, activePlans: 6, keysInStock: 0,
         sales: { day: 2, week: 9 }, downloads: { day: 14, total: 400 }, money: { currency: '₽', revenueToday: 299, revenueMonth: 4500, expenseMonth: 3000, profitMonth: 1500, avgCheck: 450 },
-        envato: { daysLeft: 12 }, engine: { ok: true, reason: '', checkedAt: now - 600e3 }, problems: [] } };
+        envato: { daysLeft: 12 }, engine: { ok: true, reason: '', checkedAt: now - 600e3 }, problems: [], bySource: [{ id: 'ggsel', label: 'GGSel', sold: 3, revenue: 897 }] } };
     },
     async site(payload) {
       window.__lastSitePayload = payload;
@@ -1062,6 +1062,7 @@ await page.click('#stockkey button');
 await page.waitForSelector('.sitestats');
 check('Stock: ключ ушёл на сервер, сводка показана, закончившиеся ключи — тревогой', (await page.evaluate(() => window.__SECRETS__.stock_hub_token)) === 'test-key-0123456789abcdefghij'
   && /4\s500\s₽/.test(await page.textContent('.sitestats')) && (await page.textContent('.notice.error')).includes('Ключи для продажи закончились'), await page.textContent('.pagehead ~ *'));
+check('Stock: продажи по площадкам — GGSel с числом продаж и суммой', /GGSel\s*3 продажи · 897\s₽/.test(await page.textContent('body')));
 await page.evaluate(() => { window.__SECRETS__ = undefined; });
 
 // --- 5. публикация, замеры, каскад
