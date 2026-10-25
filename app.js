@@ -4407,14 +4407,14 @@ function renderBriefs() {
   const open = list.filter(x => !['Сделка', 'Отказ'].includes(x.stage));
   const kpSum = open.reduce((n, x) => n + (Number(x.kp?.price_full) || suggested(x, 'full')), 0);
   const lateN = open.filter(x => x.next_on && x.next_on < today()).length;
-  const pulse = list.length ? `<section class="card pulse bfpulse" aria-label="Брифы в цифрах">
+  const pulse = list.length ? `<section class="leadstats bfpulse" aria-label="Брифы в цифрах">
     ${[['В работе', open.length, 'брифов на шагах до сделки', 'gold'],
        ['Сумма КП в работе', kpSum ? num(kpSum) + ' ₽' : '—', 'по ценам из КП или середине сметы', 'violet'],
        ['Просрочено шагов', lateN, lateN ? 'начните с них' : 'всё в срок', lateN ? 'red' : 'green'],
        ['Сделок', list.filter(x => x.stage === 'Сделка').length, `отказов: ${list.filter(x => x.stage === 'Отказ').length}`, 'green']]
-      .map(([a, b, c, tone]) => `<div class="metric tone-${tone}"><div class="metrichead"><span class="mlabel">${a}</span></div><div class="value">${b}</div><small>${c}</small></div>`).join('')}
+      .map(([a, b, c, tone]) => `<div class="metric tone-${tone}"><small>${a}</small><b class="value">${b}</b><span>${c}</span></div>`).join('')}
   </section>` : '';
-  return head + chain + pulse + (list.length ? `<div class="grid three bfgrid">${list.map(briefCard).join('')}</div>`
+  return head + (list.length ? '' : chain) + pulse + (list.length ? `<div class="grid three bfgrid">${list.map(briefCard).join('')}</div>`
     : `<div class="card empty"><h2>Брифов пока нет</h2><p>Пришло ТЗ? Нажмите «+ Бриф», вставьте текст или загрузите .docx — разбор разложит его на работы и вопросы, приложение посчитает вилку по вашим ставкам.</p></div>`);
 }
 
@@ -7808,15 +7808,15 @@ function renderLeads() {
       через амбассадоров — всё это меряется только заявками.</p></div>`;
   }
 
-  const metrics = `<div class="grid metrics">${[
+  // цифры — одной строкой над списком: сначала работа с заявками, разбор продаж ниже
+  const metrics = `<div class="leadstats">${[
     ['За 30 дней', st.recent, 'новых обращений'],
     ['В работе', st.inWork, 'ждут ответа или решения'],
     ['Сделок', st.won.length, st.rate === null ? 'ещё ничего не закрыто' : `${st.rate}% из закрытых`],
     ['Заработано', num(st.amount), 'по состоявшимся сделкам']
-  ].map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value">${b}</div><small>${c}</small></div>`).join('')}</div>`;
+  ].map(([a, b, c]) => `<div class="metric"><small>${a}</small><b class="value">${b}</b><span>${c}</span></div>`).join('')}</div>`;
 
-  const sources = `<div class="head"><h2>Откуда приходят</h2><small class="muted">за всё время</small></div>
-    <div class="card tablewrap"><table class="table">
+  const sources = `<div class="card tablewrap leadsrc"><div class="head"><h2>Откуда приходят</h2><small class="muted">за всё время</small></div><table class="table">
       <thead><tr><th>Источник</th><th>Обращений</th><th>Сделок</th><th>Доля</th><th>Сумма</th></tr></thead>
       <tbody>${st.bySource.map(s => `<tr><td><b>${E(s.name)}</b></td><td>${s.all}</td><td>${s.deals}</td>
         <td>${s.all ? Math.round(100 * s.deals / s.all) + '%' : '—'}</td><td>${num(s.amount)}</td></tr>`).join('')}
@@ -7834,18 +7834,19 @@ function renderLeads() {
 
   const views = `<div class="seg" role="group" aria-label="Вид">${[['table', 'Таблица'], ['board', 'Доска']].map(([id, t]) =>
     `<button class="chip${leadView === id ? ' on' : ''}" data-action="leadview" data-id="${id}" aria-pressed="${leadView === id}">${t}</button>`).join('')}</div>`;
-  const list = filters + `<div class="head"><h2>Все обращения</h2>
-      <small class="muted">${rows.length === db.leads.length ? 'свежие сверху' : `показано ${rows.length} из ${db.leads.length}`}</small>${views}</div>`
+  const list = `<div class="head"><h2>Все обращения</h2>
+      <small class="muted">${rows.length === db.leads.length ? 'свежие сверху' : `показано ${rows.length} из ${db.leads.length}`}</small>${views}</div>` + filters
     + (leadView === 'board' ? leadBoard(rows) : `<div class="card tablewrap"><table class="table">
       <thead><tr><th>Когда</th><th>Кто</th><th>Откуда</th><th>Направление</th><th>Чего хотел</th><th>Сумма</th><th>Статус</th><th class="rowacts"><span class="offscreen">Действия</span></th></tr></thead>
       <tbody>${rows.map(l => `<tr class="clickrow" tabindex="0" role="button" data-l="${E(l.id)}">
-        <td class="date">${E(l.came_on)}</td><td><b>${E(l.name)}</b></td><td>${E(l.source)}</td>
+        <td class="date" title="${E(l.came_on)}">${E(shortDate(l.came_on))}</td><td><b>${E(l.name)}</b></td><td>${E(l.source)}</td>
         <td>${tag(l.direction)}</td><td>${E((l.request || '').slice(0, 60))}${(l.request || '').length > 60 ? '…' : ''}</td>
         <td>${l.amount ? num(l.amount) : '—'}</td><td>${tag(l.status)}</td>${rowActs('dellead', l.id, l.name)}</tr>`).join('')}
       </tbody></table></div>`)
     + (rows.length ? '' : '<div class="card empty">Под отбор ничего не подошло. Снимите фильтр или измените запрос.</div>');
 
-  return head + metrics + leadFunnelCard() + lostCard() + sources + list;
+  return head + metrics + list + `<div class="head leadsechead"><h2>Как идут продажи</h2></div>
+    <div class="leadan"><div>${leadFunnelCard()}</div><div class="leadside">${lostCard()}${sources}</div></div>`;
 }
 
 // Голосовая сводка по заявке: окно заявки не перерисовывается, поэтому плеер

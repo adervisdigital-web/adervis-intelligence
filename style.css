@@ -2473,3 +2473,21 @@ html[data-theme=dark] .hmdays>li.isnow .hmday,html[data-theme=dark] .hmdays>li.i
   .hmpulse .metric:nth-child(n+3){border-top:1px solid var(--line)}
 }
 @media(prefers-reduced-motion:reduce){html body .sidebar{transition:none}}
+
+/* ===== заявки: список сверху, разбор продаж ниже ===== */
+.leadstats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:0 0 20px;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
+.leadstats .metric{display:flex!important;flex-direction:column;align-items:flex-start!important;justify-content:flex-start;gap:2px;padding:14px 18px;border:0;border-radius:0;box-shadow:none;background:none;min-height:0}
+.leadstats .metric + .metric{border-left:1px solid var(--line)}
+.leadstats .metric small,.leadstats .metric span{color:var(--muted);font-size:12.5px}
+.leadstats .metric .value{font-size:24px!important;margin:2px 0!important;line-height:1.15}
+.leadsechead{margin:30px 0 14px}
+.leadan{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px;align-items:start}
+.leadside{display:grid;gap:20px;min-width:0}
+.leadan .funnelcard,.leadside .card{margin:0}
+.leadsrc .head{margin:0 0 6px}
+.leadsrc .head h2{margin:0}
+@media(max-width:1100px){.leadan{grid-template-columns:1fr}}
+@media(max-width:720px){.leadstats{grid-template-columns:1fr 1fr}.leadstats .metric:nth-child(3){border-left:0}.leadstats .metric:nth-child(n+3){border-top:1px solid var(--line)}}
+
+.bfpulse .tone-red .value{color:#ef4444}
+.bfpulse .tone-green .value{color:var(--tone-green)}
