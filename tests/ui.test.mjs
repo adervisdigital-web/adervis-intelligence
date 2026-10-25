@@ -506,11 +506,17 @@ const login = async (email = 'artem@adervis.ru', pass = 'secret') => {
   await page.fill('#gate-pass', pass);
   await page.click('#gatebtn');
 };
-// Раздел в свёрнутой группе открывается как у человека: сначала группа.
+// Раздел открывается как у человека: «Все разделы» в верхней строке, потом пункт.
 const nav = async id => {
   const item = page.locator(`#nav button[data-page=${id}]`);
-  if (!(await item.isVisible())) await page.click(`#nav .navsection:has(button[data-page=${id}]) .navgroup`);
+  // панель гаснет 0,3 с и в это время ещё «видна» — смотрим на её состояние, а не на видимость
+  if (!(await page.evaluate(() => document.body.classList.contains('menu')))) await page.click('#menu');
   await item.click();
+};
+// «Выйти» — в панели «Все разделы»
+const signout = async () => {
+  if (!(await page.evaluate(() => document.body.classList.contains('menu')))) await page.click('#menu');
+  await page.click('[data-action=signout]');
 };
 const state = () => page.evaluate(() => JSON.parse(JSON.stringify(window.__STATE__)));
 
@@ -542,37 +548,36 @@ const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textCo
 check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
 check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 24,
   String((await page.$$('#nav button')).length));
-// Меню длиннее экрана — прокручивается само, а не срезается краем.
-check('до последнего пункта меню можно доскроллить', await page.evaluate(() => {
-  const nav = document.querySelector('#nav');
-  // самое длинное меню — со всеми раскрытыми группами
-  nav.querySelectorAll('.navsection.closed .navgroup').forEach(t => t.click());
-  nav.scrollTop = nav.scrollHeight;
-  const b = [...nav.querySelectorAll('button[data-page]')].filter(x => x.offsetParent).pop().getBoundingClientRect();
-  const n = nav.getBoundingClientRect();
-  return b.bottom <= n.bottom + 1 && b.top >= n.top - 1;
-}));
-check('имя пользователя остаётся на виду', await page.evaluate(() => {
-  const u = document.querySelector('.bottom').getBoundingClientRect();
-  return u.bottom <= window.innerHeight + 1 && u.height > 0;
-}));
-// счётчики дел у разделов и сворачивание групп
+// Одна верхняя строка: пять ежедневных разделов, остальное — в «Все разделы».
+check('в верхней строке пять главных разделов', (await page.$$eval('#hubtabs button[data-page]', b => b.map(x => x.dataset.page))).join(',') === 'home,leads,briefs,dialogs,content');
+check('бокового меню на экране нет, пока его не открыли', !(await page.isVisible('#nav button[data-page=knowledge]')));
+await page.click('#menu');
+check('«Все разделы» открывает все группы сразу', await page.isVisible('#nav button[data-page=knowledge]') && await page.isVisible('#nav button[data-page=settings]')
+  && await page.$eval('#menu', b => b.getAttribute('aria-expanded') === 'true'));
+check('в панели видно, кто вошёл', await page.isVisible('.sidebar .bottom #myname'));
+await page.keyboard.press('Escape');
+await page.waitForFunction(() => !document.body.classList.contains('menu'));
+await page.click('#menu');
+await page.mouse.click(8, 300);
+check('щелчок мимо панели её закрывает', await page.evaluate(() => !document.body.classList.contains('menu')));
+// счётчики дел у разделов
 const leadBadge = await page.$eval('#nav button[data-page=leads] .navbadge', b => ({ hidden: b.hidden, text: b.textContent, late: b.classList.contains('late') }));
 check('у «Заявок» счётчик просроченного дела', !leadBadge.hidden && leadBadge.text === '1' && leadBadge.late, JSON.stringify(leadBadge));
+check('тот же счётчик — в верхней строке', await page.$eval('#hubtabs button[data-page=leads] .navbadge', b => !b.hidden && b.textContent === '1' && b.classList.contains('late')));
 check('у «Обзора» — все дела на сегодня', await page.$eval('#nav button[data-page=home] .navbadge', b => !b.hidden && Number(b.textContent) >= 1));
 check('у разделов без дел счётчика нет', await page.$eval('#nav button[data-page=knowledge] .navbadge', b => b.hidden));
-await page.click('#nav .navsection[data-group="Продажи"] .navgroup');
-check('группа сворачивается', !(await page.isVisible('#nav button[data-page=leads]')));
-check('счётчик свёрнутой группы переезжает на заголовок',
-  await page.$eval('#nav .navsection[data-group="Продажи"] .navgroup .navbadge', b => !b.hidden && b.classList.contains('late')));
-check('свёрнутая группа запоминается', await page.evaluate(() => JSON.parse(localStorage.getItem('hub.nav.closed')).includes('Продажи')));
-await nav('leads');
-check('группа открытого раздела раскрыта', await page.$eval('#nav .navsection[data-group="Продажи"] .navgroup', t => t.getAttribute('aria-expanded') === 'true'));
+await page.click('#hubtabs button[data-page=leads]');
+check('раздел из верхней строки открывается и отмечен', (await page.textContent('#crumb')) === 'Заявки'
+  && await page.$eval('#hubtabs button[data-page=leads]', b => b.classList.contains('active') && b.getAttribute('aria-current') === 'page'));
 check('открытый раздел отмечен для чтения с экрана', await page.$eval('#nav button[data-page=leads]', b => b.getAttribute('aria-current') === 'page'));
-await page.click('#nav .navsection[data-group="Продажи"] .navgroup');
 await nav('keywords');
 check('«Ключевые фразы» — свой пункт в группе «Реклама»', (await page.textContent('#crumb')) === 'Ключевые фразы'
   && await page.$eval('#nav button[data-page=keywords]', b => !!b.closest('[data-group="Реклама"]')));
+check('после перехода панель закрыта', await page.evaluate(() => !document.body.classList.contains('menu')));
+check('«Создать» и «Спросить» — справа внизу', await page.evaluate(() => {
+  const c = document.querySelector('#create').getBoundingClientRect(), a = document.querySelector('#ask').getBoundingClientRect();
+  return c.right > innerWidth - 60 && c.bottom > innerHeight - 60 && a.right <= c.left && a.bottom > innerHeight - 60;
+}));
 await nav('home');
 
 await page.evaluate(() => { document.querySelector('#nav').scrollTop = 0; });
@@ -833,11 +838,13 @@ await showGraph();
 const aim = await page.$$eval('.gnode', gs => gs.map(g => {
   const c = g.querySelector('.ghit'), r = c.getBoundingClientRect();
   const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-  return { id: g.dataset.node, hit: el && el.parentElement && el.parentElement.dataset.node };
+  // под кнопками «Создать» и «Спросить» и под верхней строкой узел просто не виден — это не сосед
+  if (el && el.closest('#create, #ask, .topbar, #alerts')) return { id: g.dataset.node, hit: g.dataset.node };
+  return { id: g.dataset.node, hit: el && el.parentElement && el.parentElement.dataset.node, at: el && (el.id || el.className?.baseVal || el.className), y: Math.round(r.y) };
 }));
 const stolen = aim.filter(a => a.id !== a.hit);
 check('щелчок по узлу не достаётся соседу', stolen.length === 0,
-  stolen.slice(0, 3).map(a => `${a.id} → ${a.hit}`).join(' | '));
+  stolen.slice(0, 3).map(a => `${a.id} → ${a.hit} (${a.at} y${a.y})`).join(' | '));
 const taps = await page.$$eval('.gnode .ghit', cs => cs.map(c => {
   const svg = c.ownerSVGElement;
   return +c.getAttribute('r') * (svg.getBoundingClientRect().width / svg.viewBox.baseVal.width) * 2;
@@ -992,10 +999,6 @@ check('активный раздел подсвечен цветом своей 
 check('у групп меню — свои цвета из брендбука',
   await page.$eval('.navsection[data-group="Реклама"] .navtile', e => getComputedStyle(e).color) === 'rgb(239, 68, 68)'
   && await page.$eval('.navsection[data-group="Контент"] .navtile', e => getComputedStyle(e).color) === 'rgb(139, 92, 246)');
-await page.click('#rail');
-check('меню сворачивается в полосу иконок и помнит это', await page.evaluate(() => document.body.classList.contains('rail')
-  && document.querySelector('.sidebar').getBoundingClientRect().width < 90 && localStorage.getItem('intel.nav.rail') === '1'));
-await page.click('#rail');
 
 // --- 1б. нейроцепочка
 await nav('chain');
@@ -2429,20 +2432,15 @@ await page.click('[data-action=todayopen][data-id^="br:"]');
 await page.waitForSelector('.bftabs');
 check('из «На сегодня» — сразу в бриф', (await page.textContent('h1')) === 'Видеодайджест');
 await nav('home');
-// иконка быстрого действия при наведении видна и в тёмной теме
-const themeBefore = await page.evaluate(() => { const t = document.documentElement.dataset.theme; document.documentElement.dataset.theme = 'dark'; return t || ''; });
-await page.hover('.quickacts .quickact');
-const qaColors = await page.$eval('.quickacts .quickact i', i => [getComputedStyle(i).color, getComputedStyle(i).backgroundColor]);
-check('быстрое действие: при наведении иконка не сливается с плашкой', qaColors[0] !== qaColors[1], qaColors.join(' / '));
-await page.mouse.move(0, 0);
-await page.evaluate(t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }, themeBefore);
-check('главная: приветствие и быстрые действия', /Доброе утро|Добрый день|Добрый вечер|Доброй ночи/.test(await page.textContent('.homedeck h1'))
-  && (await page.$$('.quickacts .quickact')).length === 6);
+check('главная: приветствие и главное дело крупно', /Доброе утро|Добрый день|Добрый вечер|Доброй ночи/.test(await page.textContent('.hmhello h1'))
+  && await page.isVisible('.hmnow h2') && await page.isVisible('.hmweek'));
+check('неделя — семь дней колонками', (await page.$$('.hmdays > li')).length === 7);
 await page.click('[data-action=snooze][data-id^="br:"]');
 await page.waitForFunction(d => window.__STATE__.briefs[0].next_on === d, localDay(1));
 check('«перенести на завтра» убирает дело из сегодняшних', !(await page.textContent('.todaycard')).includes('Видеодайджест'));
-await page.click('.quickacts [data-action=bfnew]');
-check('быстрое действие открывает форму брифа', await page.isVisible('#bff'));
+await page.click('#create');
+await page.click('.createitem[data-action=bfnew]');
+check('«Создать» справа внизу открывает форму брифа', await page.isVisible('#bff'));
 await page.click('#modal [data-action=close]');
 await page.screenshot({ path: path.join(OUT, 'intel-brief.png') });
 // переписку связываем с заявкой — и вопросы по ТЗ уходят прямо в неё
@@ -2800,7 +2798,8 @@ const figureType = await page.$eval('.figure .fnote', t => parseFloat(getCompute
 check('текст чертежа не раздувается на широком экране', figureType <= 19, String(figureType));
 // на широком мониторе строки становились непрочитываемо длинными
 const mainW = await page.$eval('.main', e => Math.round(e.getBoundingClientRect().width));
-check('колонка содержимого не растягивается на весь монитор', mainW <= 1370, String(mainW));
+// главная на широком экране — две колонки, поэтому сама колонка шире; строки держит max-width текста
+check('колонка содержимого не растягивается на весь монитор', mainW <= 1730, String(mainW));
 const bodyLine = await page.$eval('.card p', e => Math.round(e.getBoundingClientRect().width));
 check('строка текста не длиннее разумного', bodyLine <= 1000, String(bodyLine));
 await page.screenshot({ path: path.join(OUT, 'intel-brand-wide.png') });
@@ -3266,7 +3265,7 @@ await page.waitForFunction(() => document.documentElement.dataset.theme !== 'dar
 check('тема переключается обратно', await page.evaluate(() => document.documentElement.dataset.theme !== 'dark'));
 
 // --- 11. выход и «запомнить меня»
-await page.click('[data-action=signout]');
+await signout();
 await page.waitForSelector('#gate:not([hidden])');
 check('выход возвращает на экран входа', await page.isHidden('#shell'));
 check('почта подставлена после выхода', (await page.inputValue('#gate-email')) === 'artem@adervis.ru');
@@ -3284,13 +3283,13 @@ check('и снова скрыть', (await page.getAttribute('#gate-pass', 'type
 await page.uncheck('#remember');
 await login();
 await page.waitForSelector('#shell:not([hidden])');
-await page.click('[data-action=signout]');
+await signout();
 await page.waitForSelector('#gate:not([hidden])');
 check('без галочки почта не запоминается', (await page.inputValue('#gate-email')) === '');
 await page.check('#remember');
 await login();
 await page.waitForSelector('#shell:not([hidden])');
-await page.click('[data-action=signout]');
+await signout();
 await page.waitForSelector('#gate:not([hidden])');
 
 // --- 12. телефон

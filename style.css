@@ -2308,3 +2308,167 @@ body.rail .navrecent{display:none}
   .bfwho .lavatar{width:42px;height:42px}
 }
 @media(max-width:720px){.bfnow .bfnext{grid-template-columns:1fr}}
+
+/* ===== одна верхняя строка вместо бокового меню (2026-10-25) =====
+   Пять ежедневных разделов в строке, остальное в панели «Все разделы».
+   «Создать» и «Спросить» справа внизу, под рукой на любом экране.
+   На телефоне остаются нижняя панель и выезжающее меню. */
+.hubmark,.hubtabs,.askbtn{display:none}
+@media(min-width:721px){
+  html body .main{margin:0 auto!important;width:100%!important;max-width:1720px;padding:0 32px 128px}
+  .topbar{position:sticky;top:10px;z-index:20;display:flex;align-items:center;gap:4px;margin:10px 0 28px;padding:8px 10px 8px 8px;
+    background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--lift);-webkit-backdrop-filter:none;backdrop-filter:none}
+  .topbar .crumb{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .hubmark{display:flex;align-items:center;gap:9px;height:42px;padding:0 14px 0 4px;margin-right:6px;background:none;border:0;border-right:1px solid var(--line);border-radius:0;font:600 14px var(--font-display);color:var(--ink)}
+  .hubmark img{width:34px;height:34px;border-radius:10px;background:var(--gold);padding:5px}
+  .hubtabs{display:flex;gap:2px;min-width:0}
+  .hubtab{position:relative;display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 13px;border:0;border-radius:12px;background:none;color:var(--muted);font-weight:500;white-space:nowrap}
+  .hubtab:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
+  .hubtab.active{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink);font-weight:600}
+  .hubtab.active::after{content:"";position:absolute;left:13px;right:13px;bottom:-9px;height:3px;border-radius:3px;background:var(--gold)}
+  .hubtab .navbadge{position:static;min-width:19px;height:19px;padding:0 5px;border-radius:10px;font-size:11px;line-height:19px;background:var(--gold);color:#141414}
+  .hubtab .navbadge.late{background:#ef4444;color:#fff}
+  html body #menu{display:inline-flex;align-items:center;gap:8px;width:auto;height:42px;padding:0 14px;margin-left:4px;border:0;border-radius:12px;background:none;color:var(--muted);font-weight:500}
+  html body #menu:hover,body.menu #menu{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink)}
+  html body #menu::after{content:"";width:7px;height:7px;border-right:1.8px solid currentColor;border-bottom:1.8px solid currentColor;transform:translateY(-2px) rotate(45deg);transition:transform .25s}
+  body.menu #menu::after{transform:translateY(2px) rotate(-135deg)}
+  .hubmark{order:0}.topbar .crumb{order:1}.hubtabs{order:2}html body #menu{order:3}
+  .topbar .top-actions{order:4;margin-left:auto}
+  .topbar #search{min-width:min(340px,26vw);justify-content:flex-start}
+  .topbar #search .kbd{margin-left:auto}
+  html body #create{position:fixed;right:28px;bottom:28px;z-index:30;width:148px;height:56px;justify-content:center;border-radius:18px;font-size:15px;
+    box-shadow:0 14px 36px color-mix(in srgb,var(--gold) 34%,transparent)}
+  .askbtn{display:inline-flex;align-items:center;gap:9px;position:fixed;right:188px;bottom:28px;z-index:30;height:56px;padding:0 20px;border-radius:18px;
+    background:var(--panel);border:1px solid var(--line);color:var(--ink);font-weight:600;box-shadow:0 14px 36px rgba(0,0,0,.28)}
+  .askbtn svg{color:var(--tone-violet)}
+  .askbtn:hover{border-color:var(--tone-violet)}
+  html body .sidebar{position:fixed;inset:84px max(24px,calc((100vw - 1720px) / 2 + 32px)) auto;width:auto;max-height:calc(100vh - 110px);overflow:auto;z-index:25;
+    display:block;padding:22px 26px 16px;border:1px solid var(--line);border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.45);
+    opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-8px);transition:opacity .2s ease,transform .3s cubic-bezier(.22,1,.36,1),visibility 0s .3s}
+  html body.menu .sidebar{opacity:1;visibility:visible;pointer-events:auto;transform:none;transition:opacity .2s ease,transform .3s cubic-bezier(.22,1,.36,1)}
+  .sidebar .brand,.sidebar .navsearch,.sidebar .navrecent,.railbtn{display:none!important}
+  .sidebar .nav{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px 26px;overflow:visible;padding:0}
+  .sidebar .navsection,.sidebar .navsection + .navsection{display:block;align-self:start;margin:0;padding:0;border:0}
+  .sidebar .navitems,.sidebar .navsection.solo{display:grid;gap:2px}
+  .sidebar .navsection.solo{padding-top:26px}
+  .sidebar .navsection.closed .navitems{display:block}
+  .sidebar .nav .navgroup{pointer-events:none;padding:2px 8px 6px}
+  .sidebar .nav .navgroup svg,.sidebar .nav .navgroup .navbadge{display:none}
+  .sidebar .nav button[data-page]::before{content:none!important}
+  .sidebar .bottom{display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding:14px 4px 0}
+  .sidebar .useracts{display:flex;gap:8px}
+  .sidebar .useracts .sbact{width:auto;padding:0 14px}
+  .sectionhead{top:84px}
+  /* высота от ширины: в широкой колонке карта иначе вписывается по высоте и срезает нижние узлы */
+  .graphview{height:auto;aspect-ratio:16/9;max-height:80vh}
+  .graphwrap.full .graphview{aspect-ratio:auto;max-height:none}
+}
+@media(min-width:1500px){.sidebar .nav{grid-template-columns:repeat(7,minmax(0,1fr))}}
+@media(min-width:721px) and (max-width:1240px){
+  .hubtab span{display:none}
+  .hubtab{padding:0 11px}
+  .hubtab .navbadge{position:absolute;top:2px;right:0;min-width:16px;height:16px;line-height:16px;font-size:10px;padding:0 4px}
+  .topbar #search{min-width:0}
+  .topbar #search .kbd{display:none}
+}
+@media(min-width:721px) and (max-width:900px){html body #menu span{display:none}.hubmark span{display:none}}
+@media(max-width:720px){.askbtn,.hubtabs,.hubmark,#menu span{display:none!important}}
+
+/* ===== главная: «Сейчас», деньги, сегодня, неделя ===== */
+.hmhello{margin:6px 0 26px}
+.hmhello p{margin:0 0 10px;color:var(--muted);font-weight:500}
+.hmhello p::first-letter{text-transform:uppercase}
+.hmhello .hmlate{color:#ef4444}
+.hmhello h1{margin:0;font-size:clamp(30px,3vw,50px);line-height:1.08;letter-spacing:-.01em;text-wrap:balance;max-width:28ch}
+.hmhello h1 em{font-style:normal;color:#a86f00}
+html[data-theme=dark] .hmhello h1 em{color:var(--gold)}
+.hmtop{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,420px);gap:20px;align-items:start}
+.hmside,.hmmain{display:grid;gap:20px;min-width:0;align-content:start}
+.hmnow{padding:30px 32px 12px;border-radius:24px}
+.hmkind{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:14px;color:color-mix(in srgb,var(--acc) 75%,var(--ink))}
+html[data-theme=dark] .hmkind{color:var(--acc)}
+.hmnow h2{margin:12px 0 8px;font:500 clamp(22px,1.8vw,30px)/1.25 var(--font-display);max-width:36ch;text-wrap:balance}
+.hmfacts{margin:0 0 22px;color:var(--muted);max-width:70ch}
+.hmacts{display:flex;flex-wrap:wrap;gap:10px;padding-bottom:24px}
+.hmacts button{min-height:46px;padding:0 20px;border-radius:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
+.hmghost{background:none;border:1px solid transparent;color:var(--muted)}
+.hmghost:hover{color:var(--ink);border-color:var(--line)}
+.hmnext{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.hmnext li{display:grid;grid-template-columns:40px minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:14px 0;border-top:1px solid var(--line)}
+.hmnext li:first-child{border-top:0}
+.hmic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--acc) 15%,transparent);color:color-mix(in srgb,var(--acc) 80%,var(--ink))}
+html[data-theme=dark] .hmic{color:var(--acc)}
+.hmnext b{display:block;font-weight:600}
+.hmnext div span{color:var(--muted);font-size:13.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.hmnext small{color:var(--muted);white-space:nowrap}
+.hmnext button{min-height:38px;padding:0 14px;border-radius:12px;font-weight:600}
+.hmmorenote{margin:0 0 14px}
+.hmmoney{padding:24px 26px 20px}
+.hmmoney .head,.hmgaps .head{margin:0 0 4px}
+.hmmoney h2,.hmgaps h2{margin:0;font-size:17px}
+.hmsum{font:700 40px/1.1 var(--font-display);letter-spacing:-.02em;margin:8px 0 2px;font-variant-numeric:tabular-nums}
+.hmsum small{font-size:20px;color:var(--muted)}
+.hmpipe{display:flex;gap:3px;height:10px;margin:16px 0 14px}
+.hmpipe i{border-radius:4px}
+.seg0{background:var(--tone-sky)}.seg1{background:var(--tone-gold)}.seg2{background:var(--tone-violet)}.segwon{background:var(--tone-green)}
+.hmstages{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.hmstages li{display:flex;align-items:center;gap:10px;font-size:14px}
+.hmstages li i{width:10px;height:10px;border-radius:3px;flex:none}
+.hmstages li span{color:var(--muted)}
+.hmstages li b{margin-left:auto;font-variant-numeric:tabular-nums}
+.hmstages li em{font-style:normal;color:var(--muted);width:22px;text-align:right}
+.hmstock{display:flex;align-items:center;gap:10px;width:100%;margin-top:14px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--ink) 4%,transparent);border:1px solid var(--line);font-size:13.5px}
+.hmstock span{display:inline-flex;gap:6px;align-items:center;color:var(--muted)}
+.hmstock b{margin-left:auto}
+.hmstock small{color:var(--muted)}
+.hmgaps{padding:20px 22px}
+.hmgaps .gapcard{display:block;width:100%;text-align:left;padding:10px 0;background:none;border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none}
+.hmgaps .gapcard:first-of-type{border-top:0}
+.hmgaps .gapcard b{display:block;font-size:14px}
+.hmgaps .gapcard p{margin:2px 0 0;font-size:13px}
+.hmgaps .gapcard:hover b{color:color-mix(in srgb,var(--gold) 70%,var(--ink))}
+.hmweek{padding:24px 26px 18px}
+.hmweek .head{gap:14px;margin:0 0 14px;justify-content:flex-start}
+.hmweek .head h2{margin:0}
+.hmweek .head .linkbtn{margin-left:auto}
+.hmdays{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--line)}
+.hmdays>li{padding:14px 12px 6px;border-left:1px solid var(--line);min-height:130px;min-width:0}
+.hmdays>li:first-child{border-left:0;padding-left:0}
+.hmday{display:block;color:var(--muted);font-size:13px;font-weight:500;margin-bottom:10px;text-transform:capitalize}
+.hmday b{display:block;color:var(--ink);font:500 20px var(--font-display);margin-top:2px}
+.hmdays>li.isnow .hmday,.hmdays>li.isnow .hmday b{color:#a86f00}
+html[data-theme=dark] .hmdays>li.isnow .hmday,html[data-theme=dark] .hmdays>li.isnow .hmday b{color:var(--gold)}
+.hmdays ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.hmdays ul button{display:flex;gap:8px;align-items:baseline;width:100%;padding:4px 6px;margin-left:-6px;background:none;border:0;border-radius:8px;text-align:left;font-size:13.5px;line-height:1.35;color:var(--ink)}
+.hmdays ul button:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.hmdays ul button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hmdays ul i{flex:none;width:8px;height:8px;border-radius:3px;background:var(--acc);transform:translateY(-1px)}
+.hmfree,.hmmore{color:var(--muted);font-size:13px;margin:0}
+.hmpulse{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
+.hmpulse .metric{display:grid;gap:2px;align-content:start;text-align:left;padding:14px 18px;border:0;border-radius:0;box-shadow:none;background:none;min-height:0}
+.hmpulse .metric + .metric{border-left:1px solid var(--line)}
+.hmpulse .metric small{color:var(--muted)}
+.hmpulse .metric .value{font-size:22px;margin:0}
+.hmpulse .metric span{font-size:12.5px;color:var(--muted)}
+.hmpulse .metric:hover{transform:none;background:color-mix(in srgb,var(--ink) 4%,transparent)}
+@media(min-width:2200px){html body .main{max-width:2080px}.hmtop{grid-template-columns:minmax(0,1fr) 480px}}
+@media(max-width:1100px){.hmmain,.hmside{display:contents}.hmnow{order:1}.hmside .todaycard{order:2}.hmmoney{order:3}.hmweek{order:4}.hmgaps{order:5}.hmpulse{order:6}}
+@media(max-width:1100px){.hmtop{grid-template-columns:1fr}.hmdays{grid-template-columns:repeat(4,minmax(0,1fr))}.hmdays>li:nth-child(5){border-left:0;padding-left:0}}
+@media(max-width:720px){
+  .hmhello h1{font-size:28px}
+  .hmnow{padding:22px 18px 6px}
+  .hmacts button{flex:1;justify-content:center}
+  .hmnext li{grid-template-columns:40px minmax(0,1fr);row-gap:8px}
+  .hmnext li small{display:none}
+  .hmnext li button{grid-column:2;justify-self:start}
+  .hmdays{grid-template-columns:1fr}
+  .hmdays>li{display:grid;grid-template-columns:72px minmax(0,1fr);border-left:0;border-top:1px solid var(--line);padding:10px 0;min-height:0}
+  .hmdays>li:first-child{border-top:0}
+  .hmday{margin:0}
+  .hmdays ul button{min-height:40px;align-items:center}
+  .hmmoney .linkbtn,.hmgaps .linkbtn,.hmweek .linkbtn,.todaycard .linkbtn{min-height:36px;display:inline-flex;align-items:center}
+  .hmpulse{grid-template-columns:1fr 1fr}
+  .hmpulse .metric:nth-child(3){border-left:0}
+  .hmpulse .metric:nth-child(n+3){border-top:1px solid var(--line)}
+}
+@media(prefers-reduced-motion:reduce){html body .sidebar{transition:none}}

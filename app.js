@@ -2594,8 +2594,9 @@ const daysWord = n => `${n} ${plural(n, 'день', 'дня', 'дней')}`;
 function todayList() {
   const t = today(), out = [];
   const push = (ref, ic, title, what, when, late) => out.push({ ref, ic, title, what, when, late });
+  const briefed = new Set(db.briefs.filter(b => b.next_on && !['Сделка', 'Отказ'].includes(b.stage)).map(b => b.lead_id).filter(Boolean));
   for (const l of db.leads) {
-    if (!FUNNEL.slice(0, 3).includes(l.status)) continue;
+    if (!FUNNEL.slice(0, 3).includes(l.status) || briefed.has(l.id)) continue;
     if (l.next_on) {
       if (l.next_on <= t) push('l:' + l.id, 'leads', l.name, l.next_step || 'Следующий шаг по заявке', l.next_on, l.next_on < t);
     } else if (l.status === 'Новое' && daysAgo(l.came_on) >= 1) {
@@ -2633,8 +2634,8 @@ function todayList() {
 
 const TODAY_TONE = { l: 'gold', br: 'gold', dl: 'gold', pr: 'gold', cp: 'red', p: 'violet' };
 
-function todayPanel() {
-  const list = todayList();
+function todayPanel(skip = '') {
+  const list = todayList().filter(x => x.ref !== skip);
   const shown = list.slice(0, 8);
   return `<div class="card todaycard">
     <div class="head" style="margin:0 0 8px"><h2 style="margin:0">На сегодня</h2>
@@ -2795,7 +2796,7 @@ const kpPrice = b => Number(b.kp?.price_full) || Number(b.kp?.price_base) || sug
 function homeSignals() {
   ensureKpStats();
   const out = [], now = Date.now();
-  const push = (rank, tone, ic, title, detail, act, live = false, at = '') => out.push({ rank, tone, ic, title, detail, act, live, at });
+  const push = (rank, tone, ic, title, detail, act, live = false, at = '', key = '') => out.push({ rank, tone, ic, title, detail, act, live, at, key });
   for (const b of db.briefs) {
     const st = b.kp?.share_token && kpStats.by[b.id];
     if (!st) continue;
@@ -2804,19 +2805,19 @@ function homeSignals() {
     if (c && st.chosen_at && now - Date.parse(st.chosen_at) < 3 * 864e5) {
       push(0, 'green', 'check', c.type === 'budget' ? `${who} предложил свой бюджет` : `${who} выбрал вариант в КП`,
         c.type === 'budget' ? rub(c.amount) : `${String(c.label || '').replace(' вариант', '')}${c.options?.length ? ` + ${c.options.length}` : ''}, ${rub(c.total)}`,
-        [open, 'Договор и предоплата'], false, st.chosen_at);
+        [open, 'Договор и предоплата'], false, st.chosen_at, 'br:' + b.id);
       continue;
     }
     const e = st.engagement, last = e?.last_at ? Date.parse(e.last_at) : 0;
-    if (last && now - last < LIVE_MS) push(1, 'gold', 'eye', `${who} читает КП прямо сейчас`, kpEngage(e) || 'открыли страницу', [open, 'Написать клиенту'], true, e.last_at);
-    else if (st.last_view_at && now - Date.parse(st.last_view_at) < 864e5) push(3, 'gold', 'eye', `${who} открывал КП`, kpEngage(e) || `${st.views} ${plural(st.views, 'раз', 'раза', 'раз')}`, [open, 'Предложить созвон'], false, st.last_view_at);
+    if (last && now - last < LIVE_MS) push(1, 'gold', 'eye', `${who} читает КП прямо сейчас`, kpEngage(e) || 'открыли страницу', [open, 'Написать клиенту'], true, e.last_at, 'br:' + b.id);
+    else if (st.last_view_at && now - Date.parse(st.last_view_at) < 864e5) push(3, 'gold', 'eye', `${who} открывал КП`, kpEngage(e) || `${st.views} ${plural(st.views, 'раз', 'раза', 'раз')}`, [open, 'Предложить созвон'], false, st.last_view_at, 'br:' + b.id);
   }
   for (const l of db.leads.filter(l => l.status === 'Новое' && daysAgo(l.came_on) <= 2)) {
     push(2, 'gold', 'leads', l.source === 'Сайт' ? `Заявка с сайта: ${l.name}` : `Новая заявка: ${l.name}`, l.request || l.source,
-      [`data-action="openlead" data-id="${E(l.id)}"`, 'Ответить'], false, l.came_on);
+      [`data-action="openlead" data-id="${E(l.id)}"`, 'Ответить'], false, l.came_on, 'l:' + l.id);
   }
   for (const pr of db.prospects.filter(waitingReply).slice(0, 4)) {
-    push(2, 'violet', 'chat', `${pr.name} ждёт ответа`, String(pr.last_text || '').slice(0, 90) || 'новое сообщение', [`data-action="opendialog" data-id="${E(pr.id)}"`, 'Ответить'], false, pr.last_message_at);
+    push(2, 'violet', 'chat', `${pr.name} ждёт ответа`, String(pr.last_text || '').slice(0, 90) || 'новое сообщение', [`data-action="opendialog" data-id="${E(pr.id)}"`, 'Ответить'], false, pr.last_message_at, 'dl:' + pr.id);
   }
   const sd = stockView.res;
   if (sd?.state === 'down') push(1, 'red', 'warn', 'stock.adervis.ru не отвечает', 'клиенты не могут скачивать', ['data-page="stock"', 'Открыть Stock']);
@@ -2826,55 +2827,32 @@ function homeSignals() {
   return out.sort((a, b) => a.rank - b.rank || String(b.at).localeCompare(String(a.at)));
 }
 
-// Доска сделок: путь клиента от заявки до сделки одним взглядом. Заявка, у
-// которой есть бриф, показывается брифом — одна карточка на клиента.
-const BOARD = [['new', 'Новые'], ['work', 'Разбираем'], ['kp', 'КП у клиента'], ['talk', 'Переговоры'], ['won', 'Сделка']];
-function boardCards() {
-  const cols = Object.fromEntries(BOARD.map(([k]) => [k, []]));
-  const withBrief = new Set(db.briefs.map(b => b.lead_id).filter(Boolean));
-  for (const b of db.briefs) {
-    const col = ['Разбор', 'Вопросы', 'Расчёт'].includes(b.stage) ? 'work' : b.stage === 'КП' ? 'kp' : b.stage === 'Переговоры' ? 'talk'
-      : b.stage === 'Сделка' && daysAgo(b._at || b.updated_at) <= 30 ? 'won' : '';
-    if (!col) continue;
-    const st = b.kp?.share_token && kpStats.by[b.id], e = st?.engagement;
-    cols[col].push({ open: `data-action="openbrief" data-id="${E(b.id)}"`, who: b.client || b.title, what: b.title, sum: kpPrice(b), days: daysAgo(b._at || b.updated_at),
-      views: st?.views || 0, live: !!(e?.last_at && Date.now() - Date.parse(e.last_at) < LIVE_MS), chose: !!st?.choice });
-  }
-  for (const l of db.leads) {
-    if (withBrief.has(l.id)) continue;
-    const col = l.status === 'Новое' ? 'new' : l.status === 'В работе' ? 'work' : l.status === 'Сделка' && daysAgo(l.came_on) <= 30 ? 'won' : '';
-    if (!col) continue;
-    cols[col].push({ open: `data-action="openlead" data-id="${E(l.id)}"`, who: l.name, what: l.request || l.source, sum: Number(l.amount) || 0, days: daysAgo(l.came_on), views: 0, live: false, chose: false });
-  }
-  return cols;
-}
-function boardHtml() {
-  const cols = boardCards();
-  const card = c => `<button class="bcard${c.live ? ' live' : ''}" ${c.open}>
-      <b>${c.live ? '<em class="livedot" aria-hidden="true"></em>' : ''}${E(c.who)}</b><span>${E(String(c.what || '').slice(0, 70))}</span>
-      <span class="bmeta">${c.sum ? `<strong>${num(c.sum)} ₽</strong>` : ''}<small>${c.days ? `${c.days} ${plural(c.days, 'день', 'дня', 'дней')}` : 'сегодня'}</small>
-        ${c.chose ? `<i class="bchip tone-green">${icon('check', 12)} выбрал</i>` : c.views ? `<i class="bchip tone-gold">${icon('eye', 12)} ${c.views}</i>` : ''}</span></button>`;
-  return `<section class="card homeboard" aria-labelledby="boardh"><div class="head"><h2 id="boardh">Сделки</h2><button class="linkbtn" data-page="leads">Все заявки</button></div>
-    <div class="bcols">${BOARD.map(([k, t], i) => `<div class="bcol bcol${i}"><div class="bhead"><span>${t}</span><b>${cols[k].length || ''}</b></div>
-      ${cols[k].length ? cols[k].sort((x, y) => (y.live - x.live) || (y.sum - x.sum)).slice(0, 5).map(card).join('') + (cols[k].length > 5 ? `<small class="bmore">и ещё ${cols[k].length - 5}</small>` : '') : '<p class="bempty">пусто</p>'}</div>`).join('')}</div></section>`;
-}
-
-// Неделя вперёд: следующие шаги по заявкам, брифам и переписке и выход публикаций.
+// Неделя вперёд: семь колонок по дням, в каждой дела списком.
+// Заявка с брифом показывается брифом, чтобы клиент не стоял дважды.
 function weekHtml() {
   const days = Array.from({ length: 7 }, (_, i) => dayShift(i));
+  const briefed = new Set(db.briefs.filter(b => b.next_on && !['Сделка', 'Отказ'].includes(b.stage)).map(b => b.lead_id).filter(Boolean));
   const items = [
-    ...db.leads.filter(l => l.next_on && !LOST.includes(l.status) && l.status !== 'Сделка').map(l => ({ d: l.next_on, t: l.name, tone: 'gold' })),
-    ...db.briefs.filter(b => b.next_on && !['Сделка', 'Отказ'].includes(b.stage)).map(b => ({ d: b.next_on, t: b.client || b.title, tone: 'gold' })),
-    ...db.content.filter(c => (c.publish_on || c.date) && c.status !== 'Опубликовано').map(c => ({ d: c.publish_on || c.date, t: c.title, tone: 'violet' }))
+    ...db.leads.filter(l => l.next_on && !LOST.includes(l.status) && l.status !== 'Сделка' && !briefed.has(l.id))
+      .map(l => ({ d: l.next_on, t: l.name.split('—')[0].trim(), hint: l.next_step, tone: 'gold', open: `data-action="openlead" data-id="${E(l.id)}"` })),
+    ...db.briefs.filter(b => b.next_on && !['Сделка', 'Отказ'].includes(b.stage))
+      .map(b => ({ d: b.next_on, t: b.client || b.title, hint: b.next_step, tone: 'gold', open: `data-action="openbrief" data-id="${E(b.id)}"` })),
+    ...db.content.filter(c => (c.publish_on || c.date) && c.status !== 'Опубликовано')
+      .map(c => ({ d: c.publish_on || c.date, t: c.title, hint: c.channel, tone: 'violet', open: `data-action="todayopen" data-id="p:${E(c.id)}"` }))
   ];
-  return `<section class="card homeweek" aria-labelledby="weekh"><div class="head"><h2 id="weekh">Неделя</h2><button class="linkbtn" data-page="content">Контент-план</button></div>
-    <ol class="wdays">${days.map((d, i) => { const list = items.filter(x => x.d === d);
-      return `<li class="${i === 0 ? 'today' : ''}"><span class="wd">${E(weekday(d))}</span><span class="wn">${Number(d.slice(8, 10))}</span>
-        <span class="wdots">${list.slice(0, 4).map(x => `<em class="tone-${x.tone}" title="${E(x.t)}"></em>`).join('')}</span><small>${list.length ? `${list.length}` : ''}</small></li>`; }).join('')}</ol>
-    ${(() => { const next = items.filter(x => x.d >= days[0] && x.d <= days[6]).sort((x, y) => x.d.localeCompare(y.d)).slice(0, 4);
-      return next.length ? `<ul class="wlist">${next.map(x => `<li><em class="tone-${x.tone}"></em><span>${E(x.t)}</span><small>${E(x.d === days[0] ? 'сегодня' : shortDate(x.d))}</small></li>`).join('')}</ul>` : '<p class="muted">На неделю дел не запланировано.</p>'; })()}</section>`;
+  // просроченное не теряется: оно стоит в сегодняшнем дне
+  const dayOf = x => x.d < days[0] ? days[0] : x.d;
+  return `<section class="card hmweek" aria-labelledby="weekh"><div class="head"><h2 id="weekh">Неделя</h2>
+      <span class="muted">${E(shortDate(days[0]))} – ${E(shortDate(days[6]))}</span><button class="linkbtn" data-page="content">Контент-план</button></div>
+    <ol class="hmdays">${days.map((d, i) => { const list = items.filter(x => dayOf(x) === d);
+      return `<li class="${i === 0 ? 'isnow' : ''}"><span class="hmday">${i === 0 ? 'Сегодня' : E(weekday(d))}<b>${Number(d.slice(8, 10))}</b></span>
+        ${list.length ? `<ul>${list.slice(0, 5).map(x => `<li class="tone-${x.tone}"><button ${x.open} title="${E(x.hint || x.t)}"><i></i><span>${E(x.t)}</span></button></li>`).join('')}
+          ${list.length > 5 ? `<li class="hmmore">и ещё ${list.length - 5}</li>` : ''}</ul>` : '<p class="hmfree">Свободно</p>'}</li>`; }).join('')}</ol></section>`;
 }
 
+// Главная: одно дело крупно («Сейчас»), за ним короткая очередь; справа деньги
+// в работе и план на сегодня; ниже неделя и одна строка цифр маркетинга.
+// Всё остальное живёт в своих разделах: главная не должна быть кашей.
 function renderHome() {
   ensureStock();
   const sig = homeSignals(), tl = todayList(), lateN = tl.filter(x => x.late).length;
@@ -2882,69 +2860,76 @@ function renderHome() {
   const hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
   const first = memberName(me?.email).split(' ')[0];
   const when = new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long' });
-  const live = sig.find(x => x.live);
-  const urgent = sig.filter(x => x.rank <= 2).length + lateN;
-  const lead = urgent ? `${urgent} ${plural(urgent, 'срочное дело', 'срочных дела', 'срочных дел')}` : tl.length ? `${tl.length} ${plural(tl.length, 'дело', 'дела', 'дел')} на сегодня` : 'Срочного нет';
+
+  // очередь: события из сигналов, которых нет в «На сегодня»; пусто — первое дело дня
+  const refs = new Set(tl.map(x => x.ref));
+  const queue = sig.filter(x => !x.key || !refs.has(x.key));
+  let skip = '';
+  if (!queue.length && tl.length) {
+    const t0 = tl[0];
+    skip = t0.ref;
+    queue.push({ tone: TODAY_TONE[t0.ref.slice(0, t0.ref.indexOf(':'))] || 'gold', ic: t0.ic, title: t0.title, detail: t0.what, live: false,
+      at: '', late: t0.late, act: [`data-action="todayopen" data-id="${E(t0.ref)}"`, 'Открыть'], snooze: /^(l|pr|br):/.test(t0.ref) ? t0.ref : '' });
+  }
+  const urgent = queue.length + tl.filter(x => x.ref !== skip).length;
+  const focus = queue[0], rest = queue.slice(1, 4);
 
   // деньги в работе: КП по шагам цепочки
   const open = db.briefs.filter(b => PIPE_STAGES.some(([st]) => st === b.stage));
   const bySt = PIPE_STAGES.map(([st, label]) => { const list = open.filter(b => b.stage === st); return { st, label, n: list.length, sum: list.reduce((n, b) => n + kpPrice(b), 0) }; });
   const total = bySt.reduce((n, x) => n + x.sum, 0);
   const won = db.briefs.filter(b => b.stage === 'Сделка' && daysAgo(b.updated_at || b._at) <= 30);
+  const wonSum = won.reduce((n, b) => n + kpPrice(b), 0);
   const a = adStats(), ls = leadStats(), reach = totals(), sd = stockView.res?.data;
-
-  const sigRow = x => `<li class="sig tone-${x.tone}${x.live ? ' live' : ''}"><i class="sigic">${icon(x.ic, 17)}</i>
-      <div class="sigtext"><b>${x.live ? '<em class="livedot" aria-hidden="true"></em>' : ''}${E(x.title)}</b><span>${E(x.detail)}</span></div>
-      ${x.at ? `<small class="sigat">${E(ago(x.at))}</small>` : ''}
-      <button class="sigact" ${x.act[0]}>${E(x.act[1])}</button></li>`;
-  // цифры маркетинга — первой реклама (решение владельцев: обзор начинается с рекламы, а не с выручки)
   const minis = [
     ['Идут кампании', db.campaigns.length ? a.running.length : '—',
-      !db.campaigns.length ? 'Заведите кампанию в «Рекламе»' : a.running.length ? `потрачено ${num(a.runningSpent)} из ${num(a.runningBudget)}` : 'ни одна не запущена', 'ads', ''],
-    ['Цена заявки', a.cpl === null ? '—' : num(a.cpl), a.leads ? `заявок из кампаний: ${a.leads}` : 'заявок из кампаний пока нет', 'ads', ''],
-    ['Заявки за 30 дней', db.leads.length ? ls.recent : '—', db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads', ''],
-    ['Охват публикаций', reach.posts ? num(reach.views) : '—', reach.posts ? `по последним замерам · публикаций: ${reach.posts}` : 'замеров пока нет', 'analytics', sparkline(chartData().spark)]
+      !db.campaigns.length ? 'Заведите кампанию в «Рекламе»' : a.running.length ? `потрачено ${num(a.runningSpent)} из ${num(a.runningBudget)}` : 'ни одна не запущена', 'ads'],
+    ['Цена заявки', a.cpl === null ? '—' : num(a.cpl), a.leads ? `заявок из кампаний: ${a.leads}` : 'заявок из кампаний пока нет', 'ads'],
+    ['Заявки за 30 дней', db.leads.length ? ls.recent : '—', db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads'],
+    ['Охват публикаций', reach.posts ? num(reach.views) : '—', reach.posts ? `по последним замерам · публикаций: ${reach.posts}` : 'замеров пока нет', 'analytics']
   ];
+  const gaps = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
 
-  let h = `<section class="homedeck" aria-label="Сводка дня">
-      <div class="homehead"><span class="cmddate">${icon('calendar', 15)}${E(when)}</span>
-        <h1>${hello}${first && first !== 'ADERVIS' ? ', ' + E(first) : ''}</h1>
-        <p class="homelead"><b>${lead}</b>${live ? ` · <span class="livetag"><em class="livedot" aria-hidden="true"></em>${E(live.title)}</span>` : ''}${lateN ? ` · просрочено ${lateN}` : ''}</p></div>
-      <div class="quickacts" role="group" aria-label="Быстро создать">${QUICK.map(([act, label, ic, tone]) => `<button class="quickact tone-${tone}" data-action="${act}" title="Создать: ${E(label.toLowerCase())}">
-        <i>${icon(ic, 18)}</i><span>${label}</span>${icon('plus', 14)}</button>`).join('')}</div>
-    </section>
-    <div class="homegrid">
-      <div class="homecol">
-      <section class="card signals" aria-labelledby="sigh"><div class="head"><h2 id="sigh">Сигналы</h2><small class="muted">${sig.length ? `${sig.length} ${plural(sig.length, 'событие', 'события', 'событий')}, сначала срочное` : 'тишина'}</small></div>
-        ${sig.length ? `<ul class="siglist">${sig.slice(0, 8).map(sigRow).join('')}</ul>${sig.length > 8 ? `<p class="muted">И ещё ${sig.length - 8}: смотрите «Заявки» и «Брифы и КП».</p>` : ''}`
-          : `<p class="muted sigempty">Новых заявок, ответов и открытых КП нет. Хорошее время написать новым клиентам: <button class="linkbtn" data-page="prospects">Поиск клиентов</button>.</p>`}</section>
-      ${boardHtml()}
-      </div>
-      <div class="homecol side">
-      <section class="card money" aria-labelledby="moneyh"><div class="head"><h2 id="moneyh">Деньги в работе</h2><button class="linkbtn" data-page="briefs">Брифы и КП</button></div>
-        <div class="moneytotal">${total ? `${num(total)} ₽` : '—'}</div>
-        <p class="muted">${open.length ? `${open.length} ${plural(open.length, 'проект', 'проекта', 'проектов')} до сделки` : 'проектов в работе нет'}${won.length ? ` · сделок за 30 дней: ${won.length}` : ''}</p>
-        ${total ? `<div class="pipebar" role="img" aria-label="${E(bySt.filter(x => x.sum).map(x => `${x.label}: ${num(x.sum)} ₽`).join(', '))}">${bySt.filter(x => x.sum).map((x, i) => `<span class="seg seg${i}" style="flex:${x.sum}"></span>`).join('')}</div>` : ''}
-        <ul class="pipelist">${bySt.map((x, i) => `<li><em class="seg seg${i}"></em><span>${x.label}</span><b>${x.sum ? `${num(x.sum)} ₽` : '—'}</b><small>${x.n || ''}</small></li>`).join('')}</ul>
-        ${sd ? `<button class="stockline" data-page="stock"><span>${icon('download', 15)} Stock за месяц</span><b>${num(Math.round(sd.money?.revenueMonth || 0))} ₽</b><small>${sd.sales?.day ?? 0} за сутки</small></button>` : ''}
+  const head = urgent
+    ? `${E(hello)}${first && first !== 'ADERVIS' ? ', ' + E(first) : ''}. <em>${urgent} ${plural(urgent, 'дело', 'дела', 'дел')}</em> ${plural(urgent, 'ждёт', 'ждут', 'ждут')} вас`
+    : `${E(hello)}${first && first !== 'ADERVIS' ? ', ' + E(first) : ''}. Срочного нет`;
+  const row = x => `<li class="tone-${x.tone}"><span class="hmic">${icon(x.ic, 18)}</span>
+      <div><b>${x.live ? '<em class="livedot" aria-hidden="true"></em>' : ''}${E(x.title)}</b><span>${E(x.detail)}</span></div>
+      ${x.at ? `<small>${E(ago(x.at))}</small>` : '<small></small>'}<button ${x.act[0]}>${E(x.act[1])}</button></li>`;
+
+  return `<section class="hmhello"><p>${E(when)}${lateN ? ` · <b class="hmlate">просрочено ${lateN}</b>` : ''}</p><h1>${head}</h1></section>
+    <div class="hmtop">
+      <div class="hmmain">
+      <section class="card hmnow tone-${focus?.tone || 'gold'}" aria-labelledby="hmnowh">
+        ${focus ? `<span class="hmkind">${focus.live ? '<em class="livedot" aria-hidden="true"></em>Прямо сейчас' : focus.late ? 'Просрочено' : 'Сейчас главное'}</span>
+          <h2 id="hmnowh">${E(focus.title)}</h2>
+          <p class="hmfacts">${E(focus.detail)}${focus.at ? ` · ${E(ago(focus.at))}` : ''}</p>
+          <div class="hmacts"><button class="primary" ${focus.act[0]}>${E(focus.act[1])}</button>
+            ${focus.snooze ? `<button class="hmghost" data-action="snooze" data-id="${E(focus.snooze)}">${icon('time', 15)} Перенести на завтра</button>` : ''}</div>`
+          : `<span class="hmkind">Сейчас</span><h2 id="hmnowh">Новых заявок, ответов и открытых КП нет</h2>
+          <p class="hmfacts">Хорошее время написать новым клиентам или подготовить публикацию.</p>
+          <div class="hmacts"><button class="primary" data-page="prospects">Поиск клиентов</button><button class="hmghost" data-page="content">Контент-план</button></div>`}
+        ${rest.length ? `<ul class="hmnext" aria-label="Дальше">${rest.map(row).join('')}</ul>` : ''}
+        ${queue.length > 4 ? `<p class="muted hmmorenote">И ещё ${queue.length - 4}: смотрите «Заявки» и «Брифы и КП».</p>` : ''}
       </section>
-      ${todayPanel()}
       ${weekHtml()}
+      <section class="hmpulse" aria-label="Цифры маркетинга">${minis.map(([t, v, c, to]) => `<button class="metric click mini tone-${toneOf(to)}" data-page="${to}"><small>${t}</small><b class="value">${v}</b><span>${E(c)}</span>${to === 'analytics' && reach.posts ? sparkline(chartData().spark) : ''}</button>`).join('')}</section>
       </div>
+      <aside class="hmside">
+        <section class="card hmmoney" aria-labelledby="moneyh"><div class="head"><h2 id="moneyh">В работе</h2><button class="linkbtn" data-page="briefs">Брифы и КП</button></div>
+          <div class="hmsum">${total ? `${num(total)} <small>₽</small>` : '—'}</div>
+          <p class="muted">${open.length ? `${open.length} ${plural(open.length, 'проект', 'проекта', 'проектов')} до сделки` : 'проектов в работе нет'}</p>
+          ${total ? `<div class="hmpipe" role="img" aria-label="${E(bySt.filter(x => x.sum).map(x => `${x.label}: ${num(x.sum)} ₽`).join(', '))}">${bySt.map((x, i) => x.sum ? `<i class="seg${i}" style="flex:${x.sum}"></i>` : '').join('')}</div>` : ''}
+          <ul class="hmstages">${bySt.map((x, i) => `<li><i class="seg${i}"></i><span>${x.label}</span><b>${x.sum ? `${num(x.sum)} ₽` : '—'}</b><em>${x.n || ''}</em></li>`).join('')}
+            <li><i class="segwon"></i><span>Сделки за 30 дней</span><b>${wonSum ? `${num(wonSum)} ₽` : '—'}</b><em>${won.length || ''}</em></li></ul>
+          ${sd ? `<button class="hmstock" data-page="stock"><span>${icon('download', 15)} Stock за месяц</span><b>${num(Math.round(sd.money?.revenueMonth || 0))} ₽</b><small>${sd.sales?.day ?? 0} за сутки</small></button>` : ''}
+        </section>
+        ${todayPanel(skip)}
+        ${gaps.length ? `<section class="card hmgaps"><div class="head"><h2>Что мешает</h2><button class="linkbtn" data-page="chain">Вся цепочка</button></div>
+          ${gaps.map(([to, title, why]) => `<button class="gapcard" data-page="${to}"><b>${E(title)}</b><p class="muted">${E(why)}</p></button>`).join('')}</section>` : ''}
+      </aside>
     </div>
-    <section class="ministrip" aria-label="Цифры маркетинга">${minis.map(([t, v, c, to, extra]) => `<button class="metric click mini tone-${toneOf(to)}" data-page="${to}"><small>${t}</small><b class="value">${v}</b><span>${E(c)}</span>${extra}</button>`).join('')}</section>`;
-  const top = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
-  if (top.length) h += `<div class="head" style="margin:22px 0 12px"><h2 style="margin:0">Что мешает прямо сейчас</h2><button data-page="chain">Вся цепочка →</button></div>
-      <div class="grid three">${top.map(([to, title, why]) => `<button class="card gapcard" data-page="${to}"><b>${E(title)}</b><p class="muted">${E(why)}</p><span class="gaplink">Перейти →</span></button>`).join('')}</div>`;
-  h += `<div class="head"><h2>Ближайшие публикации</h2><button data-page="content">Контент-план →</button></div>
-      <div class="grid three homeposts">${[...db.content].filter(x => x.status !== 'Опубликовано')
-        .sort((x, y) => (x.date || '9999').localeCompare(y.date || '9999')).slice(0, 3).map(contentCard).join('') || '<div class="card empty">Запланированных публикаций нет.</div>'}</div>
-      <div class="grid layout-2" style="margin-top:16px">
-        <div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Последние изменения</h2><button data-page="settings">Весь журнал →</button></div>${feed(5)}</div>
-        <div class="card"><h2>Подготовить к работе</h2>${tasksList(false)}</div>
-      </div>`;
-  if (!db.knowledge.length) h += `<div class="notice">База пуста. Перенесите записи из локальной версии: Настройки → Импорт JSON. <button data-action="import">Импорт JSON</button></div>`;
-  return h;
+    ${!db.knowledge.length ? `<div class="notice">База пуста. Перенесите записи из локальной версии: Настройки → Импорт JSON. <button data-action="import">Импорт JSON</button></div>` : ''}`;
 }
 
 // ---- Adervis Stock
@@ -7396,7 +7381,7 @@ function updateNav() {
     el.hidden = !c || !c.n;
     if (c && c.n) { el.textContent = c.n; el.classList.toggle('late', c.late); }
   };
-  document.querySelectorAll('#nav [data-page], #tabbar [data-page]').forEach(b => {
+  document.querySelectorAll('#nav [data-page], #tabbar [data-page], #hubtabs [data-page]').forEach(b => {
     const on = b.dataset.page === page;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
@@ -8730,7 +8715,7 @@ document.addEventListener('click', async e => {
       break;
     case 'openfile': await openFile(b.dataset.id); break;
     case 'delfile': await delFile(b.dataset.id); break;
-    case 'signout': await api.signOut(); me = null; showGate(); break;
+    case 'signout': document.body.classList.remove('menu'); await api.signOut(); me = null; showGate(); break;
     case 'password': changePassword(); break;
   }
 });
@@ -8889,7 +8874,7 @@ const setRail = on => {
 };
 $('#rail').innerHTML = icon('back', 16);
 $('#rail').onclick = () => setRail(!document.body.classList.contains('rail'));
-try { if (localStorage.getItem('intel.nav.rail') === '1') setRail(true); } catch (e) { /* по умолчанию развёрнуто */ }
+// Полосы иконок больше нет: меню разделов теперь панель под верхней строкой.
 $('#navsearch').innerHTML = `${icon('search', 16)}<span>Найти или сделать…</span><kbd>Ctrl K</kbd>`;
 $('#navsearch').onclick = () => search();
 $('#sbtheme').innerHTML = icon('theme', 17);
@@ -8913,13 +8898,19 @@ $('#nav').addEventListener('click', e => {
   try { localStorage.setItem('hub.nav.closed', JSON.stringify(navClosed)); } catch (err) { /* без памяти — просто не запомним */ }
   updateNav();
 });
-$('#menu').innerHTML = icon('menu');
+// Одна верхняя строка вместо бокового меню: пять разделов, с которыми работают каждый день,
+// и «Все разделы» — панель со всеми группами. На телефоне — нижняя панель, как раньше.
+const HUB_TABS = ['home', 'leads', 'briefs', 'dialogs', 'content'];
+const HUB_TAB_LABEL = { home: 'Сегодня', briefs: 'Брифы и КП', content: 'Контент' };
+$('#hubtabs').innerHTML = HUB_TABS.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 17)}<span>${HUB_TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('');
+$('#menu').innerHTML = `${icon('menu')}<span>Все разделы</span>`;
+$('#ask').innerHTML = `${icon('assistant', 18)}<span>Спросить</span>`;
 $('#refresh').innerHTML = icon('refresh');
 $('#theme').innerHTML = icon('theme');
 $('#search').innerHTML = `${icon('search', 17)}<span>Поиск</span><span class="kbd">Ctrl K</span>`;
 $('#create').innerHTML = `${icon('plus', 17)}<span>Создать</span>`;
 $('#theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
-$('#menu').onclick = () => document.body.classList.toggle('menu');
+$('#menu').onclick = () => { const on = document.body.classList.toggle('menu'); $('#menu').setAttribute('aria-expanded', String(on)); };
 $('#search').onclick = search;
 // Главная кнопка знала только про три вещи из шестнадцати разделов.
 // Теперь перечислены все, что заводятся руками, а первым идёт то, что

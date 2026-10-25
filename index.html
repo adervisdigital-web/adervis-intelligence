@@ -51,12 +51,15 @@
   </aside>
   <main class="main">
     <div class="topbar">
-      <button class="iconbtn mobile" id="menu" aria-label="Меню">☰</button>
+      <button class="hubmark" data-page="home" aria-label="Hub ADERVIS, на главную"><img src="brand/hub/hub-u.svg" alt=""><span>Hub</span></button>
+      <button class="iconbtn mobile" id="menu" aria-label="Все разделы" aria-expanded="false" aria-controls="nav">☰</button>
       <div class="crumb">ADERVIS / <b id="crumb">Обзор</b></div>
+      <nav class="hubtabs" id="hubtabs" aria-label="Главные разделы"></nav>
       <div class="top-actions">
         <button class="search" id="search">⌕ Поиск<span class="kbd"> &nbsp; Ctrl K</span></button>
         <button class="iconbtn" id="refresh" aria-label="Обновить данные">⟳</button>
         <button class="iconbtn" id="theme" aria-label="Тема">◐</button>
+        <button class="askbtn" id="ask" data-page="assistant" title="ИИ-помощник">Спросить</button>
         <button class="primary" id="create">+ Создать</button>
       </div>
     </div>
