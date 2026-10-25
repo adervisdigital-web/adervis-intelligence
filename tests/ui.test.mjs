@@ -2203,6 +2203,7 @@ check('КП-ссылка: в Hub видно, как клиент читал КП
   && (await page.textContent('.kpvisits')).includes('базовый вариант'), await page.textContent('.kpvisits'));
 await page.evaluate(() => { window.__KPCHOICE__ = null; window.__KPENG__ = null; });
 const share = Object.values(await page.evaluate(() => window.__KPSHARES__))[0];
+check('КП-ссылка: при публикации дата КП — сегодняшняя', share.data.date === localDay() && (await state()).briefs.find(x => x.id === share.brief_id).kp.date === localDay(), share.data.date);
 const shareJson = JSON.stringify(share.data);
 check('КП-ссылка: снимок — смета как у клиента, пример, сроки', share.data.estimate.full === 205000 && share.data.media.length === 1
   && share.data.media[0].group.startsWith('Направление 1') && share.data.plan.length > 0 && share.data.title === 'Видеодайджест', JSON.stringify({ full: share.data.estimate.full, media: share.data.media, plan: share.data.plan?.length }));

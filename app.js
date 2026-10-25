@@ -4804,6 +4804,7 @@ async function kpShareModal(b) {
     try {
       flushPendingBrief();
       kp.share_token ||= shareToken();
+      kp.date = today();   // обновили страницу — предложение от сегодняшнего числа
       await api.kpSharePut({ token: kp.share_token, brief_id: b.id, data: kpShareData(b) });
       kpStats.at = 0;   // в списке брифов статус ссылки обновится сразу
       await saveBriefNow(b, 'КП-ссылка обновлена');
