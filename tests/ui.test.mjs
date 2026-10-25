@@ -565,7 +565,7 @@ await page.click('#nav .navsection[data-group="Продажи"] .navgroup');
 check('группа сворачивается', !(await page.isVisible('#nav button[data-page=leads]')));
 check('счётчик свёрнутой группы переезжает на заголовок',
   await page.$eval('#nav .navsection[data-group="Продажи"] .navgroup .navbadge', b => !b.hidden && b.classList.contains('late')));
-check('свёрнутая группа запоминается', await page.evaluate(() => JSON.parse(localStorage.getItem('intel.nav.closed')).includes('Продажи')));
+check('свёрнутая группа запоминается', await page.evaluate(() => JSON.parse(localStorage.getItem('hub.nav.closed')).includes('Продажи')));
 await nav('leads');
 check('группа открытого раздела раскрыта', await page.$eval('#nav .navsection[data-group="Продажи"] .navgroup', t => t.getAttribute('aria-expanded') === 'true'));
 check('открытый раздел отмечен для чтения с экрана', await page.$eval('#nav button[data-page=leads]', b => b.getAttribute('aria-current') === 'page'));

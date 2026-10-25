@@ -2826,6 +2826,55 @@ function homeSignals() {
   return out.sort((a, b) => a.rank - b.rank || String(b.at).localeCompare(String(a.at)));
 }
 
+// Доска сделок: путь клиента от заявки до сделки одним взглядом. Заявка, у
+// которой есть бриф, показывается брифом — одна карточка на клиента.
+const BOARD = [['new', 'Новые'], ['work', 'Разбираем'], ['kp', 'КП у клиента'], ['talk', 'Переговоры'], ['won', 'Сделка']];
+function boardCards() {
+  const cols = Object.fromEntries(BOARD.map(([k]) => [k, []]));
+  const withBrief = new Set(db.briefs.map(b => b.lead_id).filter(Boolean));
+  for (const b of db.briefs) {
+    const col = ['Разбор', 'Вопросы', 'Расчёт'].includes(b.stage) ? 'work' : b.stage === 'КП' ? 'kp' : b.stage === 'Переговоры' ? 'talk'
+      : b.stage === 'Сделка' && daysAgo(b._at || b.updated_at) <= 30 ? 'won' : '';
+    if (!col) continue;
+    const st = b.kp?.share_token && kpStats.by[b.id], e = st?.engagement;
+    cols[col].push({ open: `data-action="openbrief" data-id="${E(b.id)}"`, who: b.client || b.title, what: b.title, sum: kpPrice(b), days: daysAgo(b._at || b.updated_at),
+      views: st?.views || 0, live: !!(e?.last_at && Date.now() - Date.parse(e.last_at) < LIVE_MS), chose: !!st?.choice });
+  }
+  for (const l of db.leads) {
+    if (withBrief.has(l.id)) continue;
+    const col = l.status === 'Новое' ? 'new' : l.status === 'В работе' ? 'work' : l.status === 'Сделка' && daysAgo(l.came_on) <= 30 ? 'won' : '';
+    if (!col) continue;
+    cols[col].push({ open: `data-action="openlead" data-id="${E(l.id)}"`, who: l.name, what: l.request || l.source, sum: Number(l.amount) || 0, days: daysAgo(l.came_on), views: 0, live: false, chose: false });
+  }
+  return cols;
+}
+function boardHtml() {
+  const cols = boardCards();
+  const card = c => `<button class="bcard${c.live ? ' live' : ''}" ${c.open}>
+      <b>${c.live ? '<em class="livedot" aria-hidden="true"></em>' : ''}${E(c.who)}</b><span>${E(String(c.what || '').slice(0, 70))}</span>
+      <span class="bmeta">${c.sum ? `<strong>${num(c.sum)} ₽</strong>` : ''}<small>${c.days ? `${c.days} ${plural(c.days, 'день', 'дня', 'дней')}` : 'сегодня'}</small>
+        ${c.chose ? `<i class="bchip tone-green">${icon('check', 12)} выбрал</i>` : c.views ? `<i class="bchip tone-gold">${icon('eye', 12)} ${c.views}</i>` : ''}</span></button>`;
+  return `<section class="card homeboard" aria-labelledby="boardh"><div class="head"><h2 id="boardh">Сделки</h2><button class="linkbtn" data-page="leads">Все заявки</button></div>
+    <div class="bcols">${BOARD.map(([k, t], i) => `<div class="bcol bcol${i}"><div class="bhead"><span>${t}</span><b>${cols[k].length || ''}</b></div>
+      ${cols[k].length ? cols[k].sort((x, y) => (y.live - x.live) || (y.sum - x.sum)).slice(0, 5).map(card).join('') + (cols[k].length > 5 ? `<small class="bmore">и ещё ${cols[k].length - 5}</small>` : '') : '<p class="bempty">пусто</p>'}</div>`).join('')}</div></section>`;
+}
+
+// Неделя вперёд: следующие шаги по заявкам, брифам и переписке и выход публикаций.
+function weekHtml() {
+  const days = Array.from({ length: 7 }, (_, i) => dayShift(i));
+  const items = [
+    ...db.leads.filter(l => l.next_on && !LOST.includes(l.status) && l.status !== 'Сделка').map(l => ({ d: l.next_on, t: l.name, tone: 'gold' })),
+    ...db.briefs.filter(b => b.next_on && !['Сделка', 'Отказ'].includes(b.stage)).map(b => ({ d: b.next_on, t: b.client || b.title, tone: 'gold' })),
+    ...db.content.filter(c => (c.publish_on || c.date) && c.status !== 'Опубликовано').map(c => ({ d: c.publish_on || c.date, t: c.title, tone: 'violet' }))
+  ];
+  return `<section class="card homeweek" aria-labelledby="weekh"><div class="head"><h2 id="weekh">Неделя</h2><button class="linkbtn" data-page="content">Контент-план</button></div>
+    <ol class="wdays">${days.map((d, i) => { const list = items.filter(x => x.d === d);
+      return `<li class="${i === 0 ? 'today' : ''}"><span class="wd">${E(weekday(d))}</span><span class="wn">${Number(d.slice(8, 10))}</span>
+        <span class="wdots">${list.slice(0, 4).map(x => `<em class="tone-${x.tone}" title="${E(x.t)}"></em>`).join('')}</span><small>${list.length ? `${list.length}` : ''}</small></li>`; }).join('')}</ol>
+    ${(() => { const next = items.filter(x => x.d >= days[0] && x.d <= days[6]).sort((x, y) => x.d.localeCompare(y.d)).slice(0, 4);
+      return next.length ? `<ul class="wlist">${next.map(x => `<li><em class="tone-${x.tone}"></em><span>${E(x.t)}</span><small>${E(x.d === days[0] ? 'сегодня' : shortDate(x.d))}</small></li>`).join('')}</ul>` : '<p class="muted">На неделю дел не запланировано.</p>'; })()}</section>`;
+}
+
 function renderHome() {
   ensureStock();
   const sig = homeSignals(), tl = todayList(), lateN = tl.filter(x => x.late).length;
@@ -2865,9 +2914,13 @@ function renderHome() {
         <i>${icon(ic, 18)}</i><span>${label}</span>${icon('plus', 14)}</button>`).join('')}</div>
     </section>
     <div class="homegrid">
+      <div class="homecol">
       <section class="card signals" aria-labelledby="sigh"><div class="head"><h2 id="sigh">Сигналы</h2><small class="muted">${sig.length ? `${sig.length} ${plural(sig.length, 'событие', 'события', 'событий')}, сначала срочное` : 'тишина'}</small></div>
         ${sig.length ? `<ul class="siglist">${sig.slice(0, 8).map(sigRow).join('')}</ul>${sig.length > 8 ? `<p class="muted">И ещё ${sig.length - 8}: смотрите «Заявки» и «Брифы и КП».</p>` : ''}`
           : `<p class="muted sigempty">Новых заявок, ответов и открытых КП нет. Хорошее время написать новым клиентам: <button class="linkbtn" data-page="prospects">Поиск клиентов</button>.</p>`}</section>
+      ${boardHtml()}
+      </div>
+      <div class="homecol side">
       <section class="card money" aria-labelledby="moneyh"><div class="head"><h2 id="moneyh">Деньги в работе</h2><button class="linkbtn" data-page="briefs">Брифы и КП</button></div>
         <div class="moneytotal">${total ? `${num(total)} ₽` : '—'}</div>
         <p class="muted">${open.length ? `${open.length} ${plural(open.length, 'проект', 'проекта', 'проектов')} до сделки` : 'проектов в работе нет'}${won.length ? ` · сделок за 30 дней: ${won.length}` : ''}</p>
@@ -2875,8 +2928,10 @@ function renderHome() {
         <ul class="pipelist">${bySt.map((x, i) => `<li><em class="seg seg${i}"></em><span>${x.label}</span><b>${x.sum ? `${num(x.sum)} ₽` : '—'}</b><small>${x.n || ''}</small></li>`).join('')}</ul>
         ${sd ? `<button class="stockline" data-page="stock"><span>${icon('download', 15)} Stock за месяц</span><b>${num(Math.round(sd.money?.revenueMonth || 0))} ₽</b><small>${sd.sales?.day ?? 0} за сутки</small></button>` : ''}
       </section>
+      ${todayPanel()}
+      ${weekHtml()}
+      </div>
     </div>
-    ${todayPanel()}
     <section class="ministrip" aria-label="Цифры маркетинга">${minis.map(([t, v, c, to, extra]) => `<button class="metric click mini tone-${toneOf(to)}" data-page="${to}"><small>${t}</small><b class="value">${v}</b><span>${E(c)}</span>${extra}</button>`).join('')}</section>`;
   const top = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
   if (top.length) h += `<div class="head" style="margin:22px 0 12px"><h2 style="margin:0">Что мешает прямо сейчас</h2><button data-page="chain">Вся цепочка →</button></div>
@@ -7270,7 +7325,7 @@ function render() {
 // По умолчанию раскрыты «Продажи» (каждый день) и группа открытого раздела: 24 пункта
 // не помещаются в высоту экрана. Что раскрыть — человек решает сам, это запоминается.
 let navClosed = ['Реклама', 'Контент', 'Аналитика', 'Компания', 'Система'];
-try { const saved = JSON.parse(localStorage.getItem('intel.nav.closed')); if (Array.isArray(saved)) navClosed = saved; } catch (e) { /* по умолчанию */ }
+try { const saved = JSON.parse(localStorage.getItem('hub.nav.closed')); if (Array.isArray(saved)) navClosed = saved; } catch (e) { /* по умолчанию */ }
 
 // Счётчики — те же дела, что в «На сегодня»: у раздела видно, что ждёт.
 // Красный — если среди них есть просроченное.
@@ -8813,7 +8868,7 @@ $('#nav').addEventListener('click', e => {
   if (!t) return;
   const g = t.dataset.toggle;
   navClosed = navClosed.includes(g) ? navClosed.filter(x => x !== g) : [...navClosed, g];
-  try { localStorage.setItem('intel.nav.closed', JSON.stringify(navClosed)); } catch (err) { /* без памяти — просто не запомним */ }
+  try { localStorage.setItem('hub.nav.closed', JSON.stringify(navClosed)); } catch (err) { /* без памяти — просто не запомним */ }
   updateNav();
 });
 $('#menu').innerHTML = icon('menu');
