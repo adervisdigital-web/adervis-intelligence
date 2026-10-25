@@ -7,7 +7,7 @@
 
 import { admin, secret, settings, sameSecret, tgApi, permToday, type Sb } from '../_shared/outreach.ts';
 import { buildDigest, sendDigest, INTEL_TOKEN, APP_URL } from '../_shared/digest-run.ts';
-import { GO, CANCEL, KEYBOARD, NO_KEYBOARD, senderOf, pieceOf, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, type Item } from '../_shared/intake.ts';
+import { GO, CANCEL, KEYBOARD, NO_KEYBOARD, COMMANDS, senderOf, pieceOf, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, type Item } from '../_shared/intake.ts';
 import { analyzeBrief, readWithAi, askModel } from '../_shared/brief-ai.ts';
 import { digestVoice, clientVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
 import { ANSWERS, PICK, WHO, WHO_PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../_shared/answers.ts';
@@ -21,6 +21,10 @@ const HELP = 'Перешлите сюда ТЗ, голосовые, PDF, скр�
 // Telegram: иначе он посчитает запрос зависшим и пришлёт его повторно.
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 const later = (p: Promise<unknown>) => { const safe = p.catch(e => console.error('intel-bot:', e)); if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(safe); else return safe; };
+
+// Меню команд обновляем раз на запуск функции: так новые команды появляются
+// у руководителей без повторного подключения бота в настройках.
+let commandsSet = false;
 
 const send = (chat: number, text: string, markup?: unknown) =>
   tgApi(INTEL_TOKEN, 'sendMessage', { chat_id: chat, text, link_preview_options: { is_disabled: true }, ...(markup ? { reply_markup: markup } : {}) });
@@ -37,6 +41,7 @@ Deno.serve(async (req) => {
   const reply = (t: string) => sendDigest(chat, t);
   try {
     const { data: sub } = await sb.from('digest_subscribers').select('*').eq('chat_id', chat).maybeSingle();
+    if (sub && !commandsSet) { commandsSet = true; later(tgApi(INTEL_TOKEN, 'setMyCommands', { commands: COMMANDS })); }
     const link = /^\/start\s+digest_(\d{6})$/.exec(text);
     if (link) {
       const cfg = await settings(sb);
@@ -73,7 +78,7 @@ Deno.serve(async (req) => {
       later(clientVoice(sb, brief.id)
         .then(v => sendAudio(INTEL_TOKEN, chat, v.audio, `Кто это: ${brief.client || brief.title}`, v.text))
         .catch(e => send(chat, `Голосовое не получилось: ${e instanceof Error ? e.message : 'ошибка'}`, KEYBOARD)));
-    } else if (text === ANSWERS) {
+    } else if (text === ANSWERS || /^\/answers/.test(text)) {
       const { count } = await sb.from('bot_intake_items').select('*', { count: 'exact', head: true }).eq('chat_id', chat);
       if (!count) { await reply('Сначала перешлите ответ клиента: сообщения, скриншоты или голосовое. Потом нажмите «📝 Ответы к брифу».'); return new Response('ok'); }
       const { briefs, leads } = await activeBriefs(sb);
@@ -92,7 +97,7 @@ Deno.serve(async (req) => {
       await send(chat, `Разбираю ${count} ${count === 1 ? 'материал' : count < 5 ? 'материала' : 'материалов'} — до двух минут…`, NO_KEYBOARD);
       await later(processIntake(sb, chat));
     } else if (/^\/(start|help)/.test(text)) {
-      await reply(HELP);
+      await send(chat, HELP, KEYBOARD);
     } else {
       await later(collect(sb, chat, msg));
     }

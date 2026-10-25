@@ -7,6 +7,7 @@ import {
   admin, secret, settings, tgApi, tgSend, addMessage, json, CORS, SUPABASE_URL, PUBLIC_KEY, vkApi, vkChannel, VK_V, type Sb
 } from '../_shared/outreach.ts';
 import { buildDigest, sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
+import { COMMANDS } from '../_shared/intake.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -213,10 +214,7 @@ async function intelConnect(sb: Sb) {
   await sb.from('channel_secrets').upsert({ name: 'intel_webhook_secret', value: hook });
   const set = await tgApi(INTEL_TOKEN, 'setWebhook', { url: `${SUPABASE_URL}/functions/v1/intel-bot`, secret_token: hook, allowed_updates: ['message'] });
   if (!set?.ok) throw new Error('Telegram не принял адрес служебного бота: ' + (set?.description ?? ''));
-  await tgApi(INTEL_TOKEN, 'setMyCommands', { commands: [
-    { command: 'today', description: 'Сводка «На сегодня»' }, { command: 'new', description: 'Новая заявка: переслать ТЗ и голосовые' },
-    { command: 'stop', description: 'Не присылать утреннюю сводку' }
-  ] });
+  await tgApi(INTEL_TOKEN, 'setMyCommands', { commands: COMMANDS });
   await sb.from('outreach_settings').update({ intel_bot_username: me.result.username ?? '' }).eq('id', 'main');
   return { ok: true, username: me.result.username };
 }

@@ -11,6 +11,15 @@ export const CANCEL = '✖ Отмена';
 // «Ответы к брифу» — текст кнопки из answers.ts, здесь без импорта, чтобы модуль оставался чистым
 export const KEYBOARD = { keyboard: [[{ text: GO }, { text: '📝 Ответы к брифу' }], [{ text: '🔊 Кто это?' }, { text: CANCEL }]], resize_keyboard: true, is_persistent: true };
 export const NO_KEYBOARD = { remove_keyboard: true };
+// Меню команд бота (кнопка «Меню» в Telegram). Кнопки под строкой ввода
+// появляются после первого пересланного сообщения, а меню видно сразу.
+export const COMMANDS = [
+  { command: 'answers', description: 'Ответ клиента: разложить по вопросам брифа' },
+  { command: 'new', description: 'Новая заявка: переслать ТЗ и голосовые' },
+  { command: 'who', description: 'Кто это: голосовое про клиента' },
+  { command: 'today', description: 'Сводка «На сегодня»' },
+  { command: 'stop', description: 'Не присылать утреннюю сводку' }
+];
 export const SOURCE_LIMIT = 60000;
 
 const AUDIO: Record<string, string> = { ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', aac: 'audio/aac', webm: 'audio/webm' };
