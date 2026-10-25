@@ -35,7 +35,14 @@ Deno.serve(async (req) => {
   if (!sameSecret(req.headers.get('X-Telegram-Bot-Api-Secret-Token') ?? '', await secret(sb, 'intel_webhook_secret'))) {
     return new Response('forbidden', { status: 401 });
   }
-  const msg = (await req.json().catch(() => null))?.message;
+  const body = await req.json().catch(() => null);
+  // Проверка связи с Telegram (тот же секрет, что у самого Telegram): ошибки доставки и очередь.
+  if (body?.diag === true) {
+    const info = await tgApi(INTEL_TOKEN, 'getWebhookInfo', {});
+    const r = info?.result ?? {};
+    return Response.json({ ok: !!info?.ok, pending: r.pending_update_count, last_error: r.last_error_message ?? null, last_error_at: r.last_error_date ? new Date(r.last_error_date * 1000).toISOString() : null, url_ok: String(r.url || '').endsWith('/functions/v1/intel-bot') });
+  }
+  const msg = body?.message;
   if (!msg || msg.chat?.type !== 'private' || !INTEL_TOKEN) return new Response('ok');
   const chat = Number(msg.chat.id), text = typeof msg.text === 'string' ? msg.text.trim() : '';
   const reply = (t: string) => sendDigest(chat, t);
