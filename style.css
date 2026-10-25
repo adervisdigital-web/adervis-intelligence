@@ -2115,3 +2115,12 @@ html[data-theme=dark] .kpchecks li.warn{background:rgba(246,189,58,.12)}
 .siteask .input{flex:1}
 @media (max-width:900px){.sitestats{grid-template-columns:repeat(2,minmax(0,1fr))}.sitecols{grid-template-columns:1fr}}
 .stocksteps{margin:6px 0 12px;padding-left:20px;line-height:1.6}
+
+/* рекламные кабинеты */
+.adsblock{margin-bottom:16px}
+.adnets{list-style:none;margin:8px 0;padding:0;display:grid;gap:8px}
+.adnets li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
+.adnets li .muted{flex:1;min-width:200px}
+.adnets li.on{border-color:#bfe3c7}.adnets li.bad{border-color:#f0b8b4}
+.adstable td,.adstable th{white-space:nowrap}
+.adstable .num{text-align:right}

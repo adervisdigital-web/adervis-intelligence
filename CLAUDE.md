@@ -10,7 +10,7 @@
 - `index.html`, `config.js` (адрес и публичный ключ Supabase), `icons-data.js` (иконки — `icon('name', size)`), `brand/`.
 - `survey-*-data.js` — анкеты владельцев.
 - `supabase/migrations/*.sql` — схема (RLS через `is_member()`), `supabase/cron/digest.sql` — расписания.
-- `supabase/functions/` — edge-функции: `ai-write` (ИИ: тексты, план, посты, разбор ТЗ, расшифровка голоса), `channels`, `tg-bot`, `vk-bot`, `intel-bot` (служебный бот: сводка и приём заявок), `digest`, `crm` (связь с ADERVIS CRM), `feed`, `prospect`, `publish`, `site` (проверка сайта для панели «Сайт»), `site-lead` (заявки с формы adervis.ru), `stock` (сводка Adervis Stock). Общий код — `_shared/` (`bot.ts`, `flow.ts`, `outreach.ts`, `crm.ts`, `intake.ts`, `brief-ai.ts`, `digest*.ts`, `voice.ts`, `kp-engage.ts`, `site.ts`).
+- `supabase/functions/` — edge-функции: `ai-write` (ИИ: тексты, план, посты, разбор ТЗ, расшифровка голоса), `channels`, `tg-bot`, `vk-bot`, `intel-bot` (служебный бот: сводка и приём заявок), `digest`, `crm` (связь с ADERVIS CRM), `feed`, `prospect`, `publish`, `site` (проверка сайта для панели «Сайт»), `site-lead` (заявки с формы adervis.ru), `stock` (сводка Adervis Stock), `ads-sync` (расход из VK Рекламы и Яндекс Директа, раз в сутки и по кнопке). Общий код — `_shared/` (`bot.ts`, `flow.ts`, `outreach.ts`, `crm.ts`, `intake.ts`, `brief-ai.ts`, `digest*.ts`, `voice.ts`, `kp-engage.ts`, `site.ts`).
 - `ai-write/compose.ts`, `feed/`, `prospect/`, `publish/` собираются в `bundle.ts` командой `node tools/bundle.mjs` — после правок пересобрать.
 
 ## Разделы app.js (по заголовкам)
@@ -20,7 +20,7 @@
 - Тесты: `cd tests && npm test` (база в PGlite, промпты, боты, CRM, приём заявок, UI на Playwright с подменным API `window.__INTEL_API__` в `tests/ui.test.mjs`). Перед коммитом — все зелёные. Тестовые данные — `tests/fixtures/seed.json` (обезличенные).
 - UI-тест идёт одним сценарием: новые проверки вставлять в нужный раздел и возвращать состояние (тему, фильтры), которое меняли.
 - Миграция: `supabase db query --linked -f supabase/migrations/<файл>.sql`.
-- Функции: `supabase functions deploy <имя> --use-api`; `tg-bot`, `vk-bot`, `intel-bot`, `digest`, `crm` — с `--no-verify-jwt` (сами проверяют доступ), `site-lead` — тоже (её зовёт сайт без входа, пускает только adervis.ru).
+- Функции: `supabase functions deploy <имя> --use-api`; `tg-bot`, `vk-bot`, `intel-bot`, `digest`, `crm` — с `--no-verify-jwt` (сами проверяют доступ), `site-lead` — тоже (её зовёт сайт без входа, пускает только adervis.ru), `ads-sync` — тоже (её зовёт расписание с секретом).
 - Выкладка сайта — `git push origin main`; GitHub Actions гоняет тесты.
 
 ## Правила

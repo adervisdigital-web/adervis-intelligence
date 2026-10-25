@@ -3,6 +3,7 @@ import zlib from 'node:zlib';
 import { choiceOf, budgetOf } from '../supabase/functions/_shared/kp-choice.ts';
 import { sanitizeTrack, mergeTrack, engageLine } from '../supabase/functions/_shared/kp-engage.ts';
 import { siteLeadOf, fingerprint, pageCheck, sitemapUrls, caseSlug } from '../supabase/functions/_shared/site.ts';
+import { parseDirectTsv, directReportBody, parseVkStats, linkedSpent } from '../supabase/functions/_shared/ads.ts';
 import { ANSWERS, WHO, WHO_PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../supabase/functions/_shared/answers.ts';
 import { senderOf, pieceOf, wordXmlText, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, GO, CANCEL, KEYBOARD } from '../supabase/functions/_shared/intake.ts';
 
@@ -142,6 +143,23 @@ check('кнопки: «Разобрать», «Ответы к брифу», «�
   check('сайт: недоступная страница — одно понятное замечание', pageCheck('https://adervis.ru/y/', 404, '').problems.join() === 'страница отвечает 404');
   check('сайт: адреса из sitemap и слаг кейса', sitemapUrls('<url><loc>https://adervis.ru/</loc></url><url><loc> https://adervis.ru/cases/brait/ </loc></url>').length === 2
     && caseSlug('https://adervis.ru/cases/brait/') === 'brait' && caseSlug('https://adervis.ru/cases/') === '' && caseSlug('https://adervis.ru/video/') === '');
+}
+
+{
+  // рекламные кабинеты → Hub
+  const tsv = 'Date\tCampaignId\tCampaignName\tImpressions\tClicks\tCost\n2026-10-20\t111\tКафе Пермь\t1200\t30\t450.5\n2026-10-21\t111\tКафе Пермь\t800\t10\t150,25\nTotal rows: 2\n';
+  const dr = parseDirectTsv(tsv);
+  check('Директ: строки отчёта — день, кампания, расход в рублях; итоговая строка отброшена', dr.length === 2 && dr[0].ext_id === '111' && dr[0].spent === 450.5
+    && dr[1].spent === 150.25 && dr[0].clicks === 30 && dr[0].network === 'direct' && dr[0].name === 'Кафе Пермь', JSON.stringify(dr));
+  check('Директ: пустой или чужой отчёт — пусто', parseDirectTsv('').length === 0 && parseDirectTsv('a\tb\n1\t2').length === 0);
+  const body = directReportBody('2026-09-26', '2026-10-25').params;
+  check('Директ: запрос отчёта по кампаниям за даты, с НДС', body.ReportType === 'CAMPAIGN_PERFORMANCE_REPORT' && body.SelectionCriteria.DateFrom === '2026-09-26'
+    && body.FieldNames.includes('Cost') && body.Format === 'TSV' && body.IncludeVAT === 'YES');
+  const vk = parseVkStats({ items: [{ id: 77, rows: [{ date: '2026-10-20', base: { shows: 5000, clicks: 40, spent: '1200.40' } }, { date: '2026-10-21', base: { shows: 0, clicks: 0, spent: '0' } }] }] }, { 77: 'Stock осень' });
+  check('VK Реклама: по дням, пустые дни отброшены, имя кампании подставлено', vk.length === 1 && vk[0].spent === 1200.4 && vk[0].impressions === 5000 && vk[0].name === 'Stock осень' && vk[0].ext_id === '77');
+  const stats = [...dr, ...vk];
+  check('связанная кампания: расход за её даты из кабинета, без связи — null', linkedSpent(stats, { ext_network: 'direct', ext_id: '111', starts_on: '2026-10-21' }) === 150
+    && linkedSpent(stats, { ext_network: 'direct', ext_id: '111' }) === 601 && linkedSpent(stats, {}) === null && linkedSpent(stats, { ext_network: 'vk', ext_id: '77', ends_on: '2026-10-19' }) === 0);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');

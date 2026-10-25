@@ -64,7 +64,7 @@ const FIELDS = {
   files: ['id', 'record', 'name', 'path', 'mime', 'size'],
   brand: ['id', 'title', 'kind', 'sort', 'data', 'section'],
   campaigns: ['id', 'name', 'channel', 'direction', 'goal', 'status', 'starts_on', 'ends_on', 'budget', 'spent',
-    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id', 'keyword_set_id', 'sales'],
+    'audience', 'creative', 'landing', 'utm_medium', 'utm_campaign', 'utm_content', 'note', 'content_id', 'keyword_set_id', 'sales', 'ext_network', 'ext_id'],
   decisions: ['id', 'title', 'why', 'measure', 'outcome', 'status', 'decided_on', 'due_on'],
   leads: ['id', 'came_on', 'name', 'source', 'direction', 'request', 'amount', 'status', 'note', 'campaign_id', 'reached', 'magnet_id', 'next_step', 'next_on', 'lost_reason'],
   prospects: ['id', 'name', 'city', 'category', 'address', 'website', 'phone', 'email', 'socials', 'direction',
@@ -284,6 +284,8 @@ function createApi(cfg) {
     prospect: payload => callFn('prospect', payload),
     site: payload => callFn('site', payload),
     stock: () => callFn('stock', {}),
+    adsSync: payload => callFn('ads-sync', payload),
+    async adStats(from) { return must(await sb.from('ad_stats').select('network,ext_id,day,name,spent,impressions,clicks').gte('day', from)); },
     // У аккаунта площадки ключ — сама площадка, поэтому запись, а не правка по номеру.
     async saveAccount(a) {
       return must(await sb.from('social_accounts').upsert({ network: a.network, handle: a.handle })
@@ -1639,6 +1641,108 @@ const isDirect = k => k.channel === DIRECT;
 const DIRECT_LIMITS = { title: 56, title2: 30, body: 81 };
 const directWords = phrase => phrase.replace(/[+!"\[\]]/g, ' ').split(/\s+/).filter(w => w && !w.startsWith('-')).length;
 
+// ---- рекламные кабинеты: VK Реклама и Яндекс Директ
+// Функция ads-sync раз в сутки и по кнопке забирает расход, показы и клики по
+// кампаниям за 30 дней; кампания Hub, связанная с кампанией кабинета, берёт
+// расход оттуда. Ключи кабинетов вводятся здесь и уходят только на сервер.
+const AD_NETS = { vk: 'VK Реклама', direct: 'Яндекс Директ' };
+let adsView = { busy: false, loading: false, error: '', status: null, stats: [], at: 0 };
+
+function ensureAds() {
+  if (adsView.loading || (adsView.status && Date.now() - adsView.at < 120e3) || !api.adsSync) return;
+  adsView.loading = true;
+  Promise.all([api.adsSync({ action: 'status' }), api.adStats(dayShift(-30))])
+    .then(([st, rows]) => { adsView.status = st; adsView.stats = rows || []; adsView.error = ''; })
+    .catch(e => { adsView.error = 'Кабинеты не загрузились: ' + (e.message || 'ошибка'); })
+    .finally(() => { adsView.loading = false; adsView.at = Date.now(); if (page === 'ads') render(); });
+}
+
+// кампании кабинетов за 30 дней: сумма по дням
+function adsCampaigns() {
+  const by = {};
+  for (const r of adsView.stats) {
+    const k = `${r.network}|${r.ext_id}`;
+    const c = by[k] || (by[k] = { key: k, network: r.network, ext_id: r.ext_id, name: '', spent: 0, impressions: 0, clicks: 0 });
+    c.name = r.name || c.name; c.spent += Number(r.spent) || 0; c.impressions += r.impressions || 0; c.clicks += r.clicks || 0;
+  }
+  return Object.values(by).sort((a, b) => b.spent - a.spent);
+}
+
+function adsBlock() {
+  ensureAds();
+  const st = adsView.status, list = adsCampaigns();
+  const line = net => {
+    const on = st?.[net], s = st?.sync?.[net], mine = list.filter(c => c.network === net);
+    const what = !st ? 'проверяю…' : !on ? 'не подключён'
+      : s?.ok === false ? `ошибка выгрузки: ${s.error}`
+      : s?.at ? `выгружено ${ago(s.at)} · ${mine.length} ${plural(mine.length, 'кампания', 'кампании', 'кампаний')} · ${num(Math.round(mine.reduce((n, c) => n + c.spent, 0)))} ₽ за 30 дней`
+      : 'подключён, выгрузки ещё не было';
+    return `<li class="${s?.ok === false ? 'bad' : on ? 'on' : ''}"><b>${AD_NETS[net]}</b><span class="muted">${E(what)}</span>
+      <button data-action="adsconnect" data-id="${net}">${on ? 'Ключи' : 'Подключить'}</button></li>`;
+  };
+  const linked = c => db.campaigns.find(x => x.ext_network === c.network && x.ext_id === c.ext_id);
+  return `<div class="card adsblock"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Рекламные кабинеты</h2>
+      <button class="primary" data-action="adssync" ${adsView.busy || !(st?.vk || st?.direct) ? 'disabled' : ''}>${icon('refresh', 15)} ${adsView.busy ? 'Выгружаю… до минуты' : 'Выгрузить сейчас'}</button></div>
+    <p class="muted">Расход, показы и клики по кампаниям за 30 дней — сами раз в сутки. Свяжите кампанию Hub с кампанией кабинета (в её карточке), и расход подтянется без ручного ввода.</p>
+    <ul class="adnets">${line('vk')}${line('direct')}</ul>
+    ${adsView.error ? `<div class="notice error">${E(adsView.error)}</div>` : ''}
+    ${list.length ? `<div class="tablewrap"><table class="table adstable"><thead><tr><th>Кампания в кабинете</th><th>Кабинет</th><th class="num">Расход</th><th class="num">Показы</th>
+      <th class="num">Клики</th><th class="num">CTR</th><th class="num">Цена клика</th><th>В Hub</th></tr></thead><tbody>${list.map(c => {
+        const h = linked(c);
+        return `<tr><td>${E(c.name || c.ext_id)}</td><td>${AD_NETS[c.network]}</td><td class="num">${num(Math.round(c.spent))} ₽</td><td class="num">${num(c.impressions)}</td>
+          <td class="num">${num(c.clicks)}</td><td class="num">${c.impressions ? (100 * c.clicks / c.impressions).toFixed(2) + '%' : '—'}</td>
+          <td class="num">${c.clicks ? num(Math.round(c.spent / c.clicks)) + ' ₽' : '—'}</td>
+          <td>${h ? `<button class="linkbtn" data-cp="${E(h.id)}">${E(h.name)}</button>` : '<span class="muted">не связана</span>'}</td></tr>`;
+      }).join('')}</tbody></table></div>` : ''}</div>`;
+}
+
+function adsConnect(net) {
+  const vk = net === 'vk';
+  modal(`<h2>${AD_NETS[net]}: подключение</h2>
+    ${vk ? `<ol class="stocksteps">
+      <li>Откройте <a href="https://ads.vk.com" target="_blank" rel="noopener">ads.vk.com</a> → «Настройки» → «Доступ к API». Если раздела нет — напишите в поддержку VK Рекламы и попросите доступ к API для своего кабинета.</li>
+      <li>Скопируйте <b>client_id</b> и <b>client_secret</b> и вставьте ниже. Hub только читает статистику: кампании он не меняет и бюджет не тратит.</li></ol>
+      <form id="adkf"><label>client_id</label><input class="input secretfield" name="vkads_client_id" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" maxlength="200" required>
+        <label>client_secret</label><input class="input secretfield" name="vkads_client_secret" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" maxlength="300" required>`
+    : `<ol class="stocksteps">
+      <li>Создайте приложение в <a href="https://oauth.yandex.ru/client/new/api" target="_blank" rel="noopener">Яндекс ID</a>: «Для доступа к API», права <b>direct:api</b>. Запомните ClientID.</li>
+      <li>В Директе подайте заявку на доступ к API: <a href="https://direct.yandex.ru/registered/main.pl?cmd=apiCertificationRequestList" target="_blank" rel="noopener">«Настройки API» → «Мои заявки»</a>. Рассматривают до 7 дней.</li>
+      <li>Когда заявку одобрят, вставьте ClientID — появится ссылка. Откройте её под логином кабинета Директа, разрешите доступ и скопируйте токен со страницы.</li></ol>
+      <form id="adkf"><label>ClientID приложения</label><input class="input" id="yaclient" maxlength="64" spellcheck="false" placeholder="например, 0a1b2c…">
+        <p id="yalink" class="muted"></p>
+        <label>OAuth-токен</label><input class="input secretfield" name="yadirect_token" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" maxlength="300" required>
+        <label>Логин клиента — только для агентского кабинета</label><input class="input" name="yadirect_login" maxlength="100" spellcheck="false" placeholder="оставьте пустым, если кабинет свой">`}
+      <div class="formactions"><button class="primary">Сохранить и выгрузить</button></div></form>`);
+  const yc = $('#yaclient');
+  if (yc) yc.oninput = () => {
+    const id = yc.value.trim();
+    $('#yalink').innerHTML = /^[a-f0-9]{32}$/i.test(id) ? `<a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=${E(id)}" target="_blank" rel="noopener">${icon('external', 14)} Получить токен</a>` : '';
+  };
+  $('#adkf').onsubmit = async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button.primary');
+    btn.disabled = true; btn.textContent = 'Сохраняю…';
+    try {
+      for (const el of e.target.querySelectorAll('input[name]')) await api.setChannelSecret(el.name, el.value.trim());
+      $('#modal').close();
+      toast(`${AD_NETS[net]}: ключи на сервере. Выгружаю статистику…`);
+      await adsSyncNow();
+    } catch (err) { handleError(err); btn.disabled = false; btn.textContent = 'Сохранить и выгрузить'; }
+  };
+}
+
+async function adsSyncNow() {
+  adsView = { ...adsView, busy: true, error: '' };
+  render();
+  try {
+    adsView.status = await api.adsSync({ action: 'sync' });
+    adsView.stats = await api.adStats(dayShift(-30));
+    // расход связанных кампаний обновил сервер — берём свежие кампании
+    db.campaigns = (await api.load()).campaigns || db.campaigns;
+  } catch (e) { adsView.error = 'Выгрузка не получилась: ' + (e.message || 'ошибка'); }
+  finally { adsView.busy = false; adsView.at = Date.now(); render(); }
+}
+
 function renderAds() {
   const st = adStats();
   const rub = n => n === null || n === undefined ? '—' : num(n) + ' ₽';
@@ -1646,13 +1750,13 @@ function renderAds() {
     `<button class="primary" data-action="newcampaign">+ Кампания</button>`);
 
   if (!db.campaigns.length) {
-    return head + `<div class="card empty"><h2>Кампаний пока нет</h2>
+    return head + adsBlock() + `<div class="card empty"><h2>Кампаний пока нет</h2>
       <p>Заведите кампанию: канал, цель, сроки и бюджет. Приложение соберёт ссылку с UTM-метками —
       её ставят в объявление, и заявки с сайта сами покажут, откуда пришли.</p>
       <p>Заявку можно привязать к кампании и вручную — в карточке заявки.</p></div>`;
   }
 
-  const metrics = `<div class="grid metrics">${[
+  const metrics = adsBlock() + `<div class="grid metrics">${[
     ['Идут кампании', st.running.length, st.running.length ? `потрачено ${rub(st.runningSpent)} из ${rub(st.runningBudget)}` : 'ни одна не запущена'],
     ['Заявки из кампаний', st.leads, 'привязанные к кампании'],
     ['Средняя цена заявки', rub(st.cpl), st.leads ? 'расход ÷ заявки из кампаний, без Stock' : 'заявок из кампаний пока нет'],
@@ -5981,6 +6085,12 @@ function editCampaign(id) {
       <div class="salesfield" ${c.direction === 'Stock' || Number(c.sales) ? '' : 'hidden'}><label>Продажи — из админки Stock</label>
         <input type="number" name="sales" min="0" step="1" value="${E(String(c.sales || 0))}"></div>
     </div>
+    <label>Кампания в рекламном кабинете — расход подтянется сам</label>
+    <input type="hidden" name="ext_network" value="${E(c.ext_network || '')}"><input type="hidden" name="ext_id" value="${E(c.ext_id || '')}">
+    <select id="cpext"><option value="">Не связана — расход вручную</option>
+      ${[...adsCampaigns(), ...(c.ext_id && !adsCampaigns().some(x => x.network === c.ext_network && x.ext_id === c.ext_id) ? [{ key: `${c.ext_network}|${c.ext_id}`, network: c.ext_network, ext_id: c.ext_id, name: '' }] : [])]
+        .map(x => `<option value="${E(x.key)}" ${x.network === c.ext_network && x.ext_id === c.ext_id ? 'selected' : ''}>${E(AD_NETS[x.network] || x.network)} · ${E(x.name || x.ext_id)}</option>`).join('')}
+    </select>
     <label>Ключевые фразы — набор для таргета</label>
     <select name="keyword_set_id"><option value="">Без набора</option>
       ${[...db.keyword_sets].sort((a, b) => (b.direction === c.direction) - (a.direction === c.direction) || a.sort - b.sort).map(k =>
@@ -6029,6 +6139,11 @@ function editCampaign(id) {
     f.querySelector('.salesfield').hidden = f.elements.direction.value !== 'Stock' && !Number(f.elements.sales.value);
     if (!goalTouched) f.elements.goal.value = GOAL_BY_DIR[f.elements.direction.value] || f.elements.goal.value;
   });
+  const ext = $('#cpext');
+  if (ext) ext.onchange = () => {
+    const [net, id] = ext.value ? ext.value.split('|') : ['', ''];
+    f.elements.ext_network.value = net; f.elements.ext_id.value = id;
+  };
   submitForm(f, 'campaigns', c, exists, 'Кампания сохранена');
 }
 
@@ -7244,7 +7359,7 @@ function submitForm(form, table, original, exists, okText) {
         ? (el.type === 'number' ? 0 : null)
         : (el.type === 'number' ? Number(el.value) : el.value);
     }
-    for (const k of ['campaign_id', 'lead_id', 'magnet_id', 'content_id', 'keyword_set_id']) if (o[k] === '') o[k] = null;
+    for (const k of ['campaign_id', 'lead_id', 'magnet_id', 'content_id', 'keyword_set_id', 'ext_network', 'ext_id']) if (o[k] === '') o[k] = null;
     try {
       const saved = exists ? await api.update(table, o) : await api.insert(table, o);
       upsertLocal(table, saved);
@@ -8325,6 +8440,8 @@ document.addEventListener('click', async e => {
     case 'openlead': go('leads'); editLead(b.dataset.id); break;
     case 'leadvoice': await leadVoiceNote(b.dataset.id, b); break;
     case 'sitecheck': await siteCheck(); break;
+    case 'adssync': await adsSyncNow(); break;
+    case 'adsconnect': adsConnect(b.dataset.id); break;
     case 'stockreload': stockView.at = 0; await stockLoad(); break;
     case 'stockkey': stockView.editKey = true; render(); break;
     case 'sitecase': await siteCaseAdd(b.dataset.url); break;

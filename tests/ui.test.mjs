@@ -384,6 +384,15 @@ const fake = (seedData) => {
       if (window.__FEEDFAIL__) throw new Error(window.__FEEDFAIL__);
       return { ok: true, network: payload.network, posts: clone(window.__FEED__ || []), at: now() };
     },
+    async adsSync(payload) {
+      window.__adsCalls = [...(window.__adsCalls || []), payload.action];
+      const on = !!(window.__SECRETS__ || {}).yadirect_token;
+      if (on && payload.action === 'sync') window.__adsSynced = true;
+      return { vk: false, direct: on, directLogin: false, sync: window.__adsSynced ? { direct: { ok: true, at: new Date().toISOString(), rows: 1, campaigns: 1 } } : {} };
+    },
+    async adStats() {
+      return window.__adsSynced ? [{ network: 'direct', ext_id: '111', day: new Date().toISOString().slice(0, 10), name: 'Кафе Пермь', spent: 450.5, impressions: 1200, clicks: 30 }] : [];
+    },
     async stock() {
       window.__stockCalls = (window.__stockCalls || 0) + 1;
       if (!(window.__SECRETS__ || {}).stock_hub_token) return { state: 'off' };
@@ -618,6 +627,28 @@ check('крупное число не разрывается переносом'
   const line = parseFloat(getComputedStyle(v).lineHeight) || parseFloat(getComputedStyle(v).fontSize) * 1.2;
   return v.getBoundingClientRect().height <= line * 1.4;
 })));
+// рекламные кабинеты: подключение Директа, выгрузка, связь с кампанией Hub
+await page.waitForSelector('.adsblock .adnets li');
+check('кабинеты: VK и Директ не подключены, выгружать нечего', (await page.textContent('.adnets')).includes('не подключён') && await page.isDisabled('[data-action=adssync]'));
+await page.click('[data-action=adsconnect][data-id=direct]');
+await page.fill('#yaclient', '0123456789abcdef0123456789abcdef');
+check('Директ: по ClientID — ссылка на получение токена', (await page.getAttribute('#yalink a', 'href')).includes('client_id=0123456789abcdef0123456789abcdef'));
+await page.fill('#adkf input[name=yadirect_token]', 'y0_test_token');
+await page.click('#adkf button.primary');
+await page.waitForSelector('.adstable tbody tr');
+const adRow = await page.$eval('.adstable tbody tr', r => r.innerText.replace(/\s+/g, ' ').trim());
+check('Директ: токен ушёл на сервер, выгрузка показала кампанию — расход, показы, клики, CTR, цена клика', (await page.evaluate(() => window.__SECRETS__.yadirect_token)) === 'y0_test_token'
+  && (await page.evaluate(() => window.__adsCalls)).includes('sync') && /Кафе Пермь Яндекс Директ 451 ₽ 1 ?200 30 2\.50% 15 ₽ не связана/.test(adRow), adRow);
+await page.click('article.campaign:has-text("Осенняя съёмка")');
+await page.selectOption('#cpext', 'direct|111');
+await page.click('#cpf button.primary');
+await page.waitForFunction(() => window.__STATE__.campaigns.some(c => c.ext_network === 'direct' && c.ext_id === '111'));
+check('кампания Hub связана с кампанией Директа — в таблице кабинетов видна связь', (await page.textContent('.adstable tbody tr')).includes('Осенняя съёмка'));
+await page.click('article.campaign:has-text("Осенняя съёмка")');
+await page.selectOption('#cpext', '');
+await page.click('#cpf button.primary');
+await page.waitForFunction(() => window.__STATE__.campaigns.every(c => !c.ext_id));
+await page.evaluate(() => { window.__SECRETS__ = undefined; window.__adsSynced = false; });
 const gisRow = (await page.$$eval('.adtable tbody tr', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ')))).find(r => r.startsWith('2ГИС')) || '';
 check('по каналам: цена заявки считается по источнику', /2ГИС 1 20\s?000 ₽ 9\s?000 ₽ 1 9\s?000 ₽/.test(gisRow), gisRow);
 // ссылка с метками копируется ровно та, что уйдёт в объявление
