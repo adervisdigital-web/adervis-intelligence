@@ -2912,8 +2912,7 @@ function renderHome() {
         ${rest.length ? `<ul class="hmnext" aria-label="Дальше">${rest.map(row).join('')}</ul>` : ''}
         ${queue.length > 4 ? `<p class="muted hmmorenote">И ещё ${queue.length - 4}: смотрите «Заявки» и «Брифы и КП».</p>` : ''}
       </section>
-      ${weekHtml()}
-      <section class="hmpulse" aria-label="Цифры маркетинга">${minis.map(([t, v, c, to]) => `<button class="metric click mini tone-${toneOf(to)}" data-page="${to}"><small>${t}</small><b class="value">${v}</b><span>${E(c)}</span>${to === 'analytics' && reach.posts ? sparkline(chartData().spark) : ''}</button>`).join('')}</section>
+      ${todayPanel(skip)}
       </div>
       <aside class="hmside">
         <section class="card hmmoney" aria-labelledby="moneyh"><div class="head"><h2 id="moneyh">В работе</h2><button class="linkbtn" data-page="briefs">Брифы и КП</button></div>
@@ -2924,11 +2923,12 @@ function renderHome() {
             <li><i class="segwon"></i><span>Сделки за 30 дней</span><b>${wonSum ? `${num(wonSum)} ₽` : '—'}</b><em>${won.length || ''}</em></li></ul>
           ${sd ? `<button class="hmstock" data-page="stock"><span>${icon('download', 15)} Stock за месяц</span><b>${num(Math.round(sd.money?.revenueMonth || 0))} ₽</b><small>${sd.sales?.day ?? 0} за сутки</small></button>` : ''}
         </section>
-        ${todayPanel(skip)}
         ${gaps.length ? `<section class="card hmgaps"><div class="head"><h2>Что мешает</h2><button class="linkbtn" data-page="chain">Вся цепочка</button></div>
           ${gaps.map(([to, title, why]) => `<button class="gapcard" data-page="${to}"><b>${E(title)}</b><p class="muted">${E(why)}</p></button>`).join('')}</section>` : ''}
       </aside>
     </div>
+    ${weekHtml()}
+    <section class="hmpulse" aria-label="Цифры маркетинга">${minis.map(([t, v, c, to]) => `<button class="metric click mini tone-${toneOf(to)}" data-page="${to}"><small>${t}</small><b class="value">${v}</b><span>${E(c)}</span>${to === 'analytics' && reach.posts ? sparkline(chartData().spark) : ''}</button>`).join('')}</section>
     ${!db.knowledge.length ? `<div class="notice">База пуста. Перенесите записи из локальной версии: Настройки → Импорт JSON. <button data-action="import">Импорт JSON</button></div>` : ''}`;
 }
 

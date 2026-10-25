@@ -37,6 +37,15 @@ await page.fill('#gate-pass', 'secret');
 await page.click('#gatebtn');
 await page.waitForSelector('#shell:not([hidden])');
 await page.evaluate(([l, b]) => { const st = window.__STATE__; st.leads.push({ ...l, _at: b.updated_at, _by: 'artem@adervis.ru' }); st.briefs.push({ ...b, _at: b.updated_at, _by: 'artem@adervis.ru' }); }, [DEMO_LEAD, DEMO_BRIEF]);
+await page.evaluate(() => {
+  const st = window.__STATE__, d = n => { const x = new Date(); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); }, at = new Date().toISOString();
+  const add = (t, o) => st[t].push({ ...o, _at: at, _by: 'artem@adervis.ru' });
+  add('briefs', { id: 'b2', lead_id: '', title: 'Два AI-ролика: Papushevo Park и Президенция Монави', client: 'ООО «ДСК ГРУПП»', stage: 'КП', source_text: '', analysis: {}, questions: [], estimate: { items: [] }, plan: [], kp: { price_full: 750000, price_base: 540000 }, next_step: 'Отправить КП и вопросы', next_on: d(0), updated_at: at });
+  add('briefs', { id: 'b3', lead_id: '', title: 'Оформление видеодайджеста «PRO Уралхим»', client: 'Группа компаний «Уралхим»', stage: 'Переговоры', source_text: '', analysis: {}, questions: [], estimate: { items: [] }, plan: [], kp: { price_full: 360000 }, next_step: 'Ждём ответ на КП', next_on: d(1), updated_at: at });
+  add('briefs', { id: 'b4', lead_id: '', title: 'UNIX PRO: графика для ролика', client: 'Павел Гринкевич для «Зелинский групп»', stage: 'Переговоры', source_text: '', analysis: {}, questions: [], estimate: { items: [] }, plan: [], kp: { price_full: 200000 }, next_step: 'Получить ответ по смете', next_on: d(1), updated_at: at });
+  for (const [t, n] of [['«Битва роботов»: с проектом с 2017 года, снимаем каждый сезон', 0], ['Кто ведёт ваш проект', 1], ['Сколько стоит ролик и из чего складывается цена', 2], ['Отзыв клиента: сотрудничество с ADERVIS', 3], ['Где будет жить ваше видео: площадки и форматы', 4], ['Кейс: ролик для базы отдыха «Раздолье»', 5]])
+    add('content', { id: 'c' + n, title: t, channel: 'ВКонтакте', status: 'Черновик', date: d(n), body: '' });
+});
 await page.click('#refresh'); await page.waitForTimeout(500);
 for (const [name, theme, w, h, menu] of [['dark-1920', 'dark', 1920, 1080], ['light-1920', 'light', 1920, 1080], ['dark-2560', 'dark', 2560, 1440], ['menu', 'dark', 1920, 1080, true], ['dark-390', 'dark', 390, 844], ['dark-1100', 'dark', 1100, 800]]) {
   await page.setViewportSize({ width: w, height: h });

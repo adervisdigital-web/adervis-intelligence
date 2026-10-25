@@ -2375,21 +2375,21 @@ body.rail .navrecent{display:none}
 @media(max-width:720px){.askbtn,.hubtabs,.hubmark,#menu span,.topbar #create{display:none!important}}
 
 /* ===== главная: «Сейчас», деньги, сегодня, неделя ===== */
-.hmhello{margin:6px 0 26px}
+.hmhello{margin:4px 0 22px}
 .hmhello p{margin:0 0 10px;color:var(--muted);font-weight:500}
 .hmhello p::first-letter{text-transform:uppercase}
 .hmhello .hmlate{color:#ef4444}
-.hmhello h1{margin:0;font-size:clamp(30px,3vw,50px);line-height:1.08;letter-spacing:-.01em;text-wrap:balance;max-width:28ch}
+.hmhello h1{margin:0;font-size:clamp(28px,2.3vw,40px);line-height:1.08;letter-spacing:-.01em;text-wrap:balance;max-width:28ch}
 .hmhello h1 em{font-style:normal;color:#a86f00}
 html[data-theme=dark] .hmhello h1 em{color:var(--gold)}
 .hmtop{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,420px);gap:20px;align-items:start}
 .hmside,.hmmain{display:grid;gap:20px;min-width:0;align-content:start}
-.hmnow{padding:30px 32px 12px;border-radius:24px}
+.hmnow{padding:26px 30px 8px;border-radius:24px}
 .hmkind{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:14px;color:color-mix(in srgb,var(--acc) 75%,var(--ink))}
 html[data-theme=dark] .hmkind{color:var(--acc)}
 .hmnow h2{margin:12px 0 8px;font:500 clamp(22px,1.8vw,30px)/1.25 var(--font-display);max-width:36ch;text-wrap:balance}
 .hmfacts{margin:0 0 22px;color:var(--muted);max-width:70ch}
-.hmacts{display:flex;flex-wrap:wrap;gap:10px;padding-bottom:24px}
+.hmacts{display:flex;flex-wrap:wrap;gap:10px;padding-bottom:20px}
 .hmacts button{min-height:46px;padding:0 20px;border-radius:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
 .hmghost{background:none;border:1px solid transparent;color:var(--muted)}
 .hmghost:hover{color:var(--ink);border-color:var(--line)}
@@ -2427,7 +2427,7 @@ html[data-theme=dark] .hmic{color:var(--acc)}
 .hmgaps .gapcard b{display:block;font-size:14px}
 .hmgaps .gapcard p{margin:2px 0 0;font-size:13px}
 .hmgaps .gapcard:hover b{color:color-mix(in srgb,var(--gold) 70%,var(--ink))}
-.hmweek{padding:24px 26px 18px}
+.hmweek{margin-top:20px;padding:24px 26px 18px}
 .hmweek .head{gap:14px;margin:0 0 14px;justify-content:flex-start}
 .hmweek .head h2{margin:0}
 .hmweek .head .linkbtn{margin-left:auto}
@@ -2441,10 +2441,11 @@ html[data-theme=dark] .hmdays>li.isnow .hmday,html[data-theme=dark] .hmdays>li.i
 .hmdays ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
 .hmdays ul button{display:flex;gap:8px;align-items:baseline;width:100%;padding:4px 6px;margin-left:-6px;background:none;border:0;border-radius:8px;text-align:left;font-size:13.5px;line-height:1.35;color:var(--ink)}
 .hmdays ul button:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
-.hmdays ul button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hmdays ul li{min-width:0}
+.hmdays ul button span{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
 .hmdays ul i{flex:none;width:8px;height:8px;border-radius:3px;background:var(--acc);transform:translateY(-1px)}
 .hmfree,.hmmore{color:var(--muted);font-size:13px;margin:0}
-.hmpulse{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
+.hmpulse{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin-top:20px;border:1px solid var(--line);border-radius:18px;background:var(--panel);overflow:hidden}
 .hmpulse .metric{display:grid;gap:2px;align-content:start;text-align:left;padding:14px 18px;border:0;border-radius:0;box-shadow:none;background:none;min-height:0}
 .hmpulse .metric + .metric{border-left:1px solid var(--line)}
 .hmpulse .metric small{color:var(--muted)}
@@ -2452,7 +2453,7 @@ html[data-theme=dark] .hmdays>li.isnow .hmday,html[data-theme=dark] .hmdays>li.i
 .hmpulse .metric span{font-size:12.5px;color:var(--muted)}
 .hmpulse .metric:hover{transform:none;background:color-mix(in srgb,var(--ink) 4%,transparent)}
 @media(min-width:2200px){html body .main{max-width:2080px}.hmtop{grid-template-columns:minmax(0,1fr) 480px}}
-@media(max-width:1100px){.hmmain,.hmside{display:contents}.hmnow{order:1}.hmside .todaycard{order:2}.hmmoney{order:3}.hmweek{order:4}.hmgaps{order:5}.hmpulse{order:6}}
+@media(max-width:1100px){.hmmain,.hmside{display:contents}.hmnow{order:1}.hmside .todaycard{order:2}.hmmoney{order:3}.hmgaps{order:5}}
 @media(max-width:1100px){.hmtop{grid-template-columns:1fr}.hmdays{grid-template-columns:repeat(4,minmax(0,1fr))}.hmdays>li:nth-child(5){border-left:0;padding-left:0}}
 @media(max-width:720px){
   .hmhello h1{font-size:28px}
