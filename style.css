@@ -2259,3 +2259,52 @@ body.rail .navrecent{display:none}
 @media(max-width:720px){.bcols{grid-template-columns:repeat(5,78%)}}
 @media (prefers-reduced-motion:reduce){.bcard{transition:none}}
 .homeboard .head .linkbtn,.homeweek .head .linkbtn{min-height:36px;display:inline-flex;align-items:center}
+
+/* --- страница брифа: кто клиент, дорожка шагов, «что сейчас» --- */
+.bftop{margin:10px 0 18px;align-items:flex-start}
+.bfwho{display:flex;gap:14px;align-items:flex-start;min-width:0}
+.bfwho .lavatar{width:52px;height:52px;border-radius:15px;font-size:16px;margin-top:2px}
+.bfwho h1{margin:0 0 10px;text-wrap:balance}
+.bfclient{margin:0 0 4px;font-weight:600;color:var(--muted);font-size:14px}
+.bfmetaline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0}
+.bfpill{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:0 12px;border-radius:999px;font-size:13px;background:var(--panel);border:1px solid var(--line)}
+.bfpill small{color:var(--muted)}
+.bfpill:hover{border-color:var(--acc)}
+
+.bfstepper{display:flex;gap:12px;align-items:center;margin:0 0 14px}
+.bfstepper ol{flex:1;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));list-style:none;margin:0;padding:0;counter-reset:none}
+.bfstepper li{position:relative}
+.bfstepper li+li::before{content:'';position:absolute;top:19px;left:-50%;right:50%;height:2px;background:var(--line);z-index:0}
+.bfstepper li.done+li::before,.bfstepper li.done+li.now::before{background:var(--acc)}
+.bfstepper li button{position:relative;z-index:1;width:100%;display:flex;flex-direction:column;align-items:center;gap:7px;padding:0 4px 4px;background:none;border:0;color:var(--muted);font-size:13px;font-weight:500}
+.bfstepper li button b{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:2px solid var(--line);color:var(--muted);font-size:14px;transition:border-color .2s,background .2s}
+.bfstepper li button:hover b{border-color:var(--acc)}
+.bfstepper li.done button b{background:color-mix(in srgb,var(--acc) 22%,var(--panel));border-color:var(--acc);color:var(--ink)}
+.bfstepper li.now button{color:var(--ink);font-weight:700}
+.bfstepper li.now button b{background:var(--acc);border-color:var(--acc);color:#141414;box-shadow:0 0 0 5px color-mix(in srgb,var(--acc) 20%,transparent)}
+.bfstepper li.off button b{opacity:.5}
+.bflost{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:999px;font-size:13px;color:var(--muted);background:none;border:1px solid var(--line)}
+.bflost:hover,.bflost.on{color:#ef4444;border-color:color-mix(in srgb,#ef4444 50%,transparent)}
+
+.bfnow{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,480px);gap:24px;align-items:start;padding:22px 24px;
+  background:color-mix(in srgb,var(--acc) 7%,var(--panel));border-color:color-mix(in srgb,var(--acc) 30%,var(--line))}
+.bfnow h2{margin:0 0 6px}
+.bfnow p{margin:0;color:var(--muted);max-width:70ch}
+.bfnowacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.bfnowacts button{display:inline-flex;align-items:center;gap:6px;min-height:40px}
+.bfnow .bfnext{grid-template-columns:minmax(0,1fr) 160px;max-width:none;margin:0}
+.bfnow .bfnext label .late{color:#ef4444;font-weight:600;margin-left:4px}
+
+.bftabs{gap:4px;border-bottom:1px solid var(--line);margin:22px 0 18px}
+.bftabs button{font-size:15px;padding:11px 14px;border-radius:10px 10px 0 0}
+.bftabs button:hover{color:var(--ink)}
+.bftext{min-height:180px;max-height:70vh;field-sizing:content}
+
+@media(max-width:900px){
+  .bfnow{grid-template-columns:1fr;gap:16px;padding:18px}
+  .bfstepper{flex-direction:column;align-items:stretch}
+  .bfstepper ol{overflow-x:auto;grid-template-columns:repeat(6,minmax(72px,1fr))}
+  .bflost{align-self:flex-end}
+  .bfwho .lavatar{width:42px;height:42px}
+}
+@media(max-width:720px){.bfnow .bfnext{grid-template-columns:1fr}}

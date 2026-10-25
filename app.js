@@ -4495,28 +4495,70 @@ function briefCard(x) {
 function renderBrief(b) {
   const tab = BRIEF_TABS.some(([k]) => k === briefView.tab) ? briefView.tab : 'tz';
   const lead = briefLead(b), chat = briefChat(b);
-  const head = `<div class="bfhead">
+  const head = `<div class="bfhead tone-${BRIEF_TONE[b.stage] || 'gold'}">
     <button class="linkbtn" data-action="bfback">${icon('back', 15)} Все брифы</button>
-    <div class="head" style="margin:8px 0 12px"><div><div class="eyebrow">${E(b.client || 'Клиент не указан')}${b.crm_id ? ' <span class="crmtag">из CRM</span>' : ''}</div><h1>${E(b.title)}</h1>
-      <p class="muted">${lead ? `Заявка: <button class="linkbtn" data-action="openlead" data-id="${E(lead.id)}">${E(lead.name)} · ${E(lead.status)}</button>` : 'Без заявки в воронке'}
-      ${chat ? ` · <button class="linkbtn" data-action="bfchat">${icon('chat', 14)} переписка</button>` : ''}
-      · <small id="bfsaved" class="muted" aria-live="polite"></small></p></div>
+    <div class="head bftop"><div class="bfwho"><span class="lavatar">${E(initials(b.client || b.title))}</span><div>
+      <p class="bfclient">${E(b.client || 'Клиент не указан')}${b.crm_id ? ' <span class="crmtag">из CRM</span>' : ''}</p><h1>${E(b.title)}</h1>
+      <p class="bfmetaline">${lead ? `<button class="bfpill" data-action="openlead" data-id="${E(lead.id)}">${icon('leads', 14)} Заявка: ${E(lead.name.split('—').pop().trim() || lead.name)} <small>${E(lead.status)}</small></button>` : '<span class="muted">Без заявки в воронке</span>'}
+      ${chat ? `<button class="bfpill" data-action="bfchat">${icon('chat', 14)} Переписка</button>` : ''}
+      <small id="bfsaved" class="muted" aria-live="polite"></small></p></div></div>
       <div class="headactions"><button data-action="bfvoice" ${briefVoice.busy ? 'disabled' : ''} title="Короткое голосовое: что за клиент и что дальше">${icon('sound', 15)} ${briefVoice.busy && briefVoice.id === b.id ? 'Записываю… до минуты' : 'Голосовая сводка'}</button>
         <button class="${b.crm_deal_id ? '' : 'primary'}" data-action="bfcrmpush">${icon('upload', 15)} ${b.crm_deal_id ? 'Обновить в CRM' : 'В ADERVIS CRM'}</button>
         <button data-action="bfedit">Изменить</button></div></div>
     ${briefVoice.id === b.id && (briefVoice.url || briefVoice.error) ? voiceCard() : ''}
     ${b.crm_deal_id ? `<p class="muted bfcrmnote">${icon('check', 14)} Сделка в ADERVIS CRM${b.crm_pushed_at ? ` — отправлено ${E(ago(b.crm_pushed_at))}` : ''}. Откройте её в CRM и нажмите «Развернуть смету».</p>` : ''}
-    <div class="bfstages" role="group" aria-label="Шаг работы с заявкой">${BRIEF_STAGES.map(s =>
-      `<button class="chip${b.stage === s ? ' on' : ''}" data-action="bfstage" data-id="${E(s)}" aria-pressed="${b.stage === s}">${s}</button>`).join('')}
-      <button class="chip${b.stage === 'Отказ' ? ' on' : ''}" data-action="bfstage" data-id="Отказ" aria-pressed="${b.stage === 'Отказ'}">Отказ</button></div>
-    <div class="formgrid nextstep bfnext">
-      <div><label for="bfnextstep">Следующий шаг</label><input class="input" id="bfnextstep" data-bf="next_step" maxlength="300" value="${E(b.next_step)}" placeholder="Отправить вопросы по ТЗ"></div>
-      <div><label for="bfnexton">Когда</label><input class="input" id="bfnexton" type="date" data-bf="next_on" value="${E(b.next_on || '')}"></div>
-    </div>
+    ${briefStepper(b)}
+    ${briefNow(b)}
     <div class="subnav bftabs" role="tablist">${BRIEF_TABS.map(([k, t]) => `<button role="tab" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}" data-action="bftab" data-id="${k}">${t}${tabBadge(b, k)}</button>`).join('')}</div>
   </div>`;
   const body = { tz: bfTz, analysis: bfAnalysis, questions: bfQuestions, estimate: bfEstimate, plan: bfPlan, kp: bfKp, talk: bfTalk }[tab](b);
   return head + `<div class="bfbody">${body}</div>`;
+}
+
+// Шаги работы с заявкой — дорожка с номерами: видно, что пройдено и что дальше.
+// Шаг можно переключить нажатием; «Отказ» стоит отдельно, это не шаг вперёд.
+function briefStepper(b) {
+  const idx = BRIEF_STAGES.indexOf(b.stage), lost = b.stage === 'Отказ';
+  return `<div class="bfstepper"><ol aria-label="Шаг работы с заявкой">${BRIEF_STAGES.map((st, i) => {
+    const cls = lost ? 'off' : i < idx ? 'done' : i === idx ? 'now' : '';
+    return `<li class="${cls}"><button data-action="bfstage" data-id="${E(st)}" aria-current="${i === idx ? 'step' : 'false'}">
+      <b>${i < idx && !lost ? icon('check', 13) : i + 1}</b><span>${st}</span></button></li>`;
+  }).join('')}</ol>
+    <button class="bflost${lost ? ' on' : ''}" data-action="bfstage" data-id="Отказ" aria-pressed="${lost}">${icon('close', 13)} Отказ</button></div>`;
+}
+
+// «Что сейчас»: одна подсказка по текущему шагу и кнопка туда, где это делается.
+function briefNowHint(b) {
+  const qs = b.questions || [], open = qs.filter(q => q.status !== 'ответ').length, asked = qs.filter(q => q.status === 'задан').length;
+  const go = (tab, label, primary) => `<button class="${primary ? 'primary' : ''}" data-action="bftab" data-id="${tab}">${label}</button>`;
+  const next = st => `<button data-action="bfstage" data-id="${st}">Дальше: ${st} ${icon('next', 14)}</button>`;
+  switch (b.stage) {
+    case 'Разбор': return b.analysis?.summary
+      ? ['Разбор готов', 'Проверьте разбор и отправьте клиенту вопросы, без ответов цена останется вилкой.', go('questions', 'Открыть вопросы', 1) + next('Вопросы')]
+      : ['Разберите ТЗ', 'Вставьте текст ТЗ или добавьте файлы, затем нажмите «Разобрать ТЗ с ИИ».', go('tz', 'К ТЗ', 1)];
+    case 'Вопросы': return !qs.length
+      ? ['Вопросов пока нет', 'Добавьте вопросы, которые меняют цену и срок, или переходите к смете.', go('questions', 'Добавить вопросы', 1) + next('Расчёт')]
+      : open
+        ? [asked ? `Ждём ответ на ${open} ${plural(open, 'вопрос', 'вопроса', 'вопросов')}` : `${open} ${plural(open, 'вопрос', 'вопроса', 'вопросов')} ещё не отправлены`,
+          asked ? 'Ответ пришёл в Telegram? Перешлите его в бота ADERVIS HUB и нажмите «📝 Ответы к брифу»: ответы лягут сюда сами. Или впишите их во вкладке «Вопросы».'
+            : 'Скопируйте их одним сообщением и отправьте клиенту.', go('questions', 'Открыть вопросы', 1)]
+        : ['Все ответы есть', 'Можно считать смету и план работ.', go('estimate', 'К смете', 1) + next('Расчёт')];
+    case 'Расчёт': return ['Посчитайте смету и план', 'Проверьте работы и сроки, затем соберите КП.', go('estimate', 'Смета', 1) + go('plan', 'План') + next('КП')];
+    case 'КП': return ['Отправьте КП', 'Опубликуйте КП-ссылку и отправьте её клиенту: увидите, когда он её откроет.', go('kp', 'Открыть КП', 1) + next('Переговоры')];
+    case 'Переговоры': return ['Узнайте решение', 'Клиент думает над КП. Подготовьте ответ на возражения во вкладке «Диалог».', go('talk', 'Диалог', 1) + next('Сделка')];
+    case 'Сделка': return ['Сделка', 'Договор, предоплата и старт работ.', go('kp', 'КП')];
+    default: return ['Отказ', 'Заявка закрыта. Причину отказа видно в заявке.', ''];
+  }
+}
+
+function briefNow(b) {
+  const [title, text, acts] = briefNowHint(b);
+  const late = b.next_on && b.next_on < today() && !['Сделка', 'Отказ'].includes(b.stage);
+  return `<section class="card bfnow">
+    <div class="bfnowmain"><h2>${E(title)}</h2><p>${E(text)}</p>${acts ? `<div class="bfnowacts">${acts}</div>` : ''}</div>
+    <div class="bfnext"><div><label for="bfnextstep">Следующий шаг</label><input class="input" id="bfnextstep" data-bf="next_step" maxlength="300" value="${E(b.next_step)}" placeholder="Отправить вопросы по ТЗ"></div>
+      <div><label for="bfnexton">Когда${late ? ' <b class="late">просрочено</b>' : ''}</label><input class="input" id="bfnexton" type="date" data-bf="next_on" value="${E(b.next_on || '')}"></div></div>
+  </section>`;
 }
 
 function voiceCard() {
