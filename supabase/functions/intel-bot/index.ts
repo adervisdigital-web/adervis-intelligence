@@ -136,7 +136,8 @@ async function collect(sb: Sb, chat: number, msg: any) {
   }
   const { error } = await sb.from('bot_intake_items').upsert({ chat_id: chat, msg_id: Number(msg.message_id), kind: piece.kind, name: piece.name.slice(0, 200),
     text: text.slice(0, 60000), sender: senderOf(msg) }, { onConflict: 'chat_id,msg_id', ignoreDuplicates: true });
-  if (error) { console.error('intel-bot intake:', error.message); return; }
+  // молчать нельзя: иначе человек думает, что материал принят
+  if (error) { console.error('intel-bot intake:', error.message); await send(chat, `⚠️ ${piece.name}: не сохранил (${error.message}). Напишите Claude в Hub.`, KEYBOARD); return; }
   const { count } = await sb.from('bot_intake_items').select('*', { count: 'exact', head: true }).eq('chat_id', chat);
   await send(chat, `📎 ${piece.kind === 'audio' ? '🎙 ' : ''}${piece.name}${text ? ` — ${text.length.toLocaleString('ru-RU')} знаков` : ''}${note}. В заявке: ${count}.`, KEYBOARD);
 }
