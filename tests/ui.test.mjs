@@ -2436,7 +2436,7 @@ const qaColors = await page.$eval('.quickacts .quickact i', i => [getComputedSty
 check('быстрое действие: при наведении иконка не сливается с плашкой', qaColors[0] !== qaColors[1], qaColors.join(' / '));
 await page.mouse.move(0, 0);
 await page.evaluate(t => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }, themeBefore);
-check('главная: приветствие и быстрые действия', /Доброе утро|Добрый день|Добрый вечер|Доброй ночи/.test(await page.textContent('.homehero h1'))
+check('главная: приветствие и быстрые действия', /Доброе утро|Добрый день|Добрый вечер|Доброй ночи/.test(await page.textContent('.homedeck h1'))
   && (await page.$$('.quickacts .quickact')).length === 6);
 await page.click('[data-action=snooze][data-id^="br:"]');
 await page.waitForFunction(d => window.__STATE__.briefs[0].next_on === d, localDay(1));

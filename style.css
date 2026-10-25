@@ -2124,3 +2124,95 @@ html[data-theme=dark] .kpchecks li.warn{background:rgba(246,189,58,.12)}
 .adnets li.on{border-color:#bfe3c7}.adnets li.bad{border-color:#f0b8b4}
 .adstable td,.adstable th{white-space:nowrap}
 .adstable .num{text-align:right}
+
+/* палитра команд (Ctrl K) */
+.palhead{margin:0 0 10px}
+.palinput{width:100%;font-size:17px;padding:14px 16px;border-radius:12px}
+.palresults{max-height:min(60vh,520px);overflow:auto;margin-top:10px;display:grid;gap:2px}
+.palgroup{margin:10px 4px 4px;font-size:12px;font-weight:700;color:var(--muted)}
+.palrow{display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:10px 12px;border-radius:10px;background:transparent}
+.palrow i{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:rgba(127,127,127,.12);flex:none}
+.palrow span{display:grid;gap:2px}
+.palrow small{color:var(--muted);font-size:12px}
+.palrow.sel,.palrow:hover{background:rgba(246,189,58,.14)}
+.palkeys{margin:10px 0 0;font-size:12px}
+.palkeys kbd{display:inline-block;min-width:20px;padding:1px 5px;margin:0 2px;border:1px solid var(--line);border-radius:5px;font:inherit;text-align:center}
+
+/* ---- главная: пульт владельца ---------------------------------------- */
+.homedeck{display:flex;align-items:flex-end;justify-content:space-between;gap:16px 24px;flex-wrap:wrap;margin:4px 0 16px}
+.homehead h1{font-size:clamp(26px,3.2vw,36px);margin:8px 0 6px}
+.homelead{margin:0;color:var(--muted);font-size:15px}
+.homelead b{color:var(--ink)}
+.livetag{color:var(--gold);font-weight:600}
+.homedeck .quickacts{margin:0;grid-template-columns:repeat(6,auto)}
+.homedeck .quickact{min-height:40px;padding:8px 12px}
+.homegrid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,1fr);gap:16px;margin-bottom:16px;align-items:start}
+.signals .head,.money .head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 0 8px}
+.signals .head h2,.money .head h2{margin:0}
+.siglist{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.sig{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:color-mix(in srgb,var(--acc,var(--gold)) 6%,transparent)}
+.sig .sigic{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;color:var(--acc,var(--gold));background:color-mix(in srgb,var(--acc,var(--gold)) 16%,transparent)}
+.sigtext{display:grid;gap:2px;min-width:0}
+.sigtext b{font-size:14px;display:flex;align-items:center;gap:8px}
+.sigtext span{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sigat{color:var(--muted);font-size:12px;white-space:nowrap}
+.sigact{padding:8px 12px;border-radius:10px;font-weight:600;background:var(--panel);border:1px solid var(--line);color:var(--ink);white-space:nowrap}
+.sig.live{border-color:color-mix(in srgb,var(--gold) 55%,transparent)}
+.sig.live .sigact,.sig.tone-green .sigact{background:var(--gold);border-color:var(--gold);color:#141414}
+.livedot{width:8px;height:8px;border-radius:50%;background:var(--gold);display:inline-block;flex:none;box-shadow:0 0 0 0 rgba(246,189,58,.6);animation:livepulse 1.6s ease-in-out infinite}
+@keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(246,189,58,.55)}70%{box-shadow:0 0 0 8px rgba(246,189,58,0)}100%{box-shadow:0 0 0 0 rgba(246,189,58,0)}}
+.sigempty{margin:6px 0}
+.moneytotal{font-size:clamp(30px,3.4vw,40px);font-weight:800;letter-spacing:-.03em;line-height:1.1;margin:4px 0 2px}
+.pipebar{display:flex;gap:3px;height:10px;margin:12px 0 10px;border-radius:999px;overflow:hidden}
+.seg{display:block;border-radius:3px;min-width:6px}
+.seg0{background:#8a8f9c}.seg1{background:var(--gold)}.seg2{background:#a99cff}
+.pipelist{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.pipelist li{display:grid;grid-template-columns:10px 1fr auto 22px;align-items:center;gap:10px;font-size:14px}
+.pipelist li .seg{width:10px;height:10px;border-radius:3px}
+.pipelist small{color:var(--muted);text-align:right}
+.stockline{display:grid;grid-template-columns:1fr auto;gap:2px 10px;width:100%;margin-top:14px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--ink);text-align:left}
+.stockline span{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.stockline small{grid-column:1/-1;color:var(--muted)}
+.ministrip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0 4px}
+.mini{display:grid;gap:3px;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+.mini small{color:var(--muted);font-size:12px}
+.mini b{font-size:22px;letter-spacing:-.02em;color:var(--acc,var(--ink))}
+.mini span{color:var(--muted);font-size:12px}
+.sigact,.mini,.stockline,.quickact{transition:transform .12s ease-out,background-color .12s ease-out,border-color .12s ease-out}
+.sigact:active,.mini:active,.stockline:active,.quickact:active{transform:scale(.97)}
+.mini:hover,.stockline:hover{border-color:color-mix(in srgb,var(--acc,var(--gold)) 45%,var(--line))}
+@media(max-width:1180px){.homedeck .quickacts{grid-template-columns:repeat(3,minmax(0,1fr));width:100%}}
+@media(max-width:900px){.homegrid{grid-template-columns:1fr}.ministrip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){
+  .homedeck .quickacts{display:none}  /* на телефоне создание — кнопкой «+» в нижней панели */
+  .sig{grid-template-columns:auto minmax(0,1fr) auto;padding:10px}
+  .sig .sigat{display:none}
+  .sigact{padding:8px 10px}
+}
+
+/* меню: недавние разделы под поиском */
+.navrecent{display:grid;gap:2px;margin:6px 0 4px;padding:0 4px}
+.navrecent small{font-size:11px;color:#7e838d;padding:4px 10px 2px}
+.recentitem{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;background:transparent;color:#bfc3cc;text-align:left;font-size:13px}
+.recentitem:hover{background:#292d35;color:#fff}
+.recentitem .navtile{width:22px;height:22px}
+body.rail .navrecent{display:none}
+
+/* телефон: «+» в центре нижней панели и шторка создания */
+.tabplus i{display:grid;place-items:center;width:44px;height:44px;margin-top:-14px;border-radius:14px;background:var(--gold);color:#141414;box-shadow:0 6px 18px rgba(246,189,58,.35)}
+.plussheet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.plussheet .quickact{min-height:64px;font-size:15px}
+
+/* переход между разделами: короткое проявление нового раздела (класс .enter ставит go()) */
+#view.enter{animation:hubin .2s cubic-bezier(.2,.8,.2,1)}
+@keyframes hubin{from{opacity:0;transform:translateY(8px)}}
+@media (prefers-reduced-motion:reduce){
+  .livedot{animation:none}
+  .sigact,.mini,.stockline,.quickact{transition:none}
+  #view.enter{animation:none}
+}
+.money .head .linkbtn,.sigempty .linkbtn{min-height:36px;display:inline-flex;align-items:center}
+.ministrip .mini.metric{display:grid;grid-template-columns:1fr;align-content:start;gap:4px;min-height:0;padding:12px 14px}
+.ministrip .mini .value{font-size:22px;line-height:1.15;margin:2px 0 0;min-height:0}
+.ministrip .mini small,.ministrip .mini span{display:block}
+.ministrip .mini .spark{margin-top:6px;height:24px}

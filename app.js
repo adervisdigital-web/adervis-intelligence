@@ -353,7 +353,7 @@ const toneOf = id => GROUP_TONE[groupOf(id)] || 'gold';
 const NAV_LABEL = { stock: 'Stock', ads: 'Кампании', assistant: 'ИИ-помощник', products: 'Услуги и продукты', tasks: 'Задачи' };
 // На телефоне — нижняя панель: четыре главных раздела и «Ещё». Отвечать
 // клиентам с телефона нужнее, чем править кампании, — поэтому «Диалоги».
-const TABBAR = ['home', 'leads', 'dialogs', 'content'];
+const TABBAR = ['home', 'leads', 'dialogs'];
 const TAB_LABEL = { ads: 'Реклама', content: 'Контент' };
 
 const sections = NAV.flatMap(([, ids]) => ids).map(id => [id, '', SECTION_TITLE[id]]);
@@ -2783,6 +2783,115 @@ async function siteAsk(text) {
   } catch (e) { handleError(e); }
 }
 
+// ---- главная: пульт владельца
+// Сверху — сигналы, по которым надо действовать сейчас (клиент читает КП или
+// выбрал вариант, новая заявка, ждут ответа, просрочки, поломки Stock), справа —
+// деньги в работе по шагам цепочки. Ниже — план на сегодня и цифры маркетинга.
+// Порядок сигналов — по срочности; у каждого одна кнопка действия.
+const LIVE_MS = 15 * 60e3;   // «читает прямо сейчас» — последний сигнал КП не старше 15 минут
+const PIPE_STAGES = [['Расчёт', 'Считаем'], ['КП', 'КП у клиента'], ['Переговоры', 'Переговоры']];
+const kpPrice = b => Number(b.kp?.price_full) || Number(b.kp?.price_base) || suggested(b, 'full') || 0;
+
+function homeSignals() {
+  ensureKpStats();
+  const out = [], now = Date.now();
+  const push = (rank, tone, ic, title, detail, act, live = false, at = '') => out.push({ rank, tone, ic, title, detail, act, live, at });
+  for (const b of db.briefs) {
+    const st = b.kp?.share_token && kpStats.by[b.id];
+    if (!st) continue;
+    const who = b.client || b.title, open = `data-action="openbrief" data-id="${E(b.id)}"`;
+    const c = st.choice;
+    if (c && st.chosen_at && now - Date.parse(st.chosen_at) < 3 * 864e5) {
+      push(0, 'green', 'check', c.type === 'budget' ? `${who} предложил свой бюджет` : `${who} выбрал вариант в КП`,
+        c.type === 'budget' ? rub(c.amount) : `${String(c.label || '').replace(' вариант', '')}${c.options?.length ? ` + ${c.options.length}` : ''}, ${rub(c.total)}`,
+        [open, 'Договор и предоплата'], false, st.chosen_at);
+      continue;
+    }
+    const e = st.engagement, last = e?.last_at ? Date.parse(e.last_at) : 0;
+    if (last && now - last < LIVE_MS) push(1, 'gold', 'eye', `${who} читает КП прямо сейчас`, kpEngage(e) || 'открыли страницу', [open, 'Написать клиенту'], true, e.last_at);
+    else if (st.last_view_at && now - Date.parse(st.last_view_at) < 864e5) push(3, 'gold', 'eye', `${who} открывал КП`, kpEngage(e) || `${st.views} ${plural(st.views, 'раз', 'раза', 'раз')}`, [open, 'Предложить созвон'], false, st.last_view_at);
+  }
+  for (const l of db.leads.filter(l => l.status === 'Новое' && daysAgo(l.came_on) <= 2)) {
+    push(2, 'gold', 'leads', l.source === 'Сайт' ? `Заявка с сайта: ${l.name}` : `Новая заявка: ${l.name}`, l.request || l.source,
+      [`data-action="openlead" data-id="${E(l.id)}"`, 'Ответить'], false, l.came_on);
+  }
+  for (const pr of db.prospects.filter(waitingReply).slice(0, 4)) {
+    push(2, 'violet', 'chat', `${pr.name} ждёт ответа`, String(pr.last_text || '').slice(0, 90) || 'новое сообщение', [`data-action="opendialog" data-id="${E(pr.id)}"`, 'Ответить'], false, pr.last_message_at);
+  }
+  const sd = stockView.res;
+  if (sd?.state === 'down') push(1, 'red', 'warn', 'stock.adervis.ru не отвечает', 'клиенты не могут скачивать', ['data-page="stock"', 'Открыть Stock']);
+  if (sd?.data?.engine?.ok === false) push(1, 'red', 'warn', 'Движок Envato в Stock не работает', 'скачивания стоят', ['data-page="stock"', 'Открыть Stock']);
+  for (const pb of (sd?.data?.problems || []).slice(0, 2)) push(1, 'red', 'warn', `Stock: ${pb.title}`, 'требует внимания', ['data-page="stock"', 'Открыть Stock']);
+  for (const [net, st] of Object.entries(adsView.status?.sync || {})) if (st?.ok === false) push(5, 'red', 'ads', `${AD_NETS[net]}: выгрузка не прошла`, st.error || '', ['data-page="ads"', 'Посмотреть']);
+  return out.sort((a, b) => a.rank - b.rank || String(b.at).localeCompare(String(a.at)));
+}
+
+function renderHome() {
+  ensureStock();
+  const sig = homeSignals(), tl = todayList(), lateN = tl.filter(x => x.late).length;
+  const hour = new Date().getHours();
+  const hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+  const first = memberName(me?.email).split(' ')[0];
+  const when = new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long' });
+  const live = sig.find(x => x.live);
+  const urgent = sig.filter(x => x.rank <= 2).length + lateN;
+  const lead = urgent ? `${urgent} ${plural(urgent, 'срочное дело', 'срочных дела', 'срочных дел')}` : tl.length ? `${tl.length} ${plural(tl.length, 'дело', 'дела', 'дел')} на сегодня` : 'Срочного нет';
+
+  // деньги в работе: КП по шагам цепочки
+  const open = db.briefs.filter(b => PIPE_STAGES.some(([st]) => st === b.stage));
+  const bySt = PIPE_STAGES.map(([st, label]) => { const list = open.filter(b => b.stage === st); return { st, label, n: list.length, sum: list.reduce((n, b) => n + kpPrice(b), 0) }; });
+  const total = bySt.reduce((n, x) => n + x.sum, 0);
+  const won = db.briefs.filter(b => b.stage === 'Сделка' && daysAgo(b.updated_at || b._at) <= 30);
+  const a = adStats(), ls = leadStats(), reach = totals(), sd = stockView.res?.data;
+
+  const sigRow = x => `<li class="sig tone-${x.tone}${x.live ? ' live' : ''}"><i class="sigic">${icon(x.ic, 17)}</i>
+      <div class="sigtext"><b>${x.live ? '<em class="livedot" aria-hidden="true"></em>' : ''}${E(x.title)}</b><span>${E(x.detail)}</span></div>
+      ${x.at ? `<small class="sigat">${E(ago(x.at))}</small>` : ''}
+      <button class="sigact" ${x.act[0]}>${E(x.act[1])}</button></li>`;
+  // цифры маркетинга — первой реклама (решение владельцев: обзор начинается с рекламы, а не с выручки)
+  const minis = [
+    ['Идут кампании', db.campaigns.length ? a.running.length : '—',
+      !db.campaigns.length ? 'Заведите кампанию в «Рекламе»' : a.running.length ? `потрачено ${num(a.runningSpent)} из ${num(a.runningBudget)}` : 'ни одна не запущена', 'ads', ''],
+    ['Цена заявки', a.cpl === null ? '—' : num(a.cpl), a.leads ? `заявок из кампаний: ${a.leads}` : 'заявок из кампаний пока нет', 'ads', ''],
+    ['Заявки за 30 дней', db.leads.length ? ls.recent : '—', db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads', ''],
+    ['Охват публикаций', reach.posts ? num(reach.views) : '—', reach.posts ? `по последним замерам · публикаций: ${reach.posts}` : 'замеров пока нет', 'analytics', sparkline(chartData().spark)]
+  ];
+
+  let h = `<section class="homedeck" aria-label="Сводка дня">
+      <div class="homehead"><span class="cmddate">${icon('calendar', 15)}${E(when)}</span>
+        <h1>${hello}${first && first !== 'ADERVIS' ? ', ' + E(first) : ''}</h1>
+        <p class="homelead"><b>${lead}</b>${live ? ` · <span class="livetag"><em class="livedot" aria-hidden="true"></em>${E(live.title)}</span>` : ''}${lateN ? ` · просрочено ${lateN}` : ''}</p></div>
+      <div class="quickacts" role="group" aria-label="Быстро создать">${QUICK.map(([act, label, ic, tone]) => `<button class="quickact tone-${tone}" data-action="${act}" title="Создать: ${E(label.toLowerCase())}">
+        <i>${icon(ic, 18)}</i><span>${label}</span>${icon('plus', 14)}</button>`).join('')}</div>
+    </section>
+    <div class="homegrid">
+      <section class="card signals" aria-labelledby="sigh"><div class="head"><h2 id="sigh">Сигналы</h2><small class="muted">${sig.length ? `${sig.length} ${plural(sig.length, 'событие', 'события', 'событий')}, сначала срочное` : 'тишина'}</small></div>
+        ${sig.length ? `<ul class="siglist">${sig.slice(0, 8).map(sigRow).join('')}</ul>${sig.length > 8 ? `<p class="muted">И ещё ${sig.length - 8}: смотрите «Заявки» и «Брифы и КП».</p>` : ''}`
+          : `<p class="muted sigempty">Новых заявок, ответов и открытых КП нет. Хорошее время написать новым клиентам: <button class="linkbtn" data-page="prospects">Поиск клиентов</button>.</p>`}</section>
+      <section class="card money" aria-labelledby="moneyh"><div class="head"><h2 id="moneyh">Деньги в работе</h2><button class="linkbtn" data-page="briefs">Брифы и КП</button></div>
+        <div class="moneytotal">${total ? `${num(total)} ₽` : '—'}</div>
+        <p class="muted">${open.length ? `${open.length} ${plural(open.length, 'проект', 'проекта', 'проектов')} до сделки` : 'проектов в работе нет'}${won.length ? ` · сделок за 30 дней: ${won.length}` : ''}</p>
+        ${total ? `<div class="pipebar" role="img" aria-label="${E(bySt.filter(x => x.sum).map(x => `${x.label}: ${num(x.sum)} ₽`).join(', '))}">${bySt.filter(x => x.sum).map((x, i) => `<span class="seg seg${i}" style="flex:${x.sum}"></span>`).join('')}</div>` : ''}
+        <ul class="pipelist">${bySt.map((x, i) => `<li><em class="seg seg${i}"></em><span>${x.label}</span><b>${x.sum ? `${num(x.sum)} ₽` : '—'}</b><small>${x.n || ''}</small></li>`).join('')}</ul>
+        ${sd ? `<button class="stockline" data-page="stock"><span>${icon('download', 15)} Stock за месяц</span><b>${num(Math.round(sd.money?.revenueMonth || 0))} ₽</b><small>${sd.sales?.day ?? 0} за сутки</small></button>` : ''}
+      </section>
+    </div>
+    ${todayPanel()}
+    <section class="ministrip" aria-label="Цифры маркетинга">${minis.map(([t, v, c, to, extra]) => `<button class="metric click mini tone-${toneOf(to)}" data-page="${to}"><small>${t}</small><b class="value">${v}</b><span>${E(c)}</span>${extra}</button>`).join('')}</section>`;
+  const top = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
+  if (top.length) h += `<div class="head" style="margin:22px 0 12px"><h2 style="margin:0">Что мешает прямо сейчас</h2><button data-page="chain">Вся цепочка →</button></div>
+      <div class="grid three">${top.map(([to, title, why]) => `<button class="card gapcard" data-page="${to}"><b>${E(title)}</b><p class="muted">${E(why)}</p><span class="gaplink">Перейти →</span></button>`).join('')}</div>`;
+  h += `<div class="head"><h2>Ближайшие публикации</h2><button data-page="content">Контент-план →</button></div>
+      <div class="grid three homeposts">${[...db.content].filter(x => x.status !== 'Опубликовано')
+        .sort((x, y) => (x.date || '9999').localeCompare(y.date || '9999')).slice(0, 3).map(contentCard).join('') || '<div class="card empty">Запланированных публикаций нет.</div>'}</div>
+      <div class="grid layout-2" style="margin-top:16px">
+        <div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Последние изменения</h2><button data-page="settings">Весь журнал →</button></div>${feed(5)}</div>
+        <div class="card"><h2>Подготовить к работе</h2>${tasksList(false)}</div>
+      </div>`;
+  if (!db.knowledge.length) h += `<div class="notice">База пуста. Перенесите записи из локальной версии: Настройки → Импорт JSON. <button data-action="import">Импорт JSON</button></div>`;
+  return h;
+}
+
 // ---- Adervis Stock
 // Сводка stock.adervis.ru по ключу «только для чтения» из админки Stock
 // (функция stock). Ключ вставляют здесь же, на сервер; обратно его не прочитать.
@@ -2797,7 +2906,7 @@ async function stockLoad() {
   stockView = { ...stockView, busy: true, error: '' };
   try { stockView.res = await api.stock(); stockView.at = Date.now(); }
   catch (e) { stockView.error = 'Сводка не загрузилась: ' + (e.message || 'ошибка сервера'); }
-  finally { stockView.busy = false; if (page === 'stock') render(); }
+  finally { stockView.busy = false; if (page === 'stock' || page === 'home') render(); }
 }
 async function stockSaveKey(key) {
   try {
@@ -4278,7 +4387,7 @@ function ensureKpStats() {
   api.kpShareList().then(rows => {
     kpStats.by = Object.fromEntries((rows || []).map(r => [r.brief_id, r]));
     kpStats.at = Date.now(); kpStats.loading = false;
-    if (page === 'briefs' && !db.briefs.some(x => x.id === briefView.id)) render();
+    if ((page === 'briefs' && !db.briefs.some(x => x.id === briefView.id)) || page === 'home') render();
   }).catch(() => { kpStats.at = Date.now(); kpStats.loading = false; });
 }
 // Как клиент читал КП — та же строка, что приходит в Telegram (engageLine в функции kp).
@@ -6813,75 +6922,7 @@ function render() {
   updateNav();
   let s = '';
 
-  if (page === 'home') {
-    // На главной — маркетинг: сколько ушло на рекламу, сколько она принесла
-    // обращений и во что обошлось одно. Выручка студии ведётся в CRM.
-    const a = adStats();
-    const ls = leadStats();
-    const reach = totals();
-
-    const cards = [
-      ['Идут кампании', db.campaigns.length ? a.running.length : '—',
-        !db.campaigns.length ? 'Заведите кампанию в «Рекламе»'
-          : a.running.length ? `потрачено ${num(a.runningSpent)} из ${num(a.runningBudget)}` : 'ни одна не запущена',
-        'ads', ''],
-      ['Цена заявки', a.cpl === null ? '—' : num(a.cpl),
-        a.leads ? `заявок из кампаний: ${a.leads}` : 'заявок из кампаний пока нет', 'ads', ''],
-      ['Заявки за 30 дней', db.leads.length ? ls.recent : '—',
-        db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads', ''],
-      // Охват — маркетинговая цифра, ей место на главной. Просроченные
-      // решения не теряются: они первыми стоят в «Что мешает прямо сейчас».
-      ['Охват публикаций', reach.posts ? num(reach.views) : '—',
-        reach.posts ? `по последним замерам · публикаций: ${reach.posts}` : 'замеров пока нет',
-        'analytics', sparkline(chartData().spark)]
-    ];
-
-    const tl = todayList(), lateN = tl.filter(x => x.late).length;
-    const hour = new Date().getHours();
-    const hello = hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
-    const first = memberName(me?.email).split(' ')[0];
-    const when = new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long' });
-    const waitingN = db.prospects.filter(waitingReply).length;
-    const kinds = [['просрочено', lateN, 'red'], ['ждут ответа', waitingN, 'gold'],
-      ['брифов в работе', db.briefs.filter(b => !['Сделка', 'Отказ'].includes(b.stage)).length, 'violet']].filter(([, n]) => n);
-    s = `<section class="cmd homehero">
-      <div class="cmdmain">
-        <span class="cmddate">${icon('calendar', 15)}${E(when)}</span>
-        <h1>${hello}${first && first !== 'ADERVIS' ? ', ' + E(first) : ''}</h1>
-        <p>${tl.length ? `Сегодня ${tl.length} ${plural(tl.length, 'дело', 'дела', 'дел')}. Начните с просроченного — оно наверху списка.` : 'Срочного нет — хорошее время написать новым клиентам.'}</p>
-        ${kinds.length ? `<div class="cmdchips">${kinds.map(([t, n, tone]) => `<span class="cmdchip tone-${tone}"><b>${n}</b>${t}</span>`).join('')}</div>` : ''}
-      </div>
-      <div class="heroactions cmdacts"><button class="ghostbtn" data-page="dialogs">${icon('chat', 16)} Диалоги</button>
-        <button class="ghostbtn" data-page="prospects">${icon('clients', 16)} Найти клиентов</button></div>
-    </section>
-    <div class="quickacts" role="group" aria-label="Быстро создать">${QUICK.map(([act, label, ic, tone]) => `<button class="quickact tone-${tone}" data-action="${act}">
-      <i>${icon(ic, 18)}</i><span>${label}</span>${icon('plus', 14)}</button>`).join('')}</div>
-    <section class="card pulse" aria-label="Главные цифры">${cards.map(([a, b, c, to, extra]) => `<button class="metric click tone-${toneOf(to)}" data-page="${to}">
-      <div class="metrichead"><span class="mtile">${icon(to, 17)}</span><span class="mlabel">${a}</span>${icon('next', 15)}</div>
-      <div class="value">${b}</div><small>${c}</small>${extra}</button>`).join('')}</section>
-      ${todayPanel()}
-      ${(() => {
-        const top = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
-        if (!top.length) return '';
-        return `<div class="head" style="margin:20px 0 12px"><h2 style="margin:0">Что мешает прямо сейчас</h2>
-            <button data-page="chain">Вся цепочка →</button></div>
-          <div class="grid three">${top.map(([to, title, why]) => `<button class="card gapcard" data-page="${to}">
-            <b>${E(title)}</b><p class="muted">${E(why)}</p><span class="gaplink">Перейти →</span></button>`).join('')}</div>`;
-      })()}
-      <div class="grid layout-2" style="margin-top:16px">
-        <div class="card"><div class="head" style="margin:0 0 10px"><h2 style="margin:0">Последние изменения</h2><button data-page="settings">Весь журнал →</button></div>${feed(6)}</div>
-        <div class="card"><h2>Подготовить к работе</h2>${tasksList(false)}</div>
-      </div>
-      <div class="head"><h2>Ближайшие публикации</h2><button data-page="content">Контент-план →</button></div>
-      <div class="grid three homeposts">${[...db.content].filter(p => p.status !== 'Опубликовано')
-        .sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999')).slice(0, 3).map(contentCard).join('')
-        || '<div class="card empty">Запланированных публикаций нет.</div>'}</div>
-      <p class="muted">Показатели отражают только записи в приложении. Здесь нет придуманных заявок и охватов.</p>`;
-    if (!db.knowledge.length) {
-      s += `<div class="notice">База пуста. Перенесите записи из локальной версии: Настройки → Импорт JSON.
-        <button data-action="import">Импорт JSON</button></div>`;
-    }
-  }
+  if (page === 'home') s = renderHome();
 
   if (page === 'knowledge' || page === 'cases') {
     const ks = db.knowledge.filter(k => page !== 'cases' || k.category === 'Кейсы');
@@ -7226,7 +7267,9 @@ function render() {
 
 // Свёрнутые группы помнятся на устройстве. Группа открытого раздела
 // раскрыта всегда — иначе непонятно, где ты находишься.
-let navClosed = ['Система'];
+// По умолчанию раскрыты «Продажи» (каждый день) и группа открытого раздела: 24 пункта
+// не помещаются в высоту экрана. Что раскрыть — человек решает сам, это запоминается.
+let navClosed = ['Реклама', 'Контент', 'Аналитика', 'Компания', 'Система'];
 try { const saved = JSON.parse(localStorage.getItem('intel.nav.closed')); if (Array.isArray(saved)) navClosed = saved; } catch (e) { /* по умолчанию */ }
 
 // Счётчики — те же дела, что в «На сегодня»: у раздела видно, что ждёт.
@@ -7244,6 +7287,13 @@ function navCounts() {
 
 function updateNav() {
   const counts = navCounts();
+  // недавние — три последних раздела, кроме открытого: туда возвращаются чаще всего
+  const rec = $('#navrecent');
+  if (rec) {
+    const ids = recentPages.filter(id => id !== page && sections.some(x => x[0] === id)).slice(0, 3);
+    rec.hidden = !ids.length;
+    rec.innerHTML = ids.length ? `<small>Недавние</small>${ids.map(id => `<button class="recentitem" data-page="${id}"><i class="navtile">${icon(id, 15)}</i><span>${NAV_LABEL[id] || SECTION_TITLE[id]}</span></button>`).join('')}` : '';
+  }
   const badge = (el, c) => {
     if (!el) return;
     el.hidden = !c || !c.n;
@@ -7272,6 +7322,7 @@ function go(p) {
   // Календарь стал видом контент-плана; старые ссылки на него ведут туда же.
   if (p === 'calendar') { contentView = 'calendar'; p = 'content'; }
   page = sections.some(s => s[0] === p) ? p : 'home';
+  rememberPage(page);
   query = ''; category = 'Все'; surveyHidden = null;
   flushPendingBrief();
   briefView = { id: '', tab: 'tz', busy: false, error: '' };
@@ -7279,6 +7330,9 @@ function go(p) {
   $('#crumb').textContent = sections.find(s => s[0] === page)[2];
   render();
   window.scrollTo(0, 0);
+  // короткое проявление нового раздела; рисуем сразу — код после go() видит новую страницу
+  const v = $('#view');
+  v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
 }
 
 // ----------------------------------------------------------- окна и формы
@@ -8018,30 +8072,72 @@ function editBrand(id) {
   };
 }
 
+// ---- палитра команд (Ctrl K): действия, недавние разделы, клиенты и записи.
+// Пустая строка — частые действия и недавние разделы; ↑↓ выбирают, Enter открывает.
+// Поиск по-прежнему находит все записи; к ним добавились брифы и действия.
+// Синонимы — как говорят владельцы: «тз», «смета», «лид».
+const PALETTE_ACTIONS = () => [
+  ...QUICK.map(([act, label, ic]) => ({ label: `Создать: ${label.toLowerCase()}`, ic, act, words: act === 'newlead' ? 'лид клиент обращение' : act === 'bfnew' ? 'тз смета кп бриф' : '' })),
+  { label: 'Проверить сайт adervis.ru', ic: 'website', act: 'palsite', words: 'seo страницы' },
+  { label: 'Выгрузить расход из рекламных кабинетов', ic: 'ads', act: 'palads', words: 'директ вк реклама таргет' },
+  { label: 'Обновить сводку Adervis Stock', ic: 'download', act: 'palstock', words: 'сток продажи envato' },
+  { label: 'Сменить тему', ic: 'theme', act: 'theme', words: 'тёмная светлая' }
+];
+let recentPages = (() => { try { return JSON.parse(localStorage.getItem('hub-recent') || '[]').filter(x => typeof x === 'string').slice(0, 4); } catch (e) { return []; } })();
+function rememberPage(p) {
+  if (p === 'home') return;
+  recentPages = [p, ...recentPages.filter(x => x !== p)].slice(0, 4);
+  try { localStorage.setItem('hub-recent', JSON.stringify(recentPages)); } catch (e) { /* приватное окно */ }
+}
+
 function search() {
-  modal('<h2>Поиск по ADERVIS</h2><input id="global" aria-label="Глобальный поиск" placeholder="Кейс, услуга, публикация, раздел…"><div id="results"></div>');
+  modal(`<h2 class="palhead">Что сделать или найти?</h2><input id="global" class="palinput" aria-label="Команда или поиск" autocomplete="off" spellcheck="false"
+      placeholder="Заявка, бриф, клиент, «создать», «сайт»…" aria-controls="results">
+    <div id="results" class="palresults" role="listbox" aria-label="Результаты"></div>
+    <p class="palkeys muted"><kbd>↑</kbd><kbd>↓</kbd> выбрать · <kbd>Enter</kbd> открыть · <kbd>Esc</kbd> закрыть</p>`);
+  let sel = 0;
+  const row = (attrs, label, note, ic) => `<button class="result palrow" role="option" ${attrs}>${ic ? `<i>${icon(ic, 16)}</i>` : ''}<span>${E(label)}<small>${E(note)}</small></span></button>`;
+  const items = () => [...$('#results').querySelectorAll('.palrow')];
+  const mark = () => items().forEach((b, i) => { b.classList.toggle('sel', i === sel); b.setAttribute('aria-selected', String(i === sel)); if (i === sel) b.scrollIntoView({ block: 'nearest' }); });
   const fill = () => {
-    const q = $('#global').value.toLowerCase();
-    // Поиск знал только про записи, публикации и разделы. Решения,
-    // заявки и темы брендбука в него не попадали — а их уже больше, чем
-    // всего остального вместе.
-    const all = [
-      ...sections.map(([id, , title]) => ({ id, title, body: 'Раздел', kind: 'page', note: 'Раздел' })),
-      ...db.knowledge.map(k => ({ ...k, kind: 'k', note: k.category + ' · ' + k.access })),
-      ...db.content.map(p => ({ ...p, kind: 'p', note: 'Публикация · ' + p.status })),
-      ...db.decisions.map(d => ({ ...d, body: d.why || '', kind: 'd', note: 'Решение · ' + d.status })),
-      ...db.leads.map(l => ({ ...l, title: l.name, body: l.request || '', kind: 'l', note: 'Заявка · ' + l.source })),
-      ...db.campaigns.map(c => ({ ...c, title: c.name, body: `${c.creative} ${c.audience}`, kind: 'cp', note: 'Кампания · ' + c.channel })),
-      ...db.keyword_sets.map(k => ({ ...k, title: k.name, body: `${k.phrases} ${k.note}`, kind: 'ks', note: 'Ключевые фразы · ' + k.direction })),
-      ...db.lead_magnets.map(m => ({ ...m, title: m.name, body: `${m.promise} ${m.audience}`, kind: 'mg', note: 'Лид-магнит · ' + m.status })),
-      ...db.prospects.map(p => ({ ...p, title: p.name, body: `${p.category} ${p.city} ${p.note}`, kind: 'pr', note: 'Поиск клиентов · ' + p.status })),
-      ...db.brand.map(b => ({ ...b, body: b.data?.body || '', kind: 'brand', note: 'Брендбук · ' + (b.section || 'Прочее') }))
-    ].filter(x => (x.title + ' ' + x.body).toLowerCase().includes(q)).slice(0, 25);
-    $('#results').innerHTML = all.map(x => `<button class="result" data-result="${x.kind}" data-id="${E(x.id)}">${E(x.title)}
-      <small>${E(x.note)}</small></button>`).join('')
-      || '<p>Совпадений нет.</p>';
+    const q = $('#global').value.trim().toLowerCase();
+    const has = t => String(t || '').toLowerCase().includes(q);
+    const groups = [];
+    const acts = PALETTE_ACTIONS().filter(a => !q || has(a.label) || has(a.words));
+    if (acts.length) groups.push(['Действия', acts.slice(0, q ? 6 : 5).map(a => row(`data-action="${a.act}"`, a.label, 'действие', a.ic))]);
+    if (!q && recentPages.length) groups.push(['Недавние разделы', recentPages.filter(id => sections.some(x => x[0] === id))
+      .map(id => row(`data-result="page" data-id="${E(id)}"`, sections.find(x => x[0] === id)[2], 'раздел', id))]);
+    if (q) {
+      const pages = sections.filter(([, , t]) => has(t));
+      if (pages.length) groups.push(['Разделы', pages.slice(0, 5).map(([id, , t]) => row(`data-result="page" data-id="${E(id)}"`, t, 'раздел', id))]);
+      const briefs = db.briefs.filter(b => has(b.title) || has(b.client)).slice(0, 4);
+      if (briefs.length) groups.push(['Брифы и КП', briefs.flatMap(b => [
+        row(`data-action="openbrief" data-id="${E(b.id)}"`, b.title, `${b.client || 'бриф'} · ${b.stage}`, 'briefs'),
+        row(`data-action="palvoice" data-id="${E(b.id)}"`, `Голосовая сводка: ${b.client || b.title}`, 'послушать, что за клиент', 'sound')])]);
+      // остальные записи — как в прежнем поиске
+      const all = [
+        ...db.leads.map(l => ({ ...l, title: l.name, body: l.request || '', kind: 'l', note: 'Заявка · ' + l.source, ic: 'leads' })),
+        ...db.prospects.map(x => ({ ...x, title: x.name, body: `${x.category} ${x.city} ${x.note}`, kind: 'pr', note: 'Поиск клиентов · ' + x.status, ic: 'prospects' })),
+        ...db.knowledge.map(k => ({ ...k, kind: 'k', note: k.category + ' · ' + k.access, ic: 'knowledge' })),
+        ...db.content.map(x => ({ ...x, kind: 'p', note: 'Публикация · ' + x.status, ic: 'content' })),
+        ...db.campaigns.map(c => ({ ...c, title: c.name, body: `${c.creative} ${c.audience}`, kind: 'cp', note: 'Кампания · ' + c.channel, ic: 'ads' })),
+        ...db.decisions.map(d => ({ ...d, body: d.why || '', kind: 'd', note: 'Решение · ' + d.status, ic: 'decisions' })),
+        ...db.keyword_sets.map(k => ({ ...k, title: k.name, body: `${k.phrases} ${k.note}`, kind: 'ks', note: 'Ключевые фразы · ' + k.direction, ic: 'keywords' })),
+        ...db.lead_magnets.map(m => ({ ...m, title: m.name, body: `${m.promise} ${m.audience}`, kind: 'mg', note: 'Лид-магнит · ' + m.status, ic: 'magnets' })),
+        ...db.brand.map(x => ({ ...x, body: x.data?.body || '', kind: 'brand', note: 'Брендбук · ' + (x.section || 'Прочее'), ic: 'brand' }))
+      ].filter(x => has(x.title) || has(x.body)).slice(0, 15);
+      if (all.length) groups.push(['Записи', all.map(x => row(`data-result="${x.kind}" data-id="${E(x.id)}"`, x.title, x.note, x.ic))]);
+    }
+    $('#results').innerHTML = groups.map(([t, rows]) => `<p class="palgroup">${t}</p>${rows.join('')}`).join('') || '<p class="muted">Совпадений нет.</p>';
+    sel = 0; mark();
   };
   $('#global').oninput = fill;
+  $('#global').onkeydown = e => {
+    const n = items().length;
+    if (e.key === 'ArrowDown' && n) { e.preventDefault(); sel = (sel + 1) % n; mark(); }
+    else if (e.key === 'ArrowUp' && n) { e.preventDefault(); sel = (sel - 1 + n) % n; mark(); }
+    else if (e.key === 'Enter' && n) { e.preventDefault(); items()[sel].click(); }
+  };
   fill();
   $('#global').focus();
 }
@@ -8383,6 +8479,11 @@ document.addEventListener('click', async e => {
     case 'crmcopy': copyText(b.dataset.id, 'Ссылка на бриф скопирована'); break;
     case 'bfback': flushPendingBrief(); briefView.id = ''; render(); break;
     case 'openbrief': $('#modal').close(); openBrief(b.dataset.id); break;
+    case 'opendialog': $('#modal').close(); go('dialogs'); openDialog(b.dataset.id); break;
+    case 'palsite': $('#modal').close(); go('site'); await siteCheck(); break;
+    case 'palads': $('#modal').close(); go('ads'); await adsSyncNow(); break;
+    case 'palstock': $('#modal').close(); stockView.at = 0; go('stock'); break;
+    case 'palvoice': { $('#modal').close(); openBrief(b.dataset.id); const vb = db.briefs.find(x => x.id === b.dataset.id); if (vb) await briefVoiceNote(vb); break; }
     case 'newbrieffor': {
       const l = db.leads.find(x => x.id === b.dataset.id);
       $('#modal').close();
@@ -8692,14 +8793,20 @@ const setRail = on => {
 $('#rail').innerHTML = icon('back', 16);
 $('#rail').onclick = () => setRail(!document.body.classList.contains('rail'));
 try { if (localStorage.getItem('intel.nav.rail') === '1') setRail(true); } catch (e) { /* по умолчанию развёрнуто */ }
-$('#navsearch').innerHTML = `${icon('search', 16)}<span>Найти</span><kbd>Ctrl K</kbd>`;
+$('#navsearch').innerHTML = `${icon('search', 16)}<span>Найти или сделать…</span><kbd>Ctrl K</kbd>`;
 $('#navsearch').onclick = () => search();
 $('#sbtheme').innerHTML = icon('theme', 17);
 $('#sbtheme').onclick = () => $('#theme').click();
 $('#sbsettings').innerHTML = icon('settings', 17);
 $('#sbout').innerHTML = icon('logout', 17);
-$('#tabbar').innerHTML = TABBAR.map(id => `<button class="tone-${toneOf(id)}" data-page="${id}"><i>${icon(id, 20)}</i><span>${TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('')
+const tabBtn = id => `<button class="tone-${toneOf(id)}" data-page="${id}"><i>${icon(id, 20)}</i><span>${TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`;
+// «+» в центре — под большой палец: создать заявку, бриф, публикацию за одно касание.
+$('#tabbar').innerHTML = tabBtn(TABBAR[0]) + tabBtn(TABBAR[1])
+  + `<button id="tabplus" class="tabplus" aria-label="Создать"><i>${icon('plus', 22)}</i><span>Создать</span></button>`
+  + TABBAR.slice(2).map(tabBtn).join('')
   + `<button id="tabmore" aria-label="Все разделы"><i>${icon('menu', 20)}</i><span>Ещё</span></button>`;
+$('#tabplus').onclick = () => modal(`<h2>Создать</h2><div class="plussheet">${QUICK.map(([act, label, ic, tone]) =>
+  `<button class="quickact tone-${tone}" data-action="${act}"><i>${icon(ic, 20)}</i><span>${label}</span></button>`).join('')}</div>`);
 $('#tabmore').onclick = () => document.body.classList.toggle('menu');
 $('#nav').addEventListener('click', e => {
   const t = e.target.closest('[data-toggle]');
