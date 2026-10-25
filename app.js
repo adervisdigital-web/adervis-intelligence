@@ -8908,7 +8908,7 @@ $('#menu').innerHTML = `${icon('menu')}<span>Все разделы</span>`;
 $('#ask').innerHTML = `${icon('assistant', 18)}<span>Спросить</span>`;
 $('#refresh').innerHTML = icon('refresh');
 $('#theme').innerHTML = icon('theme');
-$('#search').innerHTML = `${icon('search', 17)}<span>Поиск</span><span class="kbd">Ctrl K</span>`;
+$('#search').innerHTML = `${icon('search', 17)}<span>Найти или сделать…</span><span class="kbd">Ctrl K</span>`;
 $('#create').innerHTML = `${icon('plus', 17)}<span>Создать</span>`;
 $('#theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 $('#menu').onclick = () => { const on = document.body.classList.toggle('menu'); $('#menu').setAttribute('aria-expanded', String(on)); };

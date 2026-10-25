@@ -2491,3 +2491,6 @@ html[data-theme=dark] .hmdays>li.isnow .hmday,html[data-theme=dark] .hmdays>li.i
 
 .bfpulse .tone-red .value{color:#ef4444}
 .bfpulse .tone-green .value{color:var(--tone-green)}
+
+.topbar #search{min-height:40px}
+@media(max-width:1240px){.topbar #search span:not(.kbd){font-size:0}.topbar #search span:not(.kbd)::after{content:'Поиск';font-size:14px}}
