@@ -2459,7 +2459,7 @@ check('связанная переписка: вопросы встают в п�
 await page.fill('#dlgtext', '');
 await nav('leads');
 await page.click(`[data-l="${stB.briefs[0].lead_id}"]`);
-check('в карточке заявки — ссылка на бриф и КП', (await page.textContent('#modal')).includes('Бриф и КП: Видеодайджест'));
+check('в карточке заявки — ссылка на бриф и КП', (await page.textContent('#modal .ldlink')).includes('Видеодайджест') && (await page.textContent('#modal .ldlink')).includes('Бриф и КП'));
 await page.click('#modal [data-action=close]');
 
 // --- 5ц. ADERVIS CRM: вход студии, ссылки на брифы, перенос брифа, шаблоны

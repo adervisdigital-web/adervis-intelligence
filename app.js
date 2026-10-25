@@ -7875,43 +7875,54 @@ function editLead(id) {
     id: uid(), came_on: today(), name: '', source: 'Не знаем', direction: 'Студия',
     request: '', amount: 0, status: 'Новое', note: '', campaign_id: null, reached: 0, magnet_id: null, next_step: '', next_on: '', lost_reason: ''
   };
-  modal(`<h2>Обращение</h2><form id="lf">
+  const br = exists && db.briefs.find(x => x.lead_id === l.id);
+  // Карточка в две колонки: слева то, с чем работают каждый день (кто, чего хочет,
+  // что дальше), справа источник и деньги — их заполняют раз и для отчётов.
+  modal(`<div class="ldhead tone-gold"><span class="lavatar">${E(initials(l.name || '?'))}</span>
+      <div><small class="muted">Обращение${exists ? ` · ${E(shortDate(l.came_on))} · ${E(l.source)}` : ''}</small>
+      <h2>${exists ? E(l.name) : 'Новое обращение'}</h2></div>${exists ? tag(l.status) : ''}</div>
+    <form id="lf" class="ldform"><div class="ldmain">
     <label>Кто обратился</label>
     <input name="name" required maxlength="200" value="${E(l.name)}" placeholder="Имя или название компании">
+    <label>Чего хотел</label>
+    <input name="request" maxlength="1000" value="${E(l.request)}" placeholder="Ролик для маркетплейса, смета на съёмку">
+    <section class="ldnext"><h3>Что дальше</h3>
+      <div class="formgrid nextstep">
+        <div><label>Статус</label><select name="status">${opts(LEAD_STATUS, l.status)}</select></div>
+        <div><label>Когда</label><input type="date" name="next_on" value="${E(l.next_on || '')}"></div>
+      </div>
+      <label>Следующий шаг</label><input name="next_step" maxlength="200" value="${E(l.next_step || '')}" placeholder="Позвонить, уточнить бюджет">
+      ${reasonField(l.lost_reason || '', LOST.includes(l.status), 'Почему не вышло')}
+    </section>
+    <label>Заметка</label><textarea name="note" maxlength="1000">${E(l.note)}</textarea>
+    </div>
+    <aside class="ldside">
+    ${exists ? `<div class="ldlinks">${br ? `<button type="button" class="ldlink" data-action="openbrief" data-id="${E(br.id)}">${icon('proposal', 16)}<span><b>${E(br.title)}</b><small>Бриф и КП · ${E(br.stage)}</small></span></button>`
+        : `<button type="button" data-action="newbrieffor" data-id="${E(l.id)}">${icon('proposal', 15)} Есть ТЗ — разобрать и посчитать</button>`}
+      <button type="button" data-action="leadvoice" data-id="${E(l.id)}">${icon('sound', 15)} Голосовая сводка</button><div id="leadvoice" aria-live="polite"></div></div>` : ''}
+    <h3>Откуда и сколько</h3>
     <div class="formgrid">
-      <div><label>Когда</label><input type="date" name="came_on" value="${E(l.came_on)}"></div>
+      <div><label>Когда пришёл</label><input type="date" name="came_on" value="${E(l.came_on)}"></div>
       <div><label>Откуда узнали</label><select name="source">${opts(LEAD_SOURCES, l.source)}</select></div>
-      <div><label>Направление</label><select name="direction">${opts(DIRECTIONS, l.direction)}</select></div>
-      <div><label>Статус</label><select name="status">${opts(LEAD_STATUS, l.status)}</select></div>
     </div>
-    <div class="formgrid nextstep">
-      <div><label>Следующий шаг</label><input name="next_step" maxlength="200" value="${E(l.next_step || '')}" placeholder="Позвонить, уточнить бюджет"></div>
-      <div><label>Когда</label><input type="date" name="next_on" value="${E(l.next_on || '')}"></div>
-    </div>
-    <label>Кампания — если пришёл по рекламе</label>
+    <label>Направление</label><select name="direction">${opts(DIRECTIONS, l.direction)}</select>
+    <label>Кампания, если пришёл по рекламе</label>
     <select name="campaign_id"><option value="">Без кампании</option>
       ${[...db.campaigns].sort((a, b) => (a.status === 'Идёт' ? 0 : 1) - (b.status === 'Идёт' ? 0 : 1)).map(c =>
         `<option value="${E(c.id)}" ${l.campaign_id === c.id ? 'selected' : ''}>${E(c.name)} · ${E(c.channel)}</option>`).join('')}
     </select>
-    <label>Лид-магнит — если пришёл за ним</label>
+    <label>Лид-магнит, если пришёл за ним</label>
     <select name="magnet_id"><option value="">Без лид-магнита</option>
       ${db.lead_magnets.filter(m => m.status !== 'Идея' || l.magnet_id === m.id).map(m =>
         `<option value="${E(m.id)}" ${l.magnet_id === m.id ? 'selected' : ''}>${E(m.name)}</option>`).join('')}
     </select>
-    <label>Чего хотел</label>
-    <input name="request" maxlength="1000" value="${E(l.request)}" placeholder="Ролик для маркетплейса, смета на съёмку">
-    <label>Сумма, ₽ — если дошло до денег</label>
+    <label>Сумма, ₽, если дошло до денег</label>
     <input type="number" name="amount" min="0" step="1" value="${E(String(l.amount || 0))}">
-    <label>Заметка</label><textarea name="note" maxlength="1000">${E(l.note)}</textarea>
-    ${reasonField(l.lost_reason || '', LOST.includes(l.status), 'Почему не вышло')}
     <input type="number" name="reached" value="${Number(l.reached) || 0}" hidden>
-    ${exists ? (() => { const br = db.briefs.find(x => x.lead_id === l.id);
-      return br ? `<div class="notice">Бриф и КП: <button type="button" class="linkbtn" data-action="openbrief" data-id="${E(br.id)}">${E(br.title)} · ${E(br.stage)}</button></div>`
-        : `<p><button type="button" data-action="newbrieffor" data-id="${E(l.id)}">${icon('proposal', 15)} Есть ТЗ — разобрать и посчитать</button></p>`; })() : ''}
-    ${exists ? `<p><button type="button" data-action="leadvoice" data-id="${E(l.id)}">${icon('sound', 15)} Голосовая сводка</button></p><div id="leadvoice" aria-live="polite"></div>` : ''}
-    ${exists ? `<p class="muted">Последняя правка: ${E(memberName(l._by))}, ${ago(l._at)}</p>` : ''}
-    <div class="formactions"><button class="primary">Сохранить</button>
-      ${exists ? `<button type="button" class="danger" data-action="dellead" data-id="${E(l.id)}">Удалить</button>` : ''}</div></form>`);
+    ${exists ? `<p class="muted ldedit">Последняя правка: ${E(memberName(l._by))}, ${ago(l._at)}</p>` : ''}
+    </aside>
+    <div class="formactions ldactions"><button class="primary">Сохранить</button>
+      ${exists ? `<button type="button" class="danger" data-action="dellead" data-id="${E(l.id)}">Удалить</button>` : ''}</div></form>`, 'leaddlg');
   // Дальний шаг воронки запоминается: отказ после КП — это потеря на КП.
   const lf = $('#lf');
   lf.elements.status.onchange = () => {
