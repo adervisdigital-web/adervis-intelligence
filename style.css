@@ -2372,7 +2372,7 @@ body.rail .navrecent{display:none}
   .topbar #search .kbd{display:none}
 }
 @media(min-width:721px) and (max-width:900px){html body #menu span{display:none}.hubmark span{display:none}}
-@media(max-width:720px){.askbtn,.hubtabs,.hubmark,#menu span{display:none!important}}
+@media(max-width:720px){.askbtn,.hubtabs,.hubmark,#menu span,.topbar #create{display:none!important}}
 
 /* ===== главная: «Сейчас», деньги, сегодня, неделя ===== */
 .hmhello{margin:6px 0 26px}
