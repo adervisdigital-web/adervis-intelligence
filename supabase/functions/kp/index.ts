@@ -13,6 +13,15 @@ import { sanitizeTrack, mergeTrack, engageSummary, engageLine } from '../_shared
 
 const AGAIN_AFTER = 2 * 3600e3;   // повторное открытие — уведомляем не чаще раза в 2 часа
 const CHOICE_AGAIN = 60e3;        // двойной клик по «Отправить» — второй раз не шлём
+// Сколько дней назад истёк срок КП (0 — ещё действует или срок не задан).
+// Срок — дата КП плюс valid календарных дней; в старых снимках срока нет.
+const expiredDays = (d: any) => {
+  const valid = Number(d?.valid) || 0;
+  if (!valid || !/^\d{4}-\d{2}-\d{2}$/.test(String(d?.date))) return 0;
+  const until = Date.parse(d.date + 'T23:59:59+05:00') + valid * 864e5;
+  return Math.max(0, Math.ceil((Date.now() - until) / 864e5));
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Метод не поддерживается' }, 405);
@@ -49,6 +58,20 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    // закрытая ссылка: без цен и деталей, только кто и как связаться
+    if (row.closed_at) return json({ ok: true, closed: true, data: { title: d.title, client: d.client, contact: d.contact, phone: d.phone } });
+    // срок КП истёк — выбрать по старой цене нельзя, можно попросить обновить
+    const expired = expiredDays(d);
+    if (body?.action === 'renew') {
+      if (body?.preview === true) return json({ ok: true, preview: true });
+      if (row.renew_at && Date.now() - Date.parse(row.renew_at) < CHOICE_AGAIN) return json({ ok: true });
+      await sb.from('kp_shares').update({ renew_at: new Date().toISOString() }).eq('token', token);
+      await notify(`Клиент просит обновить КП: срок предложения истёк. Пересчитать и нажать «Обновить страницу»`,
+        `🔄 Клиент просит обновить КП «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}: срок предложения истёк.\nПересчитайте и нажмите в брифе «Обновить страницу», ссылка останется та же. Хороший повод написать сегодня.`);
+      return json({ ok: true });
+    }
+    if (expired > 0 && (body?.action === 'choose' || body?.action === 'budget')) return json({ error: 'Предложение устарело. Нажмите «Обновить предложение», и мы пришлём актуальные цены.' }, 409);
+
     if (body?.action === 'budget') {
       const bgt = budgetOf(d, body);
       if (!bgt) return json({ error: 'Укажите сумму в рублях, например 300 000' }, 400);
@@ -82,7 +105,7 @@ Deno.serve(async (req) => {
       const views = (row.views ?? 0) + 1;
       await sb.from('kp_shares').update({ views, last_view_at: now.toISOString(), first_view_at: row.first_view_at ?? now.toISOString() }).eq('token', token);
       if (INTEL_TOKEN && (!last || now.getTime() - last > AGAIN_AFTER)) {
-        const text = `👀 ${views === 1 ? 'Клиент открыл КП' : `КП открыли снова (${views}-й раз)`}: «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}.\nСамое время написать и предложить созвон.`;
+        const text = `👀 ${views === 1 ? 'Клиент открыл КП' : `КП открыли снова (${views}-й раз)`}: «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}.\n${expired > 0 ? `Срок КП истёк ${expired} ${expired % 10 === 1 && expired % 100 !== 11 ? 'день' : [2, 3, 4].includes(expired % 10) && ![12, 13, 14].includes(expired % 100) ? 'дня' : 'дней'} назад: хороший повод написать и прислать обновлённое предложение.` : 'Самое время написать и предложить созвон.'}`;
         for (const s of await subs()) await sendDigest(Number(s.chat_id), text);
         // в первый раз — ещё и голосовое «кто это за клиент». Готовится в фоне:
         // страница КП у клиента открывается без задержки.

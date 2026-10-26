@@ -105,6 +105,13 @@
         <div><b>${title}</b><p>${text}</p></div></div>`;
       chooseBox.classList.toggle('is-busy', !!st.busy);
       chooseBox.classList.toggle('is-done', !!st.sent && st.sent !== 'preview');
+      if (isExpired(d)) {
+        chooseBox.classList.toggle('is-done', st.sent === 'renew');
+        chooseBox.innerHTML = st.busy ? `<div class="choosing" role="status"><span class="ring" aria-hidden="true"></span><div><b>Отправляем…</b><p>Попросим обновить предложение</p></div></div>`
+          : st.sent === 'renew' ? ok('Запрос отправлен', `${who} с вами и пришлёт актуальное предложение.`)
+          : `<button type="button" class="btn" data-renew>Обновить предложение</button><small>Это предложение устарело. Нажмите, и мы пришлём актуальные цены и сроки.</small><p class="chooseerr" role="alert"></p>`;
+        return;
+      }
       chooseBox.innerHTML = st.busy ? `<div class="choosing" role="status"><span class="ring" aria-hidden="true"></span>
           <div><b>Отправляем ваш выбор…</b><p>${E(st.busy)}</p></div></div>`
         : st.sent === 'preview' ? '<p class="chosen">Просмотр команды: ничего не отправлено.</p>'
@@ -134,6 +141,12 @@
     });
     chooseBox?.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.id === 'budgetin') chooseBox.querySelector('[data-budgetsend]')?.click(); });
     chooseBox?.addEventListener('click', async ev => {
+      if (ev.target.closest('[data-renew]')) {
+        const btn = ev.target.closest('[data-renew]'); btn.disabled = true;
+        try { st.busy = 'renew'; drawChoose(); const [j] = await Promise.all([post({ action: 'renew' }), pause()]); st.busy = null; st.sent = j.preview ? 'preview' : 'renew'; drawChoose(); }
+        catch (e) { st.busy = null; drawChoose(); const er = chooseBox.querySelector('.chooseerr'); if (er) er.textContent = e.message; }
+        return;
+      }
       if (ev.target.closest('[data-budget]')) { st.budget = true; drawChoose(); chooseBox.querySelector('#budgetin')?.focus(); return; }
       const btn = ev.target.closest('[data-choose], [data-budgetsend]');
       if (!btn) return;
@@ -241,6 +254,16 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 
+  // срок действия: дата КП плюс valid календарных дней (в старых снимках срока нет)
+  const validUntil = d => d.valid && /^\d{4}-\d{2}-\d{2}$/.test(d.date) ? new Date(new Date(d.date + 'T00:00:00').getTime() + d.valid * 864e5) : null;
+  const isExpired = d => { const u = validUntil(d); return !!u && Date.now() > u.getTime() + 864e5 - 1; };
+  function renderClosed(d) {
+    document.title = `${d.title || 'Предложение'} · ADERVIS`;
+    const phone = String(d.phone || '').split(/[·,;]/)[0].trim(), tel = phone.replace(/[^\d+]/g, '');
+    root.innerHTML = `<div class="kp-error closedkp"><img src="brand/logo.svg" alt="ADERVIS"><h1>Предложение закрыто</h1>
+      <p>${d.title ? `«${E(d.title)}»: ` : ''}это предложение больше не действует. Если задача снова актуальна, напишите или позвоните${d.contact ? `, ${E(d.contact)}` : ''}: подготовим новое.</p>
+      ${tel ? `<a class="btn" href="tel:${E(tel)}">Позвонить ${E(phone)}</a>` : ''}<a class="btn ghost" href="https://adervis.ru">adervis.ru</a></div>`;
+  }
   function render(d) {
     document.title = `${d.title} · ADERVIS`;
     const e = d.estimate || {};
@@ -267,6 +290,7 @@
       </div>
       ${d.intro ? `<p class="intro">${E(d.intro)}</p>` : ''}
     </div></header>
+    ${isExpired(d) ? `<div class="expired"><div class="read"><b>Предложение устарело:</b> цены и сроки могли измениться. Нажмите «Обновить предложение» внизу, и мы пришлём актуальное.</div></div>` : ''}
     ${gallery(media)}
     ${d.style ? `<section><div class="read"><h2>Стиль</h2>${richText(d.style)}</div></section>` : ''}
     ${d.concept ? conceptHtml(d.concept) : ''}
@@ -367,6 +391,7 @@
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.data) { fail('Предложение недоступно', j.error || 'Попробуйте открыть ссылку ещё раз.'); return; }
+      if (j.closed) { renderClosed(j.data); return; }
       render(j.data);
     } catch { fail('Нет связи', 'Проверьте интернет и обновите страницу.'); }
   }

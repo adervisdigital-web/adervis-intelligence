@@ -261,7 +261,8 @@ function createApi(cfg) {
       return { path, url: sb.storage.from('kp-media').getPublicUrl(path).data.publicUrl };
     },
     async removeKpMedia(paths) { if (paths.length) await sb.storage.from('kp-media').remove(paths); },
-    async kpShareGet(token) { return must(await sb.from('kp_shares').select('token,views,first_view_at,last_view_at,updated_at,choice,chosen_at,engagement').eq('token', token).maybeSingle()); },
+    async kpShareGet(token) { return must(await sb.from('kp_shares').select('token,views,first_view_at,last_view_at,updated_at,choice,chosen_at,engagement,closed_at,renew_at').eq('token', token).maybeSingle()); },
+    async kpShareClose(token, closed) { return must(await sb.from('kp_shares').update({ closed_at: closed ? new Date().toISOString() : null }).eq('token', token).select('token').single()); },
     async kpShareList() { return must(await sb.from('kp_shares').select('token,brief_id,views,last_view_at,choice,chosen_at,engagement')); },
     async kpSharePut(row) { return must(await sb.from('kp_shares').upsert(row).select('token,views,first_view_at,last_view_at,updated_at').single()); },
 
@@ -5076,7 +5077,7 @@ function downloadBlob(blob, name) {
 // В kp_shares уходит снимок — только то, что видит клиент (как в смете для
 // клиента: без часов и ставок). Ссылка постоянная: «Обновить» меняет снимок.
 const shareToken = () => [...crypto.getRandomValues(new Uint8Array(24))].map(x => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[x % 62]).join('');
-const KP_SHARE_V = 3;
+const KP_SHARE_V = 4;
 const kpLink = (token, preview = false) => new URL(`kp.html?t=${token}${preview ? '&p=1' : ''}`, location.href).href;
 
 function kpShareData(b) {
@@ -5087,7 +5088,7 @@ function kpShareData(b) {
   // v растёт, когда меняется состав снимка: база не даёт старой вкладке
   // программы перезаписать страницу более старым снимком (kp_shares_version)
   return {
-    v: KP_SHARE_V, title: b.title, client: b.client || '', date: k.date, prepay: k.prepay, intro: k.intro, style: k.style, concept: k.concept, approach: k.approach,
+    v: KP_SHARE_V, title: b.title, client: b.client || '', date: k.date, valid: k.valid, prepay: k.prepay, intro: k.intro, style: k.style, concept: k.concept, approach: k.approach,
     deliverables: deliverables.map(x => ({ name: x.name, details: x.details || '' })),
     estimate: { two: d.two, subtotals: d.subtotals, base: d.k.base, full: d.k.full, labels: { base: b.kp?.label_base || '', full: b.kp?.label_full || '' },
       groups: d.groups.map(g => ({ name: g.name, rows: g.rows, sum: g.sum })), options: d.options },
@@ -5166,6 +5167,12 @@ async function kpShareModal(b) {
         <button data-action="kpcopy">${icon('copy', 15)} Скопировать</button>
         <a class="btnlink" href="${E(kpLink(kp.share_token, true))}" target="_blank" rel="noopener">${icon('external', 15)} Открыть</a></div>
       <p class="muted">${icon('eye', 14)} Клиент ${E(views)}. Когда откроет, придёт сообщение в Telegram служебного бота.</p>
+      <div class="kpvalid">${(() => { const k = kpData(b), until = localDate(Date.parse(k.date + 'T00:00:00') + k.valid * 864e5), late = until < today();
+        return `<span class="${late ? 'minus' : ''}">${icon('time', 14)} ${late ? `Срок истёк ${E(shortDate(until))}: клиент видит «Предложение устарело» и кнопку «Обновить предложение»` : `Действует до ${E(shortDate(until))}. Клиент дату не видит; после срока увидит «Обновить предложение»`}</span>
+        <label>Срок <select id="kpvalid">${[7, 14, 30, 45, 60].map(n => `<option value="${n}" ${n === k.valid ? 'selected' : ''}>${n} дней</option>`).join('')}</select></label>
+        <button data-action="kpclose" class="${info?.closed_at ? '' : 'danger'}">${info?.closed_at ? `${icon('link', 14)} Открыть ссылку снова` : `${icon('lock', 14)} Закрыть ссылку`}</button>`; })()}</div>
+      ${info?.closed_at ? `<div class="notice">${icon('lock', 15)} Ссылка закрыта ${E(ago(info.closed_at))}: клиент видит «Предложение закрыто» и ваши контакты, без цен.</div>` : ''}
+      ${info?.renew_at ? `<div class="notice kpchoice"><b>${icon('refresh', 15)} Клиент попросил обновить предложение ${E(ago(info.renew_at))}.</b> Пересчитайте и нажмите «Обновить страницу»: срок начнётся заново.</div>` : ''}
       ${kpEngage(info?.engagement) ? `<div class="kpvisits"><p><b>Как читали:</b> ${E(kpEngage(info.engagement))}</p>
         <ul>${(info.engagement.visits || []).slice(-5).reverse().map(v => `<li>${E(ago(v.at || v.from))}: ${E(kpEngage({ total_sec: v.sec, seen: v.seen, played: v.played, ended: v.ended, events: v.events }))}${v.variant ? `, смотрели ${v.variant === 'base' ? 'базовый' : 'полный'} вариант` : ''}</li>`).join('')}</ul></div>` : ''}
       ${info?.choice?.type === 'budget' ? `<div class="notice kpchoice"><b>${icon('chat', 15)} Клиент предложил свой бюджет ${E(ago(info.chosen_at))}:</b> ${rub(info.choice.amount)}. Наша цена: ${info.choice.from ? 'от ' : ''}${rub(info.choice.ours)}.</div>`
@@ -5227,6 +5234,14 @@ async function kpShareModal(b) {
     try { await api.removeKpMedia([m.path]); } catch (e) { /* файл мог быть уже удалён */ }
     await saveBriefNow(b, 'Файл убран'); kpShareModal(b);
   });
+  const vsel = $('#kpvalid');
+  if (vsel) vsel.onchange = async () => { kp.valid_days = Number(vsel.value); await saveBriefNow(b, `Срок КП: ${vsel.value} дней. Нажмите «Обновить страницу», чтобы клиент увидел`); kpShareModal(b); };
+  const closeBtn = box.querySelector('[data-action=kpclose]');
+  if (closeBtn) closeBtn.onclick = async () => {
+    const closing = !info?.closed_at;
+    if (closing && !confirm('Закрыть ссылку? Клиент увидит «Предложение закрыто» без цен. Открыть снова можно в любой момент.')) return;
+    try { await api.kpShareClose(kp.share_token, closing); toast(closing ? 'Ссылка закрыта' : 'Ссылка снова открыта'); kpShareModal(b); } catch (err) { handleError(err); }
+  };
   const copy = box.querySelector('[data-action=kpcopy]');
   if (copy) copy.onclick = () => copyText(kpLink(kp.share_token), 'Ссылка на КП скопирована — отправьте клиенту');
   $('#kppublish').onclick = async ev => {

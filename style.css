@@ -2474,7 +2474,7 @@ html[data-theme=dark] .hmdays>li.isnow .hmday,html[data-theme=dark] .hmdays>li.i
   .hmdays>li:first-child{border-top:0}
   .hmday{margin:0}
   .hmdays ul button{min-height:40px;align-items:center}
-  .hmmoney .linkbtn,.hmgaps .linkbtn,.hmweek .linkbtn,.todaycard .linkbtn{min-height:36px;display:inline-flex;align-items:center}
+  .hmmoney .linkbtn,.hmgaps .linkbtn,.hmweek .linkbtn,.todaycard .linkbtn{min-height:40px;display:inline-flex;align-items:center}
   .hmpulse{grid-template-columns:1fr 1fr}
   .hmpulse .metric:nth-child(3){border-left:0}
   .hmpulse .metric:nth-child(n+3){border-top:1px solid var(--line)}
@@ -2625,3 +2625,9 @@ html:not([data-theme=dark]) .hubtip{background:#16161a}
 .asklisten:hover,.asklisten.on{color:var(--ink);border-color:var(--gold)}
 .asklisten.on{background:color-mix(in srgb,var(--gold) 14%,transparent)}
 .askmsg > div{min-width:0}
+
+.kpvalid{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin:4px 0 12px}
+.kpvalid > span{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.kpvalid label{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--muted)}
+.kpvalid select{width:auto;padding:6px 10px}
+.kpvalid button{margin-left:auto;display:inline-flex;align-items:center;gap:6px}

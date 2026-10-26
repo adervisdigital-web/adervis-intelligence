@@ -2241,7 +2241,7 @@ check('КП-ссылка: при публикации дата КП — сего
 const shareJson = JSON.stringify(share.data);
 check('КП-ссылка: снимок — смета как у клиента, пример, сроки', share.data.estimate.full === 205000 && share.data.media.length === 1
   && share.data.media[0].group.startsWith('Направление 1') && share.data.plan.length > 0 && share.data.title === 'Видеодайджест', JSON.stringify({ full: share.data.estimate.full, media: share.data.media, plan: share.data.plan?.length }));
-check('КП-ссылка: снимок версии 3, пояснение к строке, предоплата, без срока действия', share.data.v === 3 && share.data.prepay === 50 && !('valid_until' in share.data)
+check('КП-ссылка: снимок версии 4, пояснение к строке, предоплата, срок только для сервера', share.data.v === 4 && share.data.prepay === 50 && !('valid_until' in share.data) && share.data.valid > 0
   && share.data.estimate.groups.some(g => g.rows.some(r => r.hint.startsWith('Короткая анимация'))) && !share.data.terms.some(t => /действует/.test(t)), JSON.stringify(share.data.terms));
 check('КП-ссылка: часов и ставок студии в снимке нет', !/"min"|"max"|"role"|Моушн-дизайнер|Арт-директор/.test(shareJson));
 check('КП-ссылка: ссылка скопирована и видна в окне', /kp\.html\?t=[A-Za-z0-9]{24}$/.test(await page.evaluate(() => navigator.clipboard.readText()))
@@ -2319,7 +2319,7 @@ await kpPage.click('[data-v=full]').catch(() => {});
 check('страница КП: срок действия нигде не показан', !kpText.includes('действует'));
 check('страница КП: этапы в рабочих днях, внизу итог', /^\d+ рабоч(ий день|их дня|их дней)$/.test(await kpPage.textContent('.plan li small'))
   && (await kpPage.textContent('.plantotal')).startsWith('Итого: около'), await kpPage.textContent('.plan li small'));
-check('страница КП: у вариантов короткие описания', (await kpPage.textContent('[data-v=base] small')) === 'студия в 2.5D' && share.data.v === 3);
+check('страница КП: у вариантов короткие описания', (await kpPage.textContent('[data-v=base] small')) === 'студия в 2.5D' && share.data.v === 4);
 check('страница КП: по умолчанию полный вариант', (await estTotal()) === '205000₽' && (await kpPage.getAttribute('[data-v=full]', 'aria-checked')) === 'true');
 await kpPage.click('[data-v=base]');
 check('страница КП: «Базовый» пересчитывает итог, строки не из варианта помечены', (await estTotal()) === '95000₽' && (await kpPage.$$('.est tr.off')).length > 0

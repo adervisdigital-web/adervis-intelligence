@@ -217,3 +217,9 @@ section li{margin:4px 0}
 @keyframes kpdraw{to{stroke-dashoffset:0}}
 @keyframes kpshake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 @media(prefers-reduced-motion:reduce){.ring{animation-duration:2.4s}.okmark circle,.okmark path{animation:none;stroke-dashoffset:0}.choose.shake{animation:none}}
+
+/* срок действия КП и закрытая ссылка */
+.expired{background:#fff4dc;border-bottom:1px solid #f1d9a0;color:#5a4410;font-size:15.5px}
+.expired .read{padding-top:14px;padding-bottom:14px}
+.closedkp img{height:34px;margin-bottom:18px}
+.closedkp .btn{margin:16px 10px 0 0}
