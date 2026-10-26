@@ -2068,6 +2068,7 @@ function planRow(p) {
     <div class="ptstat" role="cell"><span class="pst s${i}">${E(p.status)}</span><span class="pdots" aria-hidden="true">${P_STATUS.map((_, k) => `<i class="${k <= i ? 'on' : ''}"></i>`).join('')}</span>
       ${late ? '<small class="minus">дата прошла</small>' : ''}</div>
     <div class="ptact">${noText ? `<button class="rowact ai" data-action="aiwriteone" data-id="${E(p.id)}" aria-label="Написать текст «${E(p.title)}»" title="Написать текст">${icon('ai', 16)}</button>` : ''}
+      ${p.status !== 'Опубликовано' ? `<button class="rowact" data-action="replacep" data-id="${E(p.id)}" aria-label="Заменить «${E(p.title)}» на другую тему" title="Заменить на другую тему">${icon('refresh', 16)}</button>` : ''}
       ${i >= 0 && i < P_STATUS.length - 1 ? `<button class="rowact" data-action="movep" data-id="${E(p.id)}" data-step="1" aria-label="Дальше: «${E(P_STATUS[i + 1])}»" title="Дальше: «${E(P_STATUS[i + 1])}»">${icon('next', 16)}</button>` : ''}
       <button class="rowact del" data-action="delp" data-id="${E(p.id)}" aria-label="Удалить «${E(p.title)}»" title="Удалить">${icon('delete', 16)}</button></div>
   </article>`;
@@ -2153,6 +2154,41 @@ function aiContentForm(mode) {
     try { res = await api.generate(payload); }
     catch (err) { modal(`<h2>Не получилось</h2><div class="notice error">${E(err.message || 'ошибка модели')}</div>`); return; }
     aiContentResult(mode, res, payload.direction);
+  };
+}
+
+// «Заменить на другую тему»: та же дата, площадка и рубрика, а тему ИИ
+// предлагает новую — три на выбор. Текст и визуал старой темы убираются.
+async function replacePost(id) {
+  const p = db.content.find(x => x.id === id);
+  if (!p) return;
+  aiWait(`Другая тема${p.date ? ' на ' + shortDate(p.date) : ''}`);
+  let res;
+  try {
+    res = await api.generate({ mode: 'ideas', networks: [p.channel], direction: PRODUCT_DIR[p.product] || '', count: 3, ...contentContext(),
+      topic: `Нужна замена публикации «${p.title}»: другая тема${p.rubric ? `, рубрика «${p.rubric}»` : ''}${p.format ? `, формат «${p.format}»` : ''}. Не повторяй её и то, что уже выходило.` });
+  } catch (err) { modal(`<h2>Не получилось</h2><div class="notice error">${E(err.message || 'ошибка модели')}</div>`); return; }
+  const list = res.ideas || [];
+  modal(`<h2>Заменить на другую тему</h2>
+    <p class="muted">Сейчас: <b>${E(p.title)}</b>${p.date ? `, ${E(shortDate(p.date))}` : ''}, ${E(p.channel)}. Дата, площадка и время останутся${p.body && p.body.length > 200 ? ', текст и визуал старой темы уберутся' : ''}.</p>
+    <div class="aiplanlist">${list.map((x, k) => `<label class="aiplanrow"><input type="radio" name="rep" ${k ? '' : 'checked'} data-i="${k}">
+      <span><small class="tag">${E(x.rubric)}</small>${x.format ? `<small class="muted"> · ${E(x.format)}</small>` : ''}
+        <b>${E(x.title)}</b><small class="muted">${E(x.angle || '')}</small></span></label>`).join('')}</div>
+    ${aiFooter(res)}
+    <div class="formactions"><button class="primary" id="repok">Заменить</button><button type="button" data-action="replacep" data-id="${E(p.id)}">${icon('refresh', 15)} Ещё варианты</button></div>`);
+  $('#repok').onclick = async () => {
+    const x = list[Number(document.querySelector('#modal input[name=rep]:checked')?.dataset.i)];
+    if (!x) return;
+    const row = { ...p, title: x.title.slice(0, 300), body: `${x.rubric}${x.format ? ' · ' + x.format : ''}. ${x.angle || ''}`.slice(0, 20000),
+      rubric: rubricOf(x.rubric) ? x.rubric : p.rubric, goal: rubricOf(x.rubric)?.goal || p.goal, format: String(x.format || p.format || '').slice(0, 40),
+      status: 'Идея', visual: '', cta: '' };
+    try {
+      const saved = await api.update('content', row);
+      upsertLocal('content', saved);
+      $('#modal').close();
+      render();
+      toast(`Тема заменена: «${row.title}». Текст напишет кнопка «Написать текст»`);
+    } catch (e) { handleError(e); }
   };
 }
 
@@ -8744,6 +8780,7 @@ document.addEventListener('click', async e => {
     case 'theme': $('#theme').click(); break;
     case 'delk': delK(b.dataset.id); break;
     case 'delp': delP(b.dataset.id); break;
+    case 'replacep': replacePost(b.dataset.id); break;
     case 'deltask': delTask(b.dataset.id); break;
     case 'delmetric': delMetric(b.dataset.id); break;
     case 'publish': publishPost(b.dataset.id); break;
