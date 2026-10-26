@@ -7510,6 +7510,16 @@ const C = { base: '#f6bd3a', shade: '#e09a1c', light: '#ffd767', ink: '#2a1d05',
 const VB = { x: 1440, y: 300, w: 960, h: 920 };
 const E = { y: 805, x: [1838, 2002], rx: 66, ry: 80 };
 const LID = E.ry * 2 + 10;
+const lashes = (x, i) => {
+  const s = i ? -1 : 1;                       // у правого глаза — зеркально
+  return [[206, 44], [228, 52], [250, 42]].map(([t, len]) => {
+    const a = (i ? 540 - t : t) * Math.PI / 180;
+    const bx = x + E.rx * Math.cos(a), by = E.y + E.ry * Math.sin(a);
+    const dx = Math.cos(a), dy = Math.sin(a) - .35;
+    const n = Math.hypot(dx, dy), ex = bx + dx / n * len, ey = by + dy / n * len;
+    return `<path d="M${bx.toFixed(1)},${by.toFixed(1)} Q${(bx + ex) / 2 - s * 6},${((by + ey) / 2 - 10).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}" stroke="${C.ink}" stroke-width="13" fill="none" stroke-linecap="round"/>`;
+  }).join('');
+};
 // у всех ртов одна структура пути (M Q Q Z) — формы плавно перетекают друг в друга
 const MOUTH = {
   smile: 'M1876,915 Q1920,968 1964,915 Q1920,940 1876,915 Z',
@@ -7541,10 +7551,10 @@ class Ada {
     el.classList.add('ada-host');
     el.innerHTML = this.svg();
     const q = s => [...el.querySelectorAll(s)];
-    this.p = { body: q('.a-body')[0], eyes: q('.a-eye'), pupils: q('.a-pupil'), top: q('.a-top'), low: q('.a-low'),
+    this.p = { body: q('.a-body')[0], eyes: q('.a-eye'), pupils: q('.a-pupil'), top: q('.a-top'), lash: q('.a-lash'), low: q('.a-low'),
       mouth: q('.a-mouth')[0], face: q('.a-face')[0], fx: q('.a-fx')[0], svg: q('svg')[0] };
     // веки вращаются вокруг центра своего глаза
-    this.p.top.forEach((l, i) => { l.style.transformBox = 'view-box'; l.style.transformOrigin = `${E.x[i] - VB.x}px ${E.y - VB.y}px`; });
+    [...this.p.top, ...this.p.lash].forEach((l, k) => { const i = k % 2; l.style.transformBox = 'view-box'; l.style.transformOrigin = `${E.x[i]}px ${E.y}px`; });
     this.still = !!o.still;
     this.set(o.mood || 'idle');
     if (!calm() && !this.still) { this.blinkLoop(); this.idleLoop(); }
@@ -7567,6 +7577,7 @@ class Ada {
       </g>
       <ellipse cx="${x}" cy="${E.y}" rx="${E.rx}" ry="${E.ry}" fill="none" stroke="${C.base}" stroke-width="5"/>
       <path class="a-shut" d="M${x - 50},${E.y + 6} Q${x},${E.y + 44} ${x + 50},${E.y + 6}" stroke="${C.ink}" stroke-width="20" fill="none" stroke-linecap="round"/>
+      <g class="a-lash">${lashes(x, i)}</g>
     </g>`;
     return `<svg viewBox="${VB.x} ${VB.y} ${VB.w} ${VB.h}" class="ada" role="img" aria-label="Ада">
       <defs><clipPath id="${g}b"><path d="${OUTER}"/></clipPath></defs>
@@ -7588,6 +7599,8 @@ class Ada {
     this.state = name; this.el.dataset.mood = name;
     this.stopLoops();
     P.top.forEach((l, i) => l.style.transform = `translateY(${p.top * LID}px) rotate(${(i ? -1 : 1) * p.tilt}deg)`);
+    // ресницы держатся за кромку века; у спящей лежат вниз на закрытом глазу
+    P.lash.forEach((l, i) => l.style.transform = p.top >= .9 ? 'translateY(14px) scaleY(-.9)' : `translateY(${p.top * LID * .82}px) rotate(${(i ? -1 : 1) * p.tilt}deg)`);
     P.low.forEach(l => l.style.transform = `translateY(${-p.low * LID}px)`);
     P.eyes.forEach(e => e.style.transform = p.wide ? 'scale(1.08)' : '');
     P.mouth.style.d = `path('${MOUTH[p.mouth]}')`;
@@ -7652,6 +7665,7 @@ class Ada {
     const blink = () => {
       if (POSE[this.state]?.top >= .9) return;
       this.p.top.forEach(l => { const t0 = l.style.transform; l.animate([{ transform: t0 }, { transform: `translateY(${LID}px)` }, { transform: t0 }], { duration: 170, easing: 'ease-in-out' }); });
+      this.p.lash.forEach(l => { const t0 = l.style.transform; l.animate([{ transform: t0 }, { transform: 'translateY(14px) scaleY(-.9)' }, { transform: t0 }], { duration: 170, easing: 'ease-in-out' }); });
     };
     const next = () => { if (!this.el.isConnected) return; this.bt = setTimeout(() => { if (!this.el.isConnected) return; blink(); if (Math.random() < .22) setTimeout(blink, 240); next(); }, 2200 + Math.random() * 3800); };
     next();
