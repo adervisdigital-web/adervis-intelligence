@@ -2916,7 +2916,7 @@ function renderHome() {
       </div>
       <aside class="hmside">
         <section class="card hmmoney" aria-labelledby="moneyh"><div class="head"><h2 id="moneyh">В работе</h2><button class="linkbtn" data-page="briefs">Брифы и КП</button></div>
-          <div class="hmsum">${total ? `${num(total)} <small>₽</small>` : '—'}</div>
+          <div class="hmsum">${total ? `<span data-count="${total}">${num(total)}</span> <small>₽</small>` : '—'}</div>
           <p class="muted">${open.length ? `${open.length} ${plural(open.length, 'проект', 'проекта', 'проектов')} до сделки` : 'проектов в работе нет'}</p>
           ${total ? `<div class="hmpipe" role="img" aria-label="${E(bySt.filter(x => x.sum).map(x => `${x.label}: ${num(x.sum)} ₽`).join(', '))}">${bySt.map((x, i) => x.sum ? `<i class="seg${i}" style="flex:${x.sum}"></i>` : '').join('')}</div>` : ''}
           <ul class="hmstages">${bySt.map((x, i) => `<li><i class="seg${i}"></i><span>${x.label}</span><b>${x.sum ? `${num(x.sum)} ₽` : '—'}</b><em>${x.n || ''}</em></li>`).join('')}
@@ -7246,6 +7246,7 @@ function render() {
 
   const keep = page === 'dialogs' ? dialogSnapshot() : null;
   $('#view').innerHTML = s;
+  countUp();
   // цвет группы раздела — для подсветки карточек и цифр внутри
   $('#view').className = 'tone-' + toneOf(page);
   decorateSearch();
@@ -7367,6 +7368,18 @@ function navCounts() {
   return out;
 }
 
+// Крупная сумма на главной один раз за сессию «набегает» от нуля — как счётчик.
+let counted = false;
+function countUp() {
+  const el = $('#view [data-count]');
+  if (!el || counted || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  counted = true;
+  const to = Number(el.dataset.count), t0 = performance.now(), D = 900;
+  const step = t => { const k = Math.min(1, (t - t0) / D), e = 1 - Math.pow(1 - k, 4);
+    el.textContent = num(Math.round(to * e / 1000) * 1000 || 0); if (k < 1) requestAnimationFrame(step); else el.textContent = num(to); };
+  requestAnimationFrame(step);
+}
+
 function updateNav() {
   const counts = navCounts();
   // недавние — три последних раздела, кроме открытого: туда возвращаются чаще всего
@@ -7381,6 +7394,7 @@ function updateNav() {
     el.hidden = !c || !c.n;
     if (c && c.n) { el.textContent = c.n; el.classList.toggle('late', c.late); }
   };
+  requestAnimationFrame(() => typeof hubMark === 'function' && hubMark());
   document.querySelectorAll('#nav [data-page], #tabbar [data-page], #hubtabs [data-page]').forEach(b => {
     const on = b.dataset.page === page;
     b.classList.toggle('active', on);
@@ -8914,14 +8928,30 @@ $('#nav').addEventListener('click', e => {
 // и «Все разделы» — панель со всеми группами. На телефоне — нижняя панель, как раньше.
 const HUB_TABS = ['home', 'leads', 'briefs', 'dialogs', 'content'];
 const HUB_TAB_LABEL = { home: 'Сегодня', briefs: 'Брифы и КП', content: 'Контент' };
-$('#hubtabs').innerHTML = HUB_TABS.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 17)}<span>${HUB_TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('');
+$('#hubtabs').innerHTML = `<i class="hubhover" aria-hidden="true"></i><i class="hubind" aria-hidden="true"></i>`
+  + HUB_TABS.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 17)}<span>${HUB_TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('');
+// Подложка едет за курсором, золотая полоска — к открытому разделу: строка «живая», но без украшений.
+const hubPlace = (el, b) => { if (!b) { el.style.opacity = 0; return; } el.style.opacity = 1; el.style.transform = `translateX(${b.offsetLeft}px)`; el.style.width = b.offsetWidth + 'px'; };
+$('#hubtabs').addEventListener('pointerover', e => { const b = e.target.closest('.hubtab'); if (b) hubPlace($('.hubhover'), b); });
+$('#hubtabs').addEventListener('pointerleave', () => hubPlace($('.hubhover'), null));
+const hubMark = () => hubPlace($('.hubind'), $('#hubtabs .hubtab.active'));
+addEventListener('resize', hubMark);
+document.fonts?.ready.then(hubMark);
 $('#menu').innerHTML = `${icon('menu')}<span>Все разделы</span>`;
 $('#ask').innerHTML = `${icon('assistant', 18)}<span>Спросить</span>`;
 $('#refresh').innerHTML = icon('refresh');
 $('#theme').innerHTML = icon('theme');
 $('#search').innerHTML = `${icon('search', 17)}<span>Найти или сделать…</span><span class="kbd">Ctrl K</span>`;
 $('#create').innerHTML = `${icon('plus', 17)}<span>Создать</span>`;
-$('#theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+$('#theme').onclick = e => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) { theme(next); return; }
+  const r = $('#theme').getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const R = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  document.startViewTransition(() => theme(next)).ready.then(() => document.documentElement.animate(
+    { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${R}px at ${x}px ${y}px)`] },
+    { duration: 560, easing: 'cubic-bezier(.22,1,.36,1)', pseudoElement: '::view-transition-new(root)' })).catch(() => {});
+};
 $('#menu').onclick = () => { const on = document.body.classList.toggle('menu'); $('#menu').setAttribute('aria-expanded', String(on)); };
 $('#search').onclick = search;
 // Главная кнопка знала только про три вещи из шестнадцати разделов.

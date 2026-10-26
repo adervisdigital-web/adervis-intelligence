@@ -2325,7 +2325,14 @@ body.rail .navrecent{display:none}
   .hubtab{position:relative;display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 13px;border:0;border-radius:12px;background:none;color:var(--muted);font-weight:500;white-space:nowrap}
   .hubtab:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
   .hubtab.active{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink);font-weight:600}
-  .hubtab.active::after{content:"";position:absolute;left:13px;right:13px;bottom:-9px;height:3px;border-radius:3px;background:var(--gold)}
+  .hubtabs{position:relative}
+  .hubtab{position:relative;z-index:1}
+  .hubtab:hover,.hubtab.active{background:none}
+  .hubhover,.hubind{position:absolute;left:0;top:0;height:42px;border-radius:12px;pointer-events:none;opacity:0;
+    transition:transform .38s cubic-bezier(.22,1,.36,1),width .38s cubic-bezier(.22,1,.36,1),opacity .2s}
+  .hubhover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+  .hubind{background:color-mix(in srgb,var(--ink) 7%,transparent)}
+  .hubind::after{content:"";position:absolute;left:13px;right:13px;bottom:-9px;height:3px;border-radius:3px;background:var(--gold)}
   .hubtab .navbadge{position:static;min-width:19px;height:19px;padding:0 5px;border-radius:10px;font-size:11px;line-height:19px;background:var(--gold);color:#141414}
   .hubtab .navbadge.late{background:#ef4444;color:#fff}
   html body #menu{display:inline-flex;align-items:center;gap:8px;width:auto;height:42px;padding:0 14px;margin-left:4px;border:0;border-radius:12px;background:none;color:var(--muted);font-weight:500}
@@ -2524,3 +2531,6 @@ html[data-theme=dark] .ldnext h3{color:var(--gold)}
   .ldhead{padding:18px 60px 14px 18px}.ldmain,.ldside{padding:6px 18px 18px}.ldactions{padding:12px 18px}
   .ldhead .tag{display:none}
 }
+
+::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
+@media(prefers-reduced-motion:reduce){.hubhover,.hubind{transition:none}}
