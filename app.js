@@ -7736,6 +7736,78 @@ async function askSend(text) {
   }
 }
 
+// Подсказки при наведении: что делает кнопка или что внутри раздела.
+// Текст берём из data-tip, title или aria-label; у разделов — короткое описание.
+// Стандартную подсказку браузера (title) прячем, чтобы не было двух сразу.
+const SECTION_TIP = {
+  home: 'Главное на сегодня: срочные дела, деньги в работе, неделя', survey: 'Анкета для владельцев: ответы попадают в базу знаний',
+  leads: 'Все обращения: кто пришёл, откуда, что дальше', briefs: 'ТЗ клиентов: разбор, вопросы, смета, план и КП-ссылка',
+  dialogs: 'Переписка с клиентами из Telegram и ВКонтакте', prospects: 'Компании, которым пишем сами, и ответы на первые письма',
+  magnets: 'Польза в обмен на контакт: разборы, гайды, калькуляторы', ads: 'Рекламные кампании, расход и цена заявки',
+  keywords: 'Ключевые фразы для рекламы в поиске', content: 'План публикаций по неделям, тексты и визуал',
+  assistant: 'Черновики постов и текстов по проверенным фактам', analytics: 'Просмотры, охваты и заявки по публикациям',
+  decisions: 'Что решили, почему и как проверим результат', knowledge: 'Факты о студии с источниками: основа для ИИ и КП',
+  cases: 'Кейсы студии: их ставим в КП и посты', site: 'Сайт adervis.ru: заявки, проверка страниц, правки',
+  stock: 'Adervis Stock: продажи, выручка, состояние сервиса', products: 'Услуги и продукты студии с ценами',
+  competitors: 'Конкуренты: чем отличаемся и что у них берём', brand: 'Брендбук: логотип, цвета, шрифты, шаблоны',
+  chain: 'Как работает система: от знаний к заявкам и деньгам', tasks: 'Общий список задач для обоих руководителей',
+  roadmap: 'Что уже сделано в Hub и что дальше', settings: 'Доступы, каналы, сводка в Telegram, журнал изменений'
+};
+const ID_TIP = {
+  create: 'Создать: заявку, бриф, публикацию, задачу…', ask: 'Спросить Аду о делах студии: ответит по данным Hub',
+  refresh: 'Обновить данные: подтянуть изменения второго руководителя', theme: 'Светлая или тёмная тема',
+  search: 'Найти что угодно или сразу создать (Ctrl K)', menu: 'Все разделы Hub по группам',
+  sbtheme: 'Светлая или тёмная тема', sbsettings: 'Настройки', sbout: 'Выйти из Hub', tabplus: 'Создать', tabmore: 'Все разделы'
+};
+let tipEl = null, tipFor = null, tipTimer = 0;
+const tipText = el => {
+  if (el.title) { el.dataset.tip = el.title; el.removeAttribute('title'); }
+  if (el.dataset.tip) return el.dataset.tip;
+  if (ID_TIP[el.id]) return ID_TIP[el.id];
+  if (el.dataset.page && !el.closest('#tabbar')) return SECTION_TIP[el.dataset.page] || '';
+  const label = el.getAttribute('aria-label') || '';
+  // подпись, которая повторяет текст кнопки, не нужна
+  const text = el.textContent.replace(/\s+/g, ' ').trim();
+  return label && label !== text ? label : '';
+};
+function tipHide() {
+  clearTimeout(tipTimer); tipFor = null;
+  if (tipEl) tipEl.classList.remove('on');
+}
+function tipShow(el) {
+  const text = tipText(el);
+  if (!text) return;
+  if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'hubtip'; tipEl.setAttribute('role', 'tooltip'); document.body.appendChild(tipEl); }
+  tipEl.textContent = text;
+  const r = el.getBoundingClientRect();
+  tipEl.style.left = '0px'; tipEl.style.top = '0px'; tipEl.classList.add('on'); tipEl.classList.remove('below');
+  const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+  let top = r.top - h - 10, below = false;
+  if (top < 8) { top = r.bottom + 10; below = true; }
+  const left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+  tipEl.style.left = left + 'px'; tipEl.style.top = top + 'px';
+  tipEl.style.setProperty('--ax', (r.left + r.width / 2 - left) + 'px');
+  tipEl.classList.toggle('below', below);
+}
+if (matchMedia('(hover: hover)').matches) {
+  document.addEventListener('pointerover', e => {
+    const el = e.target.closest('button, a[href], [data-tip], [role=button]');
+    if (el === tipFor) return;
+    tipHide();
+    if (!el || el.disabled) return;
+    tipFor = el;
+    // убираем title сразу, иначе браузер покажет свою подсказку поверх нашей
+    if (el.title) { el.dataset.tip = el.title; el.removeAttribute('title'); }
+    tipTimer = setTimeout(() => tipFor === el && el.isConnected && tipShow(el), 380);
+  });
+  document.addEventListener('pointerdown', tipHide, true);
+  addEventListener('scroll', tipHide, true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') tipHide(); });
+}
+// с клавиатуры подсказка появляется при фокусе
+document.addEventListener('focusin', e => { const el = e.target.closest?.('button, a[href]'); if (el && el.matches(':focus-visible')) { tipFor = el; tipShow(el); } });
+document.addEventListener('focusout', tipHide);
+
 // Крупная сумма на главной один раз за сессию «набегает» от нуля — как счётчик.
 let counted = false;
 function countUp() {

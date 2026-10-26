@@ -2608,3 +2608,15 @@ body.ptdragging,body.ptdragging *{cursor:grabbing!important;user-select:none}
 /* Ада v2: стеклянное тело меняет форму */
 .ada .a-face,.ada .eqb{transform-box:fill-box;transform-origin:center}
 .ada .a-look{transition:transform .18s ease-out}
+
+/* ===== подсказки при наведении ===== */
+.hubtip{position:fixed;z-index:200;max-width:280px;padding:8px 12px;border-radius:10px;background:#1d1d21;color:#f4f3ef;
+  font-size:13px;line-height:1.4;font-weight:500;box-shadow:0 12px 30px -8px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08);
+  pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .14s,transform .18s cubic-bezier(.22,1,.36,1)}
+.hubtip::after{content:'';position:absolute;left:var(--ax,50%);bottom:-5px;width:10px;height:10px;margin-left:-5px;background:#1d1d21;transform:rotate(45deg);
+  box-shadow:1px 1px 0 rgba(255,255,255,.08)}
+.hubtip.below::after{bottom:auto;top:-5px;box-shadow:-1px -1px 0 rgba(255,255,255,.08)}
+.hubtip.below{transform:translateY(-4px)}
+.hubtip.on{opacity:1;transform:none}
+html:not([data-theme=dark]) .hubtip{background:#16161a}
+@media(prefers-reduced-motion:reduce){.hubtip{transition:none}}
