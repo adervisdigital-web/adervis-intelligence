@@ -12,11 +12,22 @@ export const CANCEL = '🗑 Очистить';
 // старые подписи — у кого в Telegram ещё старая клавиатура
 export const OLD = { go: '🧠 Разобрать', cancel: '✖ Отмена', answers: '📝 Ответы к брифу', who: '🔊 Кто это?' };
 // «Ответы к брифу» — текст кнопки из answers.ts, здесь без импорта, чтобы модуль оставался чистым
-export const KEYBOARD = { keyboard: [[{ text: '💬 Это ответ клиента' }, { text: GO }], [{ text: '🔊 Напомни про клиента' }, { text: CANCEL }]], resize_keyboard: true, is_persistent: true };
+export const MENU = '☰ Меню';
+export const KEYBOARD = { keyboard: [[{ text: '💬 Это ответ клиента' }, { text: GO }], [{ text: '🔊 Напомни про клиента' }, { text: CANCEL }], [{ text: MENU }]], resize_keyboard: true, is_persistent: true };
+// Главное меню — кнопки прямо в сообщении: нажатие приходит боту как callback и
+// превращается в ту же команду, что и кнопка снизу или /команда.
+export const MENU_TEXT = '🟡 ADERVIS HUB\n\nЧем помочь?\n\n📋 Сводка — дела и сроки на сегодня\n💬 Ответ клиента — разложу по вопросам брифа\n🆕 Новая заявка — заведу бриф с разбором и сметой\n📂 Брифы — кто на каком шаге\n🔊 Кто клиент — напомню голосом';
+export const menuKeyboard = (hub: string) => ({ inline_keyboard: [
+  [{ text: '📋 Сводка на сегодня', callback_data: 'today' }],
+  [{ text: '💬 Ответ клиента', callback_data: 'answers' }, { text: '🆕 Новая заявка', callback_data: 'new' }],
+  [{ text: '📂 Брифы в работе', callback_data: 'briefs' }, { text: '🔊 Кто клиент', callback_data: 'who' }],
+  [{ text: '🌐 Открыть Hub', url: hub }, { text: '❓ Как пользоваться', callback_data: 'help' }]
+] });
 export const NO_KEYBOARD = { remove_keyboard: true };
 // Меню команд бота (кнопка «Меню» в Telegram). Кнопки под строкой ввода
 // появляются после первого пересланного сообщения, а меню видно сразу.
 export const COMMANDS = [
+  { command: 'menu', description: 'Главное меню' },
   { command: 'answers', description: 'Пересланное — это ответ клиента по брифу' },
   { command: 'new', description: 'Начать заново: очистить пересланное' },
   { command: 'go', description: 'Пересланное — это новая заявка' },

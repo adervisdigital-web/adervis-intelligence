@@ -212,7 +212,7 @@ async function intelConnect(sb: Sb) {
   if (!me?.ok) throw new Error('Telegram не принял ключ служебного бота');
   const hook = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
   await sb.from('channel_secrets').upsert({ name: 'intel_webhook_secret', value: hook });
-  const set = await tgApi(INTEL_TOKEN, 'setWebhook', { url: `${SUPABASE_URL}/functions/v1/intel-bot`, secret_token: hook, allowed_updates: ['message'] });
+  const set = await tgApi(INTEL_TOKEN, 'setWebhook', { url: `${SUPABASE_URL}/functions/v1/intel-bot`, secret_token: hook, allowed_updates: ['message', 'callback_query'] });
   if (!set?.ok) throw new Error('Telegram не принял адрес служебного бота: ' + (set?.description ?? ''));
   await tgApi(INTEL_TOKEN, 'setMyCommands', { commands: COMMANDS });
   await sb.from('outreach_settings').update({ intel_bot_username: me.result.username ?? '' }).eq('id', 'main');

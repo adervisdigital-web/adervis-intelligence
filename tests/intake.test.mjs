@@ -103,7 +103,7 @@ check('вилка: часы × ставки + 10%, вверх до 5 000', range
 const msg = summaryText({ title: 'Два AI-ролика', client: 'СтройГрупп', analysis: b.analysis, questions: b.questions, range, link: 'https://app/#brief=x', parts: 3, model: 'Claude' });
 check('сообщение: суть, вилка, вопросы, ссылка на бриф', msg.includes('Бриф готов: Два AI-ролика — СтройГрупп') && msg.includes('110 000 ₽ – 155 000 ₽')
   && msg.includes('1. Вертикальные') && msg.includes('#brief=x'), msg);
-check('кнопки: «Это ответ клиента», «Это новая заявка», «Напомни про клиента», «Очистить»', KEYBOARD.keyboard.flat().map(x => x.text).join() === [ANSWERS, GO, WHO, CANCEL].join());
+check('кнопки: «Это ответ клиента», «Это новая заявка», «Напомни про клиента», «Очистить»', KEYBOARD.keyboard.flat().map(x => x.text).join() === [ANSWERS, GO, WHO, CANCEL, '☰ Меню'].join());
 check('ответ узнаётся по латинской подписи Telegram', guessBrief('Sofia Pichugina', [{ id: 'a', lead_id: 'l', title: 'ИИ-сериал' }, { id: 'b', title: 'Другое' }], [{ id: 'l', name: 'Альфа-Банк — Софья Пичугина' }])?.id === 'a');
 {
   // ответы клиента к брифу

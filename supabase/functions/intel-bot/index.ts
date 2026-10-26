@@ -7,7 +7,7 @@
 
 import { admin, secret, settings, sameSecret, tgApi, permToday, type Sb } from '../_shared/outreach.ts';
 import { buildDigest, sendDigest, INTEL_TOKEN, APP_URL } from '../_shared/digest-run.ts';
-import { GO, CANCEL, OLD, KEYBOARD, NO_KEYBOARD, COMMANDS, senderOf, pieceOf, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, type Item } from '../_shared/intake.ts';
+import { GO, CANCEL, OLD, KEYBOARD, NO_KEYBOARD, COMMANDS, MENU, MENU_TEXT, menuKeyboard, senderOf, pieceOf, docxText, compileSource, guessTitle, guessClient, applyBrief, estimateRange, summaryText, type Item } from '../_shared/intake.ts';
 import { analyzeBrief, readWithAi, askModel } from '../_shared/brief-ai.ts';
 import { digestVoice, clientVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
 import { ANSWERS, PICK, WHO, WHO_PICK, guessBrief, briefKeyboard, pickBrief, buildAnswersPrompt, parseAnswers, applyAnswers, answersText } from '../_shared/answers.ts';
@@ -20,7 +20,7 @@ const HELP = 'Как пользоваться:\n\n' +
   '3. Пришлю результат и ссылку на бриф в Hub.\n\n' +
   '🔊 Напомни про клиента — короткое голосовое: кто это и что дальше.\n' +
   '🗑 Очистить — если переслали не то.\n\n' +
-  'Команды в меню: /today — сводка на сегодня, /stop — не присылать утреннюю сводку.';
+  '☰ Меню — все действия кнопками. /stop — не присылать утреннюю сводку.';
 
 // Тяжёлую работу (скачать, расшифровать, разобрать) делаем после ответа
 // Telegram: иначе он посчитает запрос зависшим и пришлёт его повторно.
@@ -47,13 +47,22 @@ Deno.serve(async (req) => {
     const r = info?.result ?? {};
     return Response.json({ ok: !!info?.ok, pending: r.pending_update_count, last_error: r.last_error_message ?? null, last_error_at: r.last_error_date ? new Date(r.last_error_date * 1000).toISOString() : null, url_ok: String(r.url || '').endsWith('/functions/v1/intel-bot') });
   }
-  const msg = body?.message;
+  // нажатие кнопки главного меню превращаем в ту же команду, что и текстом
+  const cq = body?.callback_query;
+  if (cq && INTEL_TOKEN) later(tgApi(INTEL_TOKEN, 'answerCallbackQuery', { callback_query_id: cq.id }));
+  const CQ: Record<string, string> = { today: '/today', answers: '/answers', new: '/go', who: '/who', briefs: '/briefs', help: '/help', menu: '/menu', clear: '/new' };
+  const msg = cq ? { chat: cq.message?.chat, from: cq.from, message_id: cq.message?.message_id, text: CQ[String(cq.data)] || '/menu' } : body?.message;
   if (!msg || msg.chat?.type !== 'private' || !INTEL_TOKEN) return new Response('ok');
   const chat = Number(msg.chat.id), text = typeof msg.text === 'string' ? msg.text.trim() : '';
   const reply = (t: string) => sendDigest(chat, t);
   try {
     const { data: sub } = await sb.from('digest_subscribers').select('*').eq('chat_id', chat).maybeSingle();
-    if (sub && !commandsSet) { commandsSet = true; later(tgApi(INTEL_TOKEN, 'setMyCommands', { commands: COMMANDS })); }
+    if (sub && !commandsSet) {
+      commandsSet = true;
+      later(tgApi(INTEL_TOKEN, 'setMyCommands', { commands: COMMANDS }));
+      // кнопки главного меню приходят как callback_query — подписываем бота и на них
+      later(secret(sb, 'intel_webhook_secret').then(hook => tgApi(INTEL_TOKEN, 'setWebhook', { url: `${Deno.env.get('SUPABASE_URL')}/functions/v1/intel-bot`, secret_token: hook, allowed_updates: ['message', 'callback_query'] })));
+    }
     const link = /^\/start\s+digest_(\d{6})$/.exec(text);
     if (link) {
       const cfg = await settings(sb);
@@ -64,6 +73,7 @@ Deno.serve(async (req) => {
       await sb.from('outreach_settings').update({ digest_code: '', digest_code_expires: null }).eq('id', 'main');
       await reply(`✅ Готово${name ? ', ' + name : ''}! Каждое утро в ${sub?.hour ?? 9}:00 по Перми пришлю «На сегодня». Время меняется в приложении.\n\n${HELP}`);
       await reply(await buildDigest(sb));
+      await send(chat, MENU_TEXT, menuKeyboard(APP_URL));
     } else if (!sub) {
       // Чужим — ни сводки, ни приёма заявок: в бриф попадает только то, что прислали руководители.
       await reply('Это служебный бот Hub ADERVIS. Подключить утреннюю сводку: в приложении «Настройки» → «Утренняя сводка».');
@@ -108,6 +118,16 @@ Deno.serve(async (req) => {
       if (!count) { await reply('Пока ничего не прислали. Перешлите ТЗ, голосовые или сообщения клиента.'); return new Response('ok'); }
       await send(chat, `Разбираю ${count} ${count === 1 ? 'материал' : count < 5 ? 'материала' : 'материалов'} — до двух минут…`, NO_KEYBOARD);
       await later(processIntake(sb, chat));
+    } else if (text === MENU || /^\/(start|menu)$/.test(text)) {
+      await send(chat, MENU_TEXT, menuKeyboard(APP_URL));
+    } else if (/^\/briefs/.test(text)) {
+      const { data: rows } = await sb.from('briefs').select('id,title,client,stage,next_step,next_on').not('stage', 'in', '("Сделка","Отказ")').order('updated_at', { ascending: false }).limit(8);
+      if (!rows?.length) { await send(chat, 'Брифов в работе нет.', KEYBOARD); return new Response('ok'); }
+      const day = (d: string) => d ? new Date(d + 'T00:00:00').toLocaleDateString('ru', { day: 'numeric', month: 'short' }) : '';
+      const lines = rows.map((b: any, i: number) => `${i + 1}. ${b.client || b.title}\n   ${b.stage}${b.next_step ? ` · ${b.next_step}` : ''}${b.next_on ? ` (${day(b.next_on)})` : ''}`);
+      await send(chat, `📂 Брифы в работе: ${rows.length}\n\n${lines.join('\n\n')}`, { inline_keyboard: [
+        ...rows.map((b: any, i: number) => [{ text: `${i + 1}. ${String(b.client || b.title).slice(0, 40)}`, url: `${APP_URL}#brief=${b.id}` }]),
+        [{ text: '☰ Меню', callback_data: 'menu' }]] });
     } else if (/^\/(start|help)/.test(text)) {
       await send(chat, HELP, KEYBOARD);
     } else {
