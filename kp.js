@@ -82,7 +82,9 @@
   function mountEstimate(e, d) {
     const box = document.getElementById('est');
     if (!box) return;
-    const st = { v: 'full', opts: new Set(), sent: null, budget: false };
+    const st = { v: 'full', opts: new Set(), sent: null, budget: false, busy: null };
+    // «отправляем» держится хотя бы 0,9 с: иначе вспышка, которую не успеть прочитать
+    const pause = () => new Promise(r => setTimeout(r, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 900));
     const pick = () => {
       const v = e.two ? st.v : 'full', opts = [...st.opts].sort((a, b) => a - b);
       // в кнопке и подтверждении — короткое название опции: до двоеточия
@@ -96,9 +98,18 @@
       if (!chooseBox) return;
       const c = pick();
       const who = d.contact ? `${E(d.contact)} свяжется` : 'Мы свяжемся';
-      chooseBox.innerHTML = st.sent === 'preview' ? '<p class="chosen">Просмотр команды: ничего не отправлено.</p>'
-        : st.sent?.budget ? `<p class="chosen"><b>✓ Ваш бюджет ${rub(st.sent.budget)} отправлен.</b> ${who} с вами: подберём, что можно сделать в эту сумму.</p>`
-        : st.sent ? `<p class="chosen"><b>✓ Вы выбрали:</b> ${E(c.what.join(' + '))}, ${rub(c.total)}. ${who} с вами.</p>`
+      // Отправка и ответ видны: сначала «отправляем» с золотым кольцом, потом
+      // зелёная галочка прорисовывается. Иначе кнопка просто исчезала.
+      const ok = (title, text) => `<div class="chosenok" role="status"><svg class="okmark" viewBox="0 0 52 52" aria-hidden="true">
+          <circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg>
+        <div><b>${title}</b><p>${text}</p></div></div>`;
+      chooseBox.classList.toggle('is-busy', !!st.busy);
+      chooseBox.classList.toggle('is-done', !!st.sent && st.sent !== 'preview');
+      chooseBox.innerHTML = st.busy ? `<div class="choosing" role="status"><span class="ring" aria-hidden="true"></span>
+          <div><b>Отправляем ваш выбор…</b><p>${E(st.busy)}</p></div></div>`
+        : st.sent === 'preview' ? '<p class="chosen">Просмотр команды: ничего не отправлено.</p>'
+        : st.sent?.budget ? ok(`Бюджет ${rub(st.sent.budget)} отправлен`, `${who} с вами: подберём, что можно сделать в эту сумму.`)
+        : st.sent ? ok('Выбор отправлен', `${E(c.what.join(' + '))}, ${rub(c.total)}. ${who} с вами, дальше обсудим договор.`)
         : `<button type="button" class="btn" data-choose>Выбрать: ${E(c.what.join(' + '))}, ${rub(c.total)}</button>
            <small>Нажмите, и мы получим ваш выбор. Обязательств это не создаёт: дальше обсудим договор.</small>
            ${st.budget ? `<div class="budget"><label for="budgetin">Ваш бюджет, ₽</label>
@@ -132,18 +143,24 @@
           const amount = Number(chooseBox.querySelector('#budgetin').value.replace(/\D/g, ''));
           if (amount < 1000) { err.textContent = 'Укажите сумму в рублях, например 300 000'; return; }
           btn.disabled = true;
-          const j = await post({ action: 'budget', amount });
+          st.busy = `Бюджет ${rub(amount)}`; drawChoose();
+          const [j] = await Promise.all([post({ action: 'budget', amount }), pause()]);
           st.sent = j.preview ? 'preview' : { budget: j.amount };
         } else {
           btn.disabled = true;
           const c = pick();
-          const j = await post({ action: 'choose', variant: c.v, options: c.opts });
+          st.busy = `${c.what.join(' + ')}, ${rub(c.total)}`; drawChoose();
+          const [j] = await Promise.all([post({ action: 'choose', variant: c.v, options: c.opts }), pause()]);
           st.sent = j.preview ? 'preview' : 'ok';
         }
+        st.busy = null;
         drawChoose();
       } catch (e) {
-        btn.disabled = false;
-        err.textContent = e.message;
+        st.busy = null;
+        drawChoose();
+        const er = chooseBox.querySelector('.chooseerr');
+        if (er) er.textContent = e.message;
+        chooseBox.classList.remove('shake'); void chooseBox.offsetWidth; chooseBox.classList.add('shake');
       }
     });
     const hints = e.groups.some(g => g.rows.some(r => r.hint));

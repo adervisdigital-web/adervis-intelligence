@@ -2286,10 +2286,11 @@ await kpPage.click('[data-v=full]').catch(() => {});
     && Number.isInteger(track.sec) && Array.isArray(track.seen) && track.preview === undefined, JSON.stringify(track));
   check('страница КП: кнопка выбора показывает вариант и сумму', /Базовый вариант \+ .+, 115\s000\s₽/.test(await g.textContent('[data-choose]')), await g.textContent('[data-choose]'));
   await g.click('[data-choose]');
-  await g.waitForSelector('.chosen');
+  await g.waitForSelector('.choosing');
+  await g.waitForSelector('.chosenok');
   const sent = posts.find(p => p.action === 'choose');
   check('страница КП: одно нажатие — выбор ушёл на сервер, клиент видит «Вы выбрали»', sent?.variant === 'base' && JSON.stringify(sent.options) === '[0]'
-    && sent.preview === false && (await g.textContent('.chosen')).includes('Вы выбрали') && !(await g.$('textarea')), JSON.stringify(sent));
+    && sent.preview === false && (await g.textContent('.chosenok')).includes('Выбор отправлен') && !(await g.$('textarea')), JSON.stringify(sent));
   await g.click('[data-v=full]');
   check('страница КП: поменяли вариант — кнопка снова с новой суммой', /Полный вариант/.test(await g.textContent('[data-choose]')));
   // свой бюджет: ввод с пробелами, отправка, подтверждение
@@ -2298,9 +2299,9 @@ await kpPage.click('[data-v=full]').catch(() => {});
   await g.dispatchEvent('#budgetin', 'input');
   check('страница КП: бюджет при вводе разбивается пробелами', /^300\s000$/.test(await g.inputValue('#budgetin')), await g.inputValue('#budgetin'));
   await g.click('[data-budgetsend]');
-  await g.waitForSelector('.chosen');
+  await g.waitForSelector('.chosenok');
   const bsent = posts.find(p => p.action === 'budget');
-  check('страница КП: свой бюджет ушёл на сервер, клиент видит подтверждение', bsent?.amount === 300000 && (await g.textContent('.chosen')).includes('Ваш бюджет'), JSON.stringify(bsent));
+  check('страница КП: свой бюджет ушёл на сервер, клиент видит подтверждение', bsent?.amount === 300000 && /Бюджет 300\s000\s₽ отправлен/.test(await g.textContent('.chosenok')), JSON.stringify(bsent));
   // смета для скачивания: Excel — настоящий .xlsx со строками сметы; PDF — печатается только смета
   const [xdl] = await Promise.all([g.waitForEvent('download'), g.click('.cta [data-smeta=xlsx]')]);
   const xbuf = fs.readFileSync(await xdl.path()).toString('utf8');
