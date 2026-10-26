@@ -8119,7 +8119,8 @@ function updateNav() {
   const counts = navCounts();
   // недавние — три последних раздела, кроме открытого: туда возвращаются чаще всего
   const rec = $('#navrecent');
-  if (rec) {
+  if (rec) rec.hidden = true;
+  if (false) {
     const ids = recentPages.filter(id => id !== page && sections.some(x => x[0] === id)).slice(0, 3);
     rec.hidden = !ids.length;
     rec.innerHTML = ids.length ? `<small>Недавние</small>${ids.map(id => `<button class="recentitem" data-page="${id}"><i class="navtile">${icon(id, 15)}</i><span>${NAV_LABEL[id] || SECTION_TITLE[id]}</span></button>`).join('')}` : '';
@@ -9710,11 +9711,9 @@ function drawRail(counts, badge) {
     hg.innerHTML = `<i></i>${g ? `<span>${E(g)}</span><em>/</em>` : ''}<b>${E(secLabel(page) || '')}</b>`;
   }
   // быстрые переходы: недавние разделы, кроме открытого
-  // пока истории нет — главные ежедневные разделы
-  let ids = recentPages.filter(id => id !== page && sections.some(x => x[0] === id)).slice(0, 3);
-  const fresh = ids.length < 2;
-  if (fresh) ids = HUB_TABS.filter(id => id !== page && id !== 'home').slice(0, 3);
-  $('#hubtabs').innerHTML = ids.length ? `<small>${fresh ? 'Быстро' : 'Недавние'}</small>` + ids.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 16)}<span>${E(secLabel(id))}</span><b class="navbadge" hidden></b></button>`).join('') : '';
+  // быстрые переходы — всегда одни и те же ежедневные разделы, кроме открытого
+  const ids = HUB_TABS.filter(id => id !== page && id !== 'home').slice(0, 3);
+  $('#hubtabs').innerHTML = ids.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 16)}<span>${E(secLabel(id))}</span><b class="navbadge" hidden></b></button>`).join('');
 }
 $('#menu').innerHTML = `${icon('menu')}<span>Все разделы</span>`;
 $('#ask').innerHTML = `<span class="askada"></span><span>Спросить Аду<small>отвечу по данным Hub</small></span>`;
