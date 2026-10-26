@@ -7910,21 +7910,8 @@ function updateNav() {
     el.hidden = !c || !c.n;
     if (c && c.n) { el.textContent = c.n; el.classList.toggle('late', c.late); }
   };
-  if (typeof drawHubTabs === 'function') {
-    drawHubTabs();
-    const g = groupOf(page);
-    groupLast[g] = page;
-    try { localStorage.setItem('hub.group.last', JSON.stringify(groupLast)); } catch (e) { /* без памяти */ }
-    document.querySelectorAll('#grouprail [data-group]').forEach(b => {
-      const on = b.dataset.group === g, ids = NAV.find(([n]) => n === b.dataset.group)[1];
-      b.classList.toggle('active', on);
-      if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
-      const inside = ids.map(id => counts[id]).filter(c => c && c.n);
-      badge(b.querySelector('.navbadge'), { n: inside.reduce((n, c) => n + c.n, 0), late: inside.some(c => c.late) });
-    });
-  }
-  requestAnimationFrame(() => typeof hubMark === 'function' && hubMark());
-  document.querySelectorAll('#nav [data-page], #tabbar [data-page], #hubtabs [data-page]').forEach(b => {
+  if (typeof drawRail === 'function') drawRail(counts, badge);
+  document.querySelectorAll('#nav [data-page], #tabbar [data-page], #hubtabs [data-page], #grouprail .gritem').forEach(b => {
     const on = b.dataset.page === page;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
@@ -9458,40 +9445,58 @@ $('#nav').addEventListener('click', e => {
 // и «Все разделы» — панель со всеми группами. На телефоне — нижняя панель, как раньше.
 const HUB_TABS = ['home', 'leads', 'briefs', 'dialogs', 'content'];
 const HUB_TAB_LABEL = { home: 'Сегодня', briefs: 'Брифы и КП', content: 'Контент' };
-// Слева — панель групп (Сегодня, Продажи, Реклама…), сверху — разделы открытой группы.
-// На «Сегодня» сверху пять ежедневных разделов. Группа помнит, где вы были в ней в последний раз.
+// Боковое меню — главная навигация на компьютере: группы раскрываются, внутри разделы со счётчиками.
+// Открытая группа раскрыта всегда, остальные помнят, как вы их оставили.
+// Сверху остаётся только «где я», недавние разделы и поиск.
 const GROUP_ICON = { '': 'home', 'Продажи': 'deals', 'Реклама': 'ads', 'Контент': 'content', 'Аналитика': 'analytics', 'Компания': 'knowledge', 'Система': 'settings' };
 const GROUP_LABEL = { '': 'Сегодня' };
-let groupLast = {};
-try { groupLast = JSON.parse(localStorage.getItem('hub.group.last') || '{}'); } catch (e) { /* без памяти */ }
-let hubTabsGroup = null;
-function drawHubTabs() {
-  const g = groupOf(page);
-  if (g === hubTabsGroup) return;
-  hubTabsGroup = g;
-  const ids = g === '' ? HUB_TABS : NAV.find(([n]) => n === g)[1];
-  $('#hubtabs').innerHTML = `<i class="hubhover" aria-hidden="true"></i><i class="hubind" aria-hidden="true"></i>`
-    + ids.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 17)}<span>${HUB_TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('');
-  const hg = $('#hubgroup');
-  if (hg) { hg.className = `hubgroup tone-${GROUP_TONE[g] || 'gold'}`; hg.innerHTML = g ? `<i></i>${E(g)}` : ''; hg.hidden = !g; }
-}
-$('#grouprail').innerHTML = `<button class="grmark" data-page="home" data-tip="Hub ADERVIS: на главную"><img src="brand/hub/hub-u.svg" alt=""></button>`
-  + NAV.map(([g]) => `${g === 'Система' ? '<span class="grspace"></span>' : ''}<button class="grbtn tone-${GROUP_TONE[g] || 'gold'}" data-group="${E(g)}" data-tip="${E(GROUP_LABEL[g] ?? g)}"><i>${icon(GROUP_ICON[g] || 'menu', 22)}</i><b class="navbadge" hidden></b><span>${E(GROUP_LABEL[g] ?? g)}</span></button>`).join('');
+const secLabel = id => HUB_TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id];
+let groupOpen = [];
+try { groupOpen = JSON.parse(localStorage.getItem('hub.group.open') || '[]'); } catch (e) { /* без памяти */ }
+const saveOpen = () => { try { localStorage.setItem('hub.group.open', JSON.stringify(groupOpen)); } catch (e) { /* без памяти */ } };
+$('#grouprail').innerHTML = `<button class="grmark" data-page="home" aria-label="Hub ADERVIS, на главную"><img src="brand/hub/hub-u.svg" alt=""><span>Hub <b>ADERVIS</b></span></button>
+  <div class="grscroll">${NAV.map(([g, ids]) => g === '' ? `<div class="grtop">${ids.map(id => `<button class="gritem grsolo tone-${toneOf(id)}" data-page="${id}"><i>${icon(id, 18)}</i><span>${E(secLabel(id))}</span><b class="navbadge" hidden></b></button>`).join('')}</div>` : `<section class="grgrp tone-${GROUP_TONE[g] || 'gold'}" data-grp="${E(g)}">
+    <button class="grhead" data-group="${E(g)}" aria-expanded="false"><i>${icon(GROUP_ICON[g] || 'menu', 18)}</i><span>${E(GROUP_LABEL[g] ?? g)}</span><b class="navbadge" hidden></b><em>${icon('expand', 14)}</em></button>
+    <div class="grlist"><div>${ids.map(id => `<button class="gritem" data-page="${id}"><span>${E(secLabel(id))}</span><b class="navbadge" hidden></b></button>`).join('')}</div></div>
+  </section>`).join('')}</div>`;
 $('#grouprail').addEventListener('click', e => {
   const b = e.target.closest('[data-group]');
   if (!b) return;
-  const g = b.dataset.group, ids = NAV.find(([n]) => n === g)[1];
-  go(ids.includes(groupLast[g]) ? groupLast[g] : ids[0]);
+  const g = b.dataset.group, sec = b.closest('.grgrp'), open = !sec.classList.contains('open');
+  groupOpen = groupOpen.filter(x => x !== g);
+  if (open) groupOpen.push(g);
+  saveOpen();
+  // свернуть можно и открытую группу; при переходе в неё она раскроется снова
+  sec.classList.toggle('open', open);
+  b.setAttribute('aria-expanded', String(open));
 });
-// «Все разделы» на компьютере живёт внизу панели групп, на телефоне — в шапке
-if (matchMedia('(min-width: 721px)').matches) $('#grouprail').appendChild($('#menu'));
-// Подложка едет за курсором, золотая полоска — к открытому разделу: строка «живая», но без украшений.
-const hubPlace = (el, b) => { if (!el) return; if (!b) { el.style.opacity = 0; return; } el.style.opacity = 1; el.style.transform = `translateX(${b.offsetLeft}px)`; el.style.width = b.offsetWidth + 'px'; };
-$('#hubtabs').addEventListener('pointerover', e => { const b = e.target.closest('.hubtab'); if (b) hubPlace($('.hubhover'), b); });
-$('#hubtabs').addEventListener('pointerleave', () => hubPlace($('.hubhover'), null));
-const hubMark = () => hubPlace($('.hubind'), $('#hubtabs .hubtab.active'));
-addEventListener('resize', hubMark);
-document.fonts?.ready.then(hubMark);
+function drawRail(counts, badge) {
+  const g0 = groupOf(page);
+  if (!groupOpen.includes(g0)) { groupOpen.push(g0); saveOpen(); }
+  document.querySelectorAll('#grouprail .grgrp').forEach(sec => {
+    const g = sec.dataset.grp, open = groupOpen.includes(g), ids = NAV.find(([n]) => n === g)[1];
+    sec.classList.toggle('open', open);
+    sec.classList.toggle('cur', g === g0);
+    const h = sec.querySelector('.grhead');
+    h.setAttribute('aria-expanded', String(open));
+    // у свёрнутой группы счётчик собирается на заголовке
+    const inside = ids.map(id => counts[id]).filter(c => c && c.n);
+    badge(h.querySelector('.navbadge'), open ? null : { n: inside.reduce((n, c) => n + c.n, 0), late: inside.some(c => c.late) });
+  });
+  // строка сверху: где я сейчас
+  const hg = $('#hubgroup');
+  if (hg) {
+    const g = groupOf(page);
+    hg.className = `hubgroup tone-${GROUP_TONE[g] || 'gold'}`;
+    hg.innerHTML = `<i></i>${g ? `<span>${E(g)}</span><em>/</em>` : ''}<b>${E(secLabel(page) || '')}</b>`;
+  }
+  // быстрые переходы: недавние разделы, кроме открытого
+  // пока истории нет — главные ежедневные разделы
+  let ids = recentPages.filter(id => id !== page && sections.some(x => x[0] === id)).slice(0, 3);
+  const fresh = ids.length < 2;
+  if (fresh) ids = HUB_TABS.filter(id => id !== page && id !== 'home').slice(0, 3);
+  $('#hubtabs').innerHTML = ids.length ? `<small>${fresh ? 'Быстро' : 'Недавние'}</small>` + ids.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 16)}<span>${E(secLabel(id))}</span><b class="navbadge" hidden></b></button>`).join('') : '';
+}
 $('#menu').innerHTML = `${icon('menu')}<span>Все разделы</span>`;
 $('#ask').innerHTML = `<span class="askada"></span><span>Спросить Аду<small>отвечу по данным Hub</small></span>`;
 new Ada($('#ask .askada'), { mood: 'idle' });
@@ -9516,24 +9521,95 @@ $('#search').onclick = search;
 // относится к открытому разделу: чаще всего создают именно его.
 const CREATE_ITEMS = [
   ['newlead', 'Заявку', 'кто обратился и откуда узнал', 'leads'],
-  ['bfnew', 'Бриф и КП', 'ТЗ клиента → вопросы, смета, план, КП', 'briefs'],
-  ['newdecision', 'Решение', 'что решили, почему и как проверим', 'decisions'],
+  ['bfnew', 'Бриф и КП', 'ТЗ клиента: вопросы, смета, план, КП', 'briefs'],
+  ['newtask', 'Задачу', 'общий список для обоих руководителей', 'tasks'],
+  ['newp', 'Публикацию', 'пост в контент-план', 'content'],
   ['newcampaign', 'Кампанию', 'канал, цель, бюджет и ссылка с метками', 'ads'],
-  ['newk', 'Запись базы знаний', 'факт о компании с источником', 'knowledge'],
-  ['newp', 'Публикацию', 'материал для канала', 'content'],
-  ['newtask', 'Задачу', 'общий список для обоих руководителей', 'tasks']
+  ['newdecision', 'Решение', 'что решили, почему и как проверим', 'decisions'],
+  ['newk', 'Запись базы знаний', 'факт о компании с источником', 'knowledge']
 ];
+const CREATE_ICON = { leads: 'leads', briefs: 'proposal', tasks: 'tasks', content: 'content', ads: 'ads', decisions: 'decisions', knowledge: 'knowledge' };
 
-$('#create').onclick = () => {
+// «Создать» раскрывает список прямо под кнопкой: пункт открытого раздела первым,
+// цифры 1–7 выбирают пункт с клавиатуры. На телефоне — то же окно на весь экран.
+function createClose() {
+  const pop = $('#createpop');
+  if (!pop) return;
+  pop.remove();
+  $('#create').setAttribute('aria-expanded', 'false');
+  document.removeEventListener('pointerdown', createOutside, true);
+  document.removeEventListener('keydown', createKeys, true);
+}
+function createOutside(e) { if (!e.target.closest('#createpop, #create')) createClose(); }
+function createKeys(e) {
+  const items = [...document.querySelectorAll('#createpop .createitem')];
+  if (e.key === 'Escape') { e.preventDefault(); createClose(); $('#create').focus(); return; }
+  const n = Number(e.key);
+  if (n >= 1 && n <= items.length && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) { e.preventDefault(); items[n - 1].click(); return; }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement), d = e.key === 'ArrowDown' ? 1 : -1;
+    items[(i + d + items.length) % items.length].focus();
+  }
+}
+function createOpen() {
   const items = [...CREATE_ITEMS].sort((a, b) => (b[3] === page) - (a[3] === page));
-  modal(`<h2>Что создаём?</h2><div class="createlist">${items.map(([act, title, hint, sec]) =>
-    `<button data-action="${act}" class="createitem${sec === page ? ' here' : ''}">
-      <b>${title}</b><small>${hint}</small></button>`).join('')}</div>`);
-};
+  const list = items.map(([act, title, hint, sec], i) =>
+    `<button data-action="${act}" class="createitem tone-${toneOf(sec)}${sec === page ? ' here' : ''}">
+      <i>${icon(CREATE_ICON[sec] || 'plus', 18)}</i><span><b>${title}</b><small>${hint}</small></span><kbd>${i + 1}</kbd></button>`).join('');
+  const foot = `<p class="createfoot">${icon('telegram', 14)} ТЗ можно просто переслать боту @adervis_intel_bot: бриф соберётся сам.</p>`;
+  if (!matchMedia('(min-width: 721px)').matches) {
+    modal(`<h2>Что создаём?</h2><div class="createlist">${list}</div>${foot}`);
+    return;
+  }
+  if ($('#createpop')) { createClose(); return; }
+  const pop = document.createElement('div');
+  pop.id = 'createpop';
+  pop.className = 'createpop';
+  pop.setAttribute('role', 'menu');
+  pop.innerHTML = `<div class="createlist">${list}</div>${foot}`;
+  document.body.appendChild(pop);
+  const r = $('#create').getBoundingClientRect();
+  pop.style.top = (r.bottom + 10) + 'px';
+  pop.style.right = Math.max(12, innerWidth - r.right) + 'px';
+  $('#create').setAttribute('aria-expanded', 'true');
+  pop.querySelectorAll('.createitem').forEach(b => b.setAttribute('role', 'menuitem'));
+  pop.addEventListener('click', e => { if (e.target.closest('.createitem')) setTimeout(createClose); });
+  document.addEventListener('pointerdown', createOutside, true);
+  document.addEventListener('keydown', createKeys, true);
+  pop.querySelector('.createitem').focus({ preventScroll: true });
+}
+$('#create').setAttribute('aria-haspopup', 'menu');
+$('#create').setAttribute('aria-expanded', 'false');
+$('#create').onclick = createOpen;
+addEventListener('resize', createClose);
+
+// Компьютер: «Спросить Аду» и профиль с выходом живут внизу бокового меню.
+// Телефон: всё возвращается на свои места (нижняя панель и «Ещё»).
+const shellDesk = matchMedia('(min-width: 721px)');
+const askHome = $('#ask').parentNode, askNext = $('#ask').nextSibling, userBox = $('.sidebar .bottom');
+function placeShell() {
+  if (shellDesk.matches) {
+    const foot = $('#grfoot') || Object.assign(document.createElement('div'), { id: 'grfoot', className: 'grfoot' });
+    foot.append($('#ask'), userBox);
+    $('#grouprail').appendChild(foot);
+  } else {
+    askHome.insertBefore($('#ask'), askNext);
+    $('.sidebar').appendChild(userBox);
+  }
+}
+placeShell();
+shellDesk.addEventListener?.('change', placeShell);
 $('#refresh').onclick = async () => {
   try { await reload(); render(); toast('Данные обновлены'); }
   catch (err) { handleError(err); }
 };
+
+// Hub ставится на телефон как приложение: иконка на экране «Домой», без строки браузера.
+// Воркер держит копию оболочки на случай плохой связи; на локальных проверках не нужен.
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 
 (async function boot() {
   const cfg = window.INTEL_CONFIG || {};

@@ -506,15 +506,26 @@ const login = async (email = 'artem@adervis.ru', pass = 'secret') => {
   await page.fill('#gate-pass', pass);
   await page.click('#gatebtn');
 };
-// Раздел открывается как у человека: «Все разделы» в верхней строке, потом пункт.
+// Раздел открывается как у человека: на компьютере — боковое меню (группа раскрывается),
+// на телефоне — «Ещё», потом пункт.
+const desk = () => page.evaluate(() => matchMedia('(min-width: 721px)').matches);
 const nav = async id => {
-  const item = page.locator(`#nav button[data-page=${id}]`);
+  if (await desk()) {
+    const sec = page.locator(`#grouprail .grgrp:has(.gritem[data-page=${id}])`);
+    if (await sec.count() && !(await sec.evaluate(s => s.classList.contains('open')))) {
+      await sec.locator('.grhead').click();
+      await page.waitForTimeout(350);
+    }
+    await page.click(`#grouprail .gritem[data-page=${id}]`);
+    return;
+  }
   // панель гаснет 0,3 с и в это время ещё «видна» — смотрим на её состояние, а не на видимость
   if (!(await page.evaluate(() => document.body.classList.contains('menu')))) await page.click('#menu');
-  await item.click();
+  await page.locator(`#nav button[data-page=${id}]`).click();
 };
-// «Выйти» — в панели «Все разделы»
+// «Выйти» — внизу бокового меню (на телефоне — в «Ещё»)
 const signout = async () => {
+  if (await desk()) { await page.click('#grfoot [data-action=signout]'); return; }
   if (!(await page.evaluate(() => document.body.classList.contains('menu')))) await page.click('#menu');
   await page.click('[data-action=signout]');
 };
@@ -548,35 +559,29 @@ const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textCo
 check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
 check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 24,
   String((await page.$$('#nav button')).length));
-// Одна верхняя строка: пять ежедневных разделов, остальное — в «Все разделы».
-check('в верхней строке пять главных разделов', (await page.$$eval('#hubtabs button[data-page]', b => b.map(x => x.dataset.page))).join(',') === 'home,leads,briefs,dialogs,content');
-check('бокового меню на экране нет, пока его не открыли', !(await page.isVisible('#nav button[data-page=knowledge]')));
-await page.click('#menu');
-check('«Все разделы» открывает все группы сразу', await page.isVisible('#nav button[data-page=knowledge]') && await page.isVisible('#nav button[data-page=settings]')
-  && await page.$eval('#menu', b => b.getAttribute('aria-expanded') === 'true'));
-check('в панели видно, кто вошёл', await page.isVisible('.sidebar .bottom #myname'));
-await page.keyboard.press('Escape');
-await page.waitForFunction(() => !document.body.classList.contains('menu'));
-await page.click('#menu');
-await page.mouse.click(8, 300);
-check('щелчок мимо панели её закрывает', await page.evaluate(() => !document.body.classList.contains('menu')));
+// Компьютер: всё меню слева, группы раскрываются; сверху — где я, быстрые переходы, поиск и «Создать».
+const railGroups = await page.$$eval('#grouprail .grhead span', g => g.map(x => x.textContent));
+check('слева группы по работе', railGroups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', railGroups.join(','));
+check('в боковом меню все разделы', (await page.$$('#grouprail .gritem[data-page]')).length === 24, String((await page.$$('#grouprail .gritem')).length));
+check('панели «Все разделы» на компьютере нет', !(await page.isVisible('#menu')) && !(await page.isVisible('#nav button[data-page=knowledge]')));
+check('внизу меню видно, кто вошёл, и есть «Выйти»', await page.isVisible('#grfoot #myname') && await page.isVisible('#grfoot [data-action=signout]'));
+check('открытая группа раскрыта, чужие свёрнуты', !(await page.isVisible('#grouprail .gritem[data-page=knowledge]')));
 // счётчики дел у разделов
-const leadBadge = await page.$eval('#nav button[data-page=leads] .navbadge', b => ({ hidden: b.hidden, text: b.textContent, late: b.classList.contains('late') }));
+const leadBadge = await page.$eval('#grouprail .gritem[data-page=leads] .navbadge', b => ({ hidden: b.hidden, text: b.textContent, late: b.classList.contains('late') }));
 check('у «Заявок» счётчик просроченного дела', !leadBadge.hidden && leadBadge.text === '1' && leadBadge.late, JSON.stringify(leadBadge));
-check('тот же счётчик — в верхней строке', await page.$eval('#hubtabs button[data-page=leads] .navbadge', b => !b.hidden && b.textContent === '1' && b.classList.contains('late')));
-check('у «Обзора» — все дела на сегодня', await page.$eval('#nav button[data-page=home] .navbadge', b => !b.hidden && Number(b.textContent) >= 1));
-check('у разделов без дел счётчика нет', await page.$eval('#nav button[data-page=knowledge] .navbadge', b => b.hidden));
+check('у свёрнутой группы счётчик на заголовке', await page.$eval('#grouprail .grgrp[data-grp="Продажи"] .grhead .navbadge', b => !b.hidden && Number(b.textContent) >= 1));
+check('у «Сегодня» — все дела на сегодня', await page.$eval('#grouprail .gritem[data-page=home] .navbadge', b => !b.hidden && Number(b.textContent) >= 1));
+check('у разделов без дел счётчика нет', await page.$eval('#grouprail .gritem[data-page=knowledge] .navbadge', b => b.hidden));
 await page.click('#hubtabs button[data-page=leads]');
-check('раздел из верхней строки открывается и отмечен', (await page.textContent('#crumb')) === 'Заявки'
-  && await page.$eval('#hubtabs button[data-page=leads]', b => b.classList.contains('active') && b.getAttribute('aria-current') === 'page'));
-check('открытый раздел отмечен для чтения с экрана', await page.$eval('#nav button[data-page=leads]', b => b.getAttribute('aria-current') === 'page'));
+check('быстрый переход сверху открывает раздел', (await page.textContent('#crumb')) === 'Заявки'
+  && await page.$eval('#grouprail .gritem[data-page=leads]', b => b.classList.contains('active') && b.getAttribute('aria-current') === 'page'));
+check('сверху видно, где я', (await page.textContent('#hubgroup')).includes('Продажи') && (await page.textContent('#hubgroup')).includes('Заявки'));
 await nav('keywords');
 check('«Ключевые фразы» — свой пункт в группе «Реклама»', (await page.textContent('#crumb')) === 'Ключевые фразы'
-  && await page.$eval('#nav button[data-page=keywords]', b => !!b.closest('[data-group="Реклама"]')));
-check('после перехода панель закрыта', await page.evaluate(() => !document.body.classList.contains('menu')));
-check('«Создать» и «Спросить» — справа внизу', await page.evaluate(() => {
+  && await page.$eval('#grouprail .gritem[data-page=keywords]', b => b.closest('.grgrp').dataset.grp === 'Реклама'));
+check('«Создать» — справа в верхней строке, «Спросить Аду» — внизу меню', await page.evaluate(() => {
   const c = document.querySelector('#create').getBoundingClientRect(), a = document.querySelector('#ask').getBoundingClientRect();
-  return c.right > innerWidth - 60 && c.bottom > innerHeight - 60 && a.right <= c.left && a.bottom > innerHeight - 60;
+  return c.right > innerWidth - 60 && c.top < 80 && !!document.querySelector('#grouprail #ask') && a.bottom > innerHeight - 160;
 }));
 await nav('home');
 
@@ -804,7 +809,9 @@ check('в «Создать» есть заявка, решение и кампа
   ['newlead', 'newdecision', 'newcampaign'].every(a => createItems.includes(a)), createItems.join(', '));
 check('первым стоит то, что относится к открытому разделу', createItems[0] === 'newlead', createItems[0]);
 check('пункт текущего раздела помечен', await page.$eval('.createitem', b => b.classList.contains('here')));
-await page.click('#modal [data-action=close]');
+check('«Создать» раскрывает список под кнопкой', await page.isVisible('#createpop') && await page.$eval('#create', b => b.getAttribute('aria-expanded') === 'true'));
+await page.keyboard.press('Escape');
+check('Esc закрывает список', !(await page.isVisible('#createpop')));
 check('сумма ушла числом, а не строкой', (await state()).leads.find(l => l.name === 'Белазарь').amount === 0);
 check('заявка без кампании сохраняется без связи, а не с пустым ключом',
   (await state()).leads.find(l => l.name === 'Белазарь').campaign_id === null);
@@ -2441,7 +2448,7 @@ await page.waitForFunction(d => window.__STATE__.briefs[0].next_on === d, localD
 check('«перенести на завтра» убирает дело из сегодняшних', !(await page.textContent('.todaycard')).includes('Видеодайджест'));
 await page.click('#create');
 await page.click('.createitem[data-action=bfnew]');
-check('«Создать» справа внизу открывает форму брифа', await page.isVisible('#bff'));
+check('«Создать» в верхней строке открывает форму брифа', await page.isVisible('#bff'));
 await page.click('#modal [data-action=close]');
 await page.screenshot({ path: path.join(OUT, 'intel-brief.png') });
 // переписку связываем с заявкой — и вопросы по ТЗ уходят прямо в неё

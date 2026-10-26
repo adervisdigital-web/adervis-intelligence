@@ -1,0 +1,23 @@
+{
+  "name": "Hub ADERVIS",
+  "short_name": "Hub",
+  "description": "Заявки, брифы, КП и контент студии ADERVIS",
+  "lang": "ru",
+  "id": "/",
+  "start_url": "/?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#09090a",
+  "theme_color": "#09090a",
+  "icons": [
+    { "src": "brand/app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "brand/app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "brand/app/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Заявки", "url": "/#leads", "icons": [{ "src": "brand/app/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Брифы и КП", "url": "/#briefs", "icons": [{ "src": "brand/app/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Диалоги", "url": "/#dialogs", "icons": [{ "src": "brand/app/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

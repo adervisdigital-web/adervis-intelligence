@@ -53,6 +53,11 @@ for (const [w, h, th] of [[1600, 900, 'dark'], [1600, 900, 'light'], [390, 844, 
   await page.waitForTimeout(1200);
   await page.screenshot({ path: path.join(OUT, `homeada-${th}-${w}.png`) });
 }
+await page.setViewportSize({ width: 1600, height: 900 });
+await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.querySelector('#nav button[data-page=leads]').click(); });
+await page.waitForTimeout(600);
+await page.click('#create'); await page.waitForTimeout(400);
+await page.screenshot({ path: path.join(OUT, 'homeada-create-1600.png') });
 await browser.close();
 server.close();
 console.log('ok');
