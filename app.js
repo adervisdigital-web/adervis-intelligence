@@ -7630,8 +7630,21 @@ const SHAPES = {
   drop: ring(a => [Math.sin(a) * (150 + 18 * Math.max(0, -Math.cos(a))), -Math.cos(a) * 172 + 10]),
   gum: ring(a => { const r = 200 * (.6 * roundTri(a) + .4); return [Math.sin(a) * r * 1.04, -Math.cos(a) * r + 32]; }),
   mark: ring(a => { const r = 205 * (.7 * roundTri(a) + .3); return [Math.sin(a) * r * 1.12, -Math.cos(a) * r + 30]; }).map((p, i) => i === 6 ? [0, 122] : p),
-  heart: heart.map((p, i, a) => a[(i + 6) % 12])
+  heart: heart.map((p, i, a) => a[(i + 6) % 12]),
+  tile: ring(a => { const n = 5, c = Math.abs(Math.cos(a)), si = Math.abs(Math.sin(a)); const r = 172 / Math.pow(c ** n + si ** n, 1 / n); return [Math.sin(a) * r, -Math.cos(a) * r + 20]; })
 };
+// буква U знака Hub (сетка 1000), ставится в плитку
+const LOGO_U = 'M220,265 L220,455 A280,280 0 0 0 500,735 A280,280 0 0 0 780,455 L780,265 L660,265 L660,455 A160,160 0 0 1 500,615 A160,160 0 0 1 340,455 L340,265 Z';
+const LOGO_DEPTH = 13;
+const TILE = 'M-94,-152 H94 A78,78 0 0 1 172,-74 V114 A78,78 0 0 1 94,192 H-94 A78,78 0 0 1 -172,114 V-74 A78,78 0 0 1 -94,-152 Z';
+const tween = (ms, f, ease = t => t) => new Promise(res => {
+  const t0 = performance.now();
+  const step = now => { const t = Math.min(1, (now - t0) / ms); f(ease(t), t); if (t < 1) requestAnimationFrame(step); else res(); };
+  requestAnimationFrame(step);
+});
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const EASE = { io: t => t < .5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2, out: t => 1 - (1 - t) ** 4, in: t => t ** 3,
+  back: t => { const c = 1.6; return 1 + (c + 1) * (t - 1) ** 3 + c * (t - 1) ** 2; } };
 // Catmull-Rom → Безье: у всех форм одна структура пути, поэтому они плавно перетекают
 const pathOf = P => {
   const n = P.length, f = v => v.toFixed(1);
@@ -7681,7 +7694,8 @@ class Ada {
     el.classList.add('ada-host');
     el.innerHTML = this.svg();
     const q = s => el.querySelector(s);
-    this.p = { svg: q('svg'), shapes: [...el.querySelectorAll('.a-shape')], face: q('.a-face'), look: q('.a-look'), hands: q('.a-hands'), body: q('.a-body'), fx: q('.a-fx') };
+    this.p = { svg: q('svg'), shapes: [...el.querySelectorAll('.a-shape')], face: q('.a-face'), look: q('.a-look'), hands: q('.a-hands'), body: q('.a-body'), fx: q('.a-fx'),
+      logo: q('.a-logo'), front: q('.a-front'), depth: [...el.querySelectorAll('.a-depth path')], sweep: q('.a-sweep'), dim: q('.a-dim'), shadow: q('.a-shadow') };
     this.shape = 'drop';
     this.set(o.mood || 'idle');
     if (!calm() && !this.still) { this.blinkLoop(); this.idleLoop(); }
@@ -7690,6 +7704,7 @@ class Ada {
       el.addEventListener('pointerenter', () => { this.hover = true; if (this.state === 'idle') this.set('curious'); });
       el.addEventListener('pointerleave', () => { this.hover = false; if (this.state === 'curious') this.set('idle'); });
       el.addEventListener('pointerdown', () => this.squash(.12));
+      el.addEventListener('click', () => this.poke());
     }
   }
   svg() {
@@ -7706,7 +7721,7 @@ class Ada {
     <clipPath id="${g}c">${body('')}/></clipPath>
   </defs>
   <style>[data-ada=${g}] .e{fill:url(#${g}led)}[data-ada=${g}] .eh{fill:#ff8fbf}[data-ada=${g}] .ls{fill:none;stroke:${P.eye};stroke-width:5;stroke-linecap:round}</style>
-  <ellipse cx="0" cy="208" rx="150" ry="14" fill="#000" opacity=".25" filter="url(#${g}soft)"/>
+  <ellipse class="a-shadow" cx="0" cy="208" rx="150" ry="14" fill="#000" opacity=".25" filter="url(#${g}soft)"/>
   <g class="a-body">
     ${body(`fill="${P.aura}" opacity=".5" filter="url(#${g}aura)"`)}/>
     <g class="a-hands"></g>
@@ -7718,6 +7733,29 @@ class Ada {
       <ellipse cx="-84" cy="-118" rx="9" ry="22" transform="rotate(28 -84 -118)" fill="#fff" opacity=".85"/>
     </g>
     <g class="a-look"><g class="a-face" filter="url(#${g}glow)"></g></g>
+  </g>
+  <g class="a-logo" opacity="0" style="display:none">
+    <defs>
+      <linearGradient id="${g}lg" gradientUnits="userSpaceOnUse" x1="-172" y1="0" x2="172" y2="0"><stop offset="0" stop-color="#ffd264"/><stop offset=".55" stop-color="#f0b53a"/><stop offset="1" stop-color="#c8901f"/></linearGradient>
+      <linearGradient id="${g}ld" gradientUnits="userSpaceOnUse" x1="0" y1="-160" x2="0" y2="200"><stop offset="0" stop-color="#b9821c"/><stop offset="1" stop-color="#6e4309"/></linearGradient>
+      <linearGradient id="${g}sw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <clipPath id="${g}tc"><path d="${TILE}"/></clipPath>
+    </defs>
+    <g class="a-depth">${Array.from({ length: LOGO_DEPTH }, (_, i) => `<path d="${TILE}" fill="url(#${g}ld)" data-i="${LOGO_DEPTH - i}"/>`).join('')}</g>
+    <g class="a-front">
+      <path d="${TILE}" fill="url(#${g}lg)"/>
+      <g clip-path="url(#${g}tc)">
+        <ellipse cx="-70" cy="-110" rx="150" ry="90" fill="#fff" opacity=".22"/>
+        <rect class="a-sweep" x="-40" y="-260" width="80" height="560" fill="url(#${g}sw)" transform="rotate(16)"/>
+        <rect class="a-dim" x="-200" y="-200" width="400" height="420" fill="#2a1a00" opacity="0"/>
+      </g>
+      <path d="${TILE}" fill="none" stroke="#fff3c8" stroke-width="5" opacity=".6"/>
+      <g transform="translate(0,20) scale(.335) translate(-500,-500)">
+        <path d="${LOGO_U}" fill="#fff0b8" opacity=".55" transform="translate(-9,-12)"/>
+        <path d="${LOGO_U}" fill="#5a3606" opacity=".5" transform="translate(7,10)"/>
+        <path d="${LOGO_U}" fill="#141414"/>
+      </g>
+    </g>
   </g>
   <g class="a-fx"></g>
 </svg>`;
@@ -7731,6 +7769,8 @@ class Ada {
     });
   }
   set(name) {
+    // пока Ада — логотип, новое настроение ждёт её возвращения
+    if (this.logoOn && POSE[name]) { this.after = name; return this; }
     if (name === this.state || !POSE[name]) return this;
     const [shape, eyes, mouth, hands, blush] = POSE[name], prev = this.state;
     this.state = name; this.el.dataset.mood = name;
@@ -7790,12 +7830,119 @@ class Ada {
   idleLoop() {
     const act = () => {
       if (!this.el.isConnected) return;
-      if (this.state === 'idle' && !this.hover) { if (Math.random() < .5) this.hop(26); else { this.fixed = true; this.lookAt(-1, 0); setTimeout(() => this.lookAt(1, 0), 700); setTimeout(() => { this.fixed = false; }, 1500); } }
+      if (this.state === 'idle' && !this.hover && !this.logoOn && Math.random() < .2) this.logo();
+      else if (this.state === 'idle' && !this.hover) { if (Math.random() < .5) this.hop(26); else { this.fixed = true; this.lookAt(-1, 0); setTimeout(() => this.lookAt(1, 0), 700); setTimeout(() => { this.fixed = false; }, 1500); } }
       this.it = setTimeout(act, 7000 + Math.random() * 6000);
     };
     this.it = setTimeout(act, 5000);
   }
   lookAt(x, y) { this.p.look.style.transform = `translate(${x * 16}px,${y * 12}px)`; }
+  // Объёмная плитка Hub: θ — поворот вокруг вертикали, k — размер.
+  // Толщина — стопка тёмных слоёв, которые расходятся вбок при повороте; блик бежит по лицу.
+  pose3d(th, k = 1) {
+    const c = Math.cos(th), sn = Math.sin(th), q = this.p, f = v => v.toFixed(3);
+    q.front.setAttribute('transform', `translate(0 20) scale(${f(k * c)} ${f(k)}) translate(0 -20)`);
+    q.depth.forEach(el => {
+      const i = Number(el.dataset.i);
+      el.setAttribute('transform', `translate(${f(-sn * i * 2.5 * k)} ${f(i * .7 * k)}) translate(0 20) scale(${f(k * c)} ${f(k)}) translate(0 -20)`);
+    });
+    q.sweep.setAttribute('x', f(-40 - sn * 260));
+    q.dim.setAttribute('opacity', f((1 - Math.abs(c)) * .55));
+    q.shadow.setAttribute('rx', f(150 * k * (.75 + .25 * Math.abs(c))));
+  }
+  // Ада ненадолго становится логотипом Hub — каждый раз по-разному
+  async logo(kind) {
+    if (calm() || this.still || this.logoOn || !this.el.isConnected) return;
+    this.logoOn = true; this.after = null;
+    const q = this.p, back = this.state || 'idle', ways = ['melt', 'coin', 'burst'];
+    kind ||= ways[Math.floor(Math.random() * ways.length)];
+    this.stopLoops();
+    const showLogo = () => { q.logo.style.display = ''; q.logo.setAttribute('opacity', '1'); };
+    const hideLogo = () => { q.logo.style.display = 'none'; q.logo.setAttribute('opacity', '0'); };
+    const bodyOp = v => { q.body.style.opacity = v; };
+    try {
+      if (kind === 'melt') {
+        // капля перетекает в плитку, лицо гаснет, плитка оживает и делает оборот
+        q.face.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, fill: 'forwards' });
+        q.hands.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, fill: 'forwards' });
+        this.morph('tile');
+        await wait(420);
+        showLogo(); this.pose3d(0, 1); q.logo.setAttribute('opacity', '0');
+        await tween(260, t => { q.logo.setAttribute('opacity', t.toFixed(3)); bodyOp(1 - t); });
+        await tween(1500, t => this.pose3d(t * Math.PI * 2, 1 + Math.sin(t * Math.PI) * .06), EASE.io);
+      } else if (kind === 'coin') {
+        // Ада переворачивается как монета, на обороте — знак Hub
+        await tween(200, t => { q.body.style.transform = `scaleX(${(1 - t).toFixed(3)})`; }, EASE.in);
+        bodyOp(0); q.body.style.transform = '';
+        showLogo();
+        await tween(1500, t => this.pose3d(Math.PI / 2 + t * Math.PI * 3.5, 1), EASE.out);
+      } else {
+        // рассыпается искрами, из них собирается знак
+        const cols = ['#ffd264', '#f0b53a', '#fff3d2', '#c8901f'];
+        q.fx.innerHTML = Array.from({ length: 26 }, (_, i) => `<rect x="-7" y="-7" width="${8 + (i % 3) * 5}" height="${8 + (i % 3) * 5}" rx="3" fill="${cols[i % 4]}"/>`).join('');
+        const bits = [...q.fx.children];
+        q.body.animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(.2)', opacity: 0 }], { duration: 320, easing: 'cubic-bezier(.5,0,.75,0)', fill: 'forwards' });
+        await Promise.all(bits.map((c, i) => {
+          const a = (i / bits.length) * Math.PI * 2, r = 150 + (i % 5) * 26;
+          return c.animate([{ transform: 'translate(0px,20px) scale(.3)', opacity: 0 }, { transform: `translate(${Math.cos(a) * r}px,${Math.sin(a) * r * .8 + 20}px) rotate(${i * 40}deg)`, opacity: 1, offset: .45 },
+            { transform: 'translate(0px,20px) scale(.2)', opacity: 0 }], { duration: 900, delay: i * 8, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' }).finished;
+        }));
+        q.fx.innerHTML = '';
+        q.body.getAnimations().forEach(a => a.cancel()); bodyOp(0);
+        showLogo();
+        await tween(1100, t => this.pose3d((1 - t) * Math.PI * 3, EASE.back(t)), EASE.out);
+      }
+      // постояла, покачалась, блик прошёл
+      await tween(1300, t => this.pose3d(Math.sin(t * Math.PI * 2) * .28 * (1 - t), 1));
+      if (!this.el.isConnected) return;
+      // обратно в Аду
+      if (kind === 'coin') {
+        await tween(240, t => this.pose3d(t * Math.PI / 2, 1), EASE.in);
+        hideLogo(); bodyOp(1);
+        q.body.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1.08)', offset: .7 }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.22,1,.36,1)' });
+      } else if (kind === 'melt') {
+        await tween(260, t => { q.logo.setAttribute('opacity', (1 - t).toFixed(3)); bodyOp(t); });
+        hideLogo();
+        this.morph('drop');
+        q.face.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 200, fill: 'forwards' }).finished.then(() => q.face.getAnimations().forEach(a => a.cancel()));
+        q.hands.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 200, fill: 'forwards' }).finished.then(() => q.hands.getAnimations().forEach(a => a.cancel()));
+      } else {
+        await tween(260, t => this.pose3d(t * Math.PI, 1 - EASE.in(t)));
+        hideLogo(); bodyOp(1);
+        this.hop(60);
+      }
+      this.p.shadow.setAttribute('rx', '150');
+    } finally {
+      this.logoOn = false;
+      if (this.el.isConnected) {
+        if (this.shape !== (POSE[back]?.[0] || 'drop')) this.morph(POSE[back]?.[0] || 'drop');
+        const next = this.after || back;
+        this.state = ''; this.set(next);
+      }
+    }
+  }
+  // нажали на Аду: каждый раз что-то своё, через раз — превращение в знак Hub
+  poke() {
+    if (calm() || this.still || this.logoOn) return;
+    const base = this.poking ? this.pokeBase : this.state;
+    this.pokeBase = base;
+    const n = this.pokes = (this.pokes || 0) + 1;
+    const pick = n % 2 === 1 ? 'logo' : ['love', 'hello', 'sly', 'done'][Math.floor(n / 2) % 4];
+    clearTimeout(this.pt);
+    if (pick === 'logo') { this.poking = false; this.logo(); return; }
+    this.poking = true;
+    this.set(pick);
+    if (pick === 'love') this.sparks('heart');
+    this.pt = setTimeout(() => { this.poking = false; if (this.el.isConnected && this.state === pick) this.set(base); }, 1900);
+  }
+  sparks() {
+    this.p.fx.innerHTML = Array.from({ length: 7 }, (_, i) => `<path d="M0,10 C-14,0 -10,-12 0,-5 C10,-12 14,0 0,10 Z" fill="${i % 2 ? '#ff8fbf' : '#ffb3d1'}"/>`).join('');
+    [...this.p.fx.children].forEach((c, i) => {
+      const x = -120 + i * 40;
+      c.animate([{ transform: `translate(${x}px,-60px) scale(.4)`, opacity: 0 }, { transform: `translate(${x * 1.2}px,-170px) scale(1.6)`, opacity: 1, offset: .4 },
+        { transform: `translate(${x * 1.4}px,-260px) scale(1.2)`, opacity: 0 }], { duration: 1300, delay: i * 70, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' });
+    });
+  }
   follow() {
     const on = e => {
       if (!this.el.isConnected) { removeEventListener('pointermove', on); return; }
