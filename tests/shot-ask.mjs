@@ -50,6 +50,7 @@ await page.click('#refresh'); await page.waitForTimeout(500);
 await page.setViewportSize({ width: 1440, height: 900 });
 await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.querySelector('#nav button[data-page=home]').click(); });
 await page.evaluate(() => { window.__INTEL_API__.generate = async () => { await new Promise(r => setTimeout(r, 1500)); return { text: ['Сегодня горят три дела.', '1. ДСК ГРУПП: КП и вопросы Константину ещё не отправлены, срок был сегодня.', '2. Альфа-Банк: Соня не ответила на 3 вопроса по сериалу, напомнить 27 октября.', '3. UNIX PRO: ждём от Паши данные по гофре и логотип, без них 3D не начать.', 'Начните с ДСК: обновите КП-страницу и отправьте ссылку.'].join(String.fromCharCode(10)) }; }; });
+await page.waitForTimeout(600); await page.screenshot({ path: path.join(OUT, 'ask-0.png'), clip: { x: 1000, y: 760, width: 440, height: 140 } });
 await page.click('#ask'); await page.waitForTimeout(400);
 await page.screenshot({ path: path.join(OUT, 'ask-1.png') });
 await page.click('[data-askhint]'); await page.waitForTimeout(500);

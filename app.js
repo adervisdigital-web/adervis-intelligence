@@ -7503,19 +7503,209 @@ function navCounts() {
   return out;
 }
 
+// Ада — маскот «Спросить»: тело — знак ADERVIS, характер — в глазах и движении.
+const Ada = (() => {
+const OUTER = 'M2283.48,1138.57C2261.30,1152.80 2227.88,1159.00 2207.62,1156.29C2150.29,1148.62 2071.07,1115.92 2071.07,1115.92L1919.99,1055.74L1769.06,1115.53C1769.06,1115.53 1689.80,1148.24 1632.43,1155.91C1612.16,1158.62 1578.72,1152.41 1556.53,1138.18C1470.88,1083.26 1511.23,980.40 1514.02,972.71C1516.93,964.69 1799.30,415.32 1806.51,402.42C1813.72,389.52 1832.74,368.65 1859.13,355.14C1887.09,340.84 1919.99,339.31 1919.99,339.31C1924.20,339.62 1955.10,342.37 1981.05,355.65C2007.43,369.15 2026.44,390.02 2033.65,402.92C2040.85,415.82 2323.05,965.10 2325.96,973.12C2328.75,980.81 2369.07,1083.66 2283.48,1138.57Z';
+const C = { base: '#f6bd3a', shade: '#e09a1c', light: '#ffd767', ink: '#2a1d05', white: '#fffdf6' };
+const VB = { x: 1440, y: 300, w: 960, h: 920 };
+const E = { y: 805, x: [1838, 2002], rx: 66, ry: 80 };
+const LID = E.ry * 2 + 10;
+// у всех ртов одна структура пути (M Q Q Z) — формы плавно перетекают друг в друга
+const MOUTH = {
+  smile: 'M1876,915 Q1920,968 1964,915 Q1920,940 1876,915 Z',
+  open: 'M1870,908 Q1920,1006 1970,908 Q1920,922 1870,908 Z',
+  o: 'M1898,930 Q1920,982 1942,930 Q1920,880 1898,930 Z',
+  flat: 'M1890,924 Q1920,936 1950,924 Q1920,916 1890,924 Z',
+  sad: 'M1880,950 Q1920,900 1960,950 Q1920,926 1880,950 Z',
+  tiny: 'M1904,928 Q1920,946 1936,928 Q1920,936 1904,928 Z'
+};
+// top/low — сколько закрыто веками (0..1), tilt — наклон верхнего века, look — взгляд
+const POSE = {
+  idle:    { top: 0, low: 0, tilt: 0, mouth: 'smile', look: null },
+  hello:   { top: 0, low: .36, tilt: 0, mouth: 'open', look: [0, 0] },
+  curious: { top: 0, low: 0, tilt: 0, mouth: 'o', look: null, wide: true },
+  think:   { top: .38, low: 0, tilt: 0, mouth: 'flat', look: [.7, -.8] },
+  talk:    { top: 0, low: .12, tilt: 0, mouth: 'open', look: [0, .1] },
+  done:    { top: 0, low: .42, tilt: 0, mouth: 'open', look: [0, 0] },
+  alert:   { top: 0, low: 0, tilt: 0, mouth: 'o', look: [.8, -.3], wide: true },
+  sly:     { top: .32, low: 0, tilt: 22, mouth: 'smile', look: [-.6, 0] },
+  oops:    { top: .3, low: 0, tilt: -24, mouth: 'sad', look: [0, .7] },
+  sleep:   { top: 1, low: 0, tilt: 0, mouth: 'tiny', look: [0, 0] }
+};
+const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+let seq = 0;
+
+class Ada {
+  constructor(el, o = {}) {
+    this.el = el; this.id = 'ada' + (++seq); this.state = ''; this.loops = [];
+    el.classList.add('ada-host');
+    el.innerHTML = this.svg();
+    const q = s => [...el.querySelectorAll(s)];
+    this.p = { body: q('.a-body')[0], eyes: q('.a-eye'), pupils: q('.a-pupil'), top: q('.a-top'), low: q('.a-low'),
+      mouth: q('.a-mouth')[0], face: q('.a-face')[0], fx: q('.a-fx')[0], svg: q('svg')[0] };
+    // веки вращаются вокруг центра своего глаза
+    this.p.top.forEach((l, i) => { l.style.transformBox = 'view-box'; l.style.transformOrigin = `${E.x[i] - VB.x}px ${E.y - VB.y}px`; });
+    this.still = !!o.still;
+    this.set(o.mood || 'idle');
+    if (!calm() && !this.still) { this.blinkLoop(); this.idleLoop(); }
+    if (o.follow !== false && !this.still) this.follow();
+    if (o.interactive !== false) {
+      el.addEventListener('pointerenter', () => { this.hover = true; if (this.state === 'idle') this.set('curious'); });
+      el.addEventListener('pointerleave', () => { this.hover = false; if (this.state === 'curious') this.set('idle'); });
+      el.addEventListener('pointerdown', () => this.squash(.12));
+    }
+  }
+  svg() {
+    const g = this.id;
+    const eye = (x, i) => `<g class="a-eye">
+      <clipPath id="${g}e${i}"><ellipse cx="${x}" cy="${E.y}" rx="${E.rx}" ry="${E.ry}"/></clipPath>
+      <g clip-path="url(#${g}e${i})">
+        <ellipse cx="${x}" cy="${E.y}" rx="${E.rx}" ry="${E.ry}" fill="${C.white}"/>
+        <g class="a-pupil"><ellipse cx="${x}" cy="${E.y + 8}" rx="40" ry="50" fill="${C.ink}"/><circle cx="${x + 15}" cy="${E.y - 12}" r="15" fill="#fff"/></g>
+        <path class="a-top" d="M${x - 95},${E.y - E.ry - 4 - 260} H${x + 95} V${E.y - E.ry - 4} Q${x},${E.y - E.ry + 8} ${x - 95},${E.y - E.ry - 4} Z" fill="${C.base}"/>
+        <path class="a-low" d="M${x - 95},${E.y + E.ry + 4 + 260} H${x + 95} V${E.y + E.ry + 4} Q${x},${E.y + E.ry - 36} ${x - 95},${E.y + E.ry + 4} Z" fill="${C.base}"/>
+      </g>
+      <ellipse cx="${x}" cy="${E.y}" rx="${E.rx}" ry="${E.ry}" fill="none" stroke="${C.base}" stroke-width="5"/>
+      <path class="a-shut" d="M${x - 50},${E.y + 6} Q${x},${E.y + 44} ${x + 50},${E.y + 6}" stroke="${C.ink}" stroke-width="20" fill="none" stroke-linecap="round"/>
+    </g>`;
+    return `<svg viewBox="${VB.x} ${VB.y} ${VB.w} ${VB.h}" class="ada" role="img" aria-label="Ада">
+      <defs><clipPath id="${g}b"><path d="${OUTER}"/></clipPath></defs>
+      <ellipse class="a-shadow" cx="1920" cy="1176" rx="290" ry="26" fill="#000" opacity=".2"/>
+      <g class="a-body">
+        <g clip-path="url(#${g}b)">
+          <rect x="1400" y="300" width="1000" height="900" fill="${C.shade}"/>
+          <path d="${OUTER}" fill="${C.base}" transform="translate(-26,-34)"/>
+          <path d="M1700,820 Q1760,600 1880,420" stroke="${C.light}" stroke-width="44" stroke-linecap="round" fill="none" opacity=".85"/>
+        </g>
+        <g class="a-face">${eye(E.x[0], 0)}${eye(E.x[1], 1)}<path class="a-mouth" d="${MOUTH.smile}" fill="${C.ink}"/></g>
+      </g>
+      <g class="a-fx"></g>
+    </svg>`;
+  }
+  set(name) {
+    if (name === this.state) return this;
+    const p = POSE[name] || POSE.idle, P = this.p, prev = this.state;
+    this.state = name; this.el.dataset.mood = name;
+    this.stopLoops();
+    P.top.forEach((l, i) => l.style.transform = `translateY(${p.top * LID}px) rotate(${(i ? -1 : 1) * p.tilt}deg)`);
+    P.low.forEach(l => l.style.transform = `translateY(${-p.low * LID}px)`);
+    P.eyes.forEach(e => e.style.transform = p.wide ? 'scale(1.08)' : '');
+    P.mouth.style.d = `path('${MOUTH[p.mouth]}')`;
+    if (p.look) this.lookAt(p.look[0], p.look[1], true); else this.fixed = false;
+    P.fx.innerHTML = '';
+    if (calm() || this.still) return this;
+    if (prev && name !== 'idle') this.squash(.07);
+    ({ hello: () => this.hop(70), curious: () => this.hop(30), think: () => this.think(), talk: () => this.talk(), done: () => this.celebrate(),
+       alert: () => this.alert(), oops: () => this.loop(P.body, [{ transform: 'none' }, { transform: 'translateY(10px) scale(1.03,.96)' }, { transform: 'none' }], 2600),
+       sleep: () => this.sleep(), sly: () => this.loop(P.body, [{ transform: 'rotate(0)' }, { transform: 'rotate(-4deg)' }, { transform: 'rotate(0)' }], 2400) }[name] || (() => {}))();
+    return this;
+  }
+  loop(el, frames, duration, o = {}) { const a = el.animate(frames, { duration, iterations: Infinity, easing: 'ease-in-out', ...o }); this.loops.push(a); return a; }
+  stopLoops() { this.loops.forEach(a => a.cancel()); this.loops = []; }
+  squash(k = .1) {
+    if (calm()) return;
+    this.p.body.animate([{ transform: 'none' }, { transform: `scale(${1 + k},${1 - k})` }, { transform: `scale(${1 - k / 2},${1 + k / 2})` }, { transform: 'none' }],
+      { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)', composite: 'add' });
+  }
+  // прыжок: присела → взлетела вытянувшись → приземлилась сплющившись
+  hop(h = 60) {
+    this.p.body.animate([{ transform: 'none' }, { transform: 'scale(1.08,.9)', offset: .18 }, { transform: `translateY(-${h}px) scale(.95,1.06)`, offset: .48 },
+      { transform: 'scale(1.06,.94)', offset: .8 }, { transform: 'none' }], { duration: 620, easing: 'cubic-bezier(.33,1,.68,1)', composite: 'add' });
+  }
+  think() {
+    const P = this.p;
+    P.fx.innerHTML = `<g fill="${C.base}">${[0, 1, 2].map(i => `<circle cx="${2210 + i * 65}" cy="${520 - i * 58}" r="${20 + i * 7}"/>`).join('')}</g>`;
+    [...P.fx.querySelectorAll('circle')].forEach((c, i) => this.loop(c, [{ opacity: .25, transform: 'none' }, { opacity: 1, transform: 'translateY(-16px)' }, { opacity: .25, transform: 'none' }], 1200, { delay: i * 180 }));
+    this.loop(P.body, [{ transform: 'rotate(0)' }, { transform: 'rotate(-3deg)' }, { transform: 'rotate(2deg)' }, { transform: 'rotate(0)' }], 2600);
+  }
+  talk() {
+    const m = this.p.mouth, seqm = ['open', 'tiny', 'o', 'smile', 'open', 'flat', 'o'];
+    let i = 0;
+    const t = setInterval(() => { if (this.state !== 'talk') return clearInterval(t); m.style.d = `path('${MOUTH[seqm[i++ % seqm.length]]}')`; }, 140);
+    this.loops.push({ cancel: () => clearInterval(t) });
+    this.loop(this.p.body, [{ transform: 'none' }, { transform: 'translateY(-6px)' }, { transform: 'none' }], 900);
+  }
+  celebrate() {
+    this.hop(110); setTimeout(() => this.state === 'done' && this.hop(70), 680);
+    const P = this.p, cols = ['#f6bd3a', '#a07cff', '#ff5a4f', '#3ddc74', '#4cc3f5'];
+    P.fx.innerHTML = Array.from({ length: 24 }, (_, i) => `<rect x="1910" y="560" width="${18 + (i % 3) * 8}" height="${10 + (i % 2) * 8}" rx="4" fill="${cols[i % cols.length]}"/>`).join('');
+    [...P.fx.children].forEach((c, i) => {
+      const a = (i / 24) * Math.PI * 2, r = 330 + (i % 4) * 70;
+      c.animate([{ transform: 'translate(0,0) rotate(0)', opacity: 1 }, { transform: `translate(${Math.cos(a) * r}px,${Math.sin(a) * r * .7 - 120}px) rotate(${(i % 2 ? 1 : -1) * 280}deg)`, opacity: 1, offset: .6 },
+        { transform: `translate(${Math.cos(a) * r * 1.1}px,${Math.sin(a) * r * .7 + 260}px) rotate(${(i % 2 ? 1 : -1) * 420}deg)`, opacity: 0 }], { duration: 1500, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' });
+    });
+  }
+  alert() {
+    const P = this.p;
+    P.fx.innerHTML = `<g><rect x="2280" y="400" width="44" height="130" rx="22" fill="#ff5a4f"/><circle cx="2302" cy="575" r="25" fill="#ff5a4f"/></g>`;
+    P.fx.firstChild.animate([{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.25)', opacity: 1, offset: .6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.34,1.56,.64,1)', fill: 'forwards' });
+    this.hop(50);
+  }
+  sleep() {
+    const P = this.p;
+    P.fx.innerHTML = `<g fill="${C.base}" font-family="Unbounded, sans-serif" font-weight="700">${[0, 1, 2].map(i => `<text x="${2180 + i * 60}" y="${560 - i * 70}" font-size="${70 + i * 26}">z</text>`).join('')}</g>`;
+    [...P.fx.querySelectorAll('text')].forEach((t, i) => this.loop(t, [{ opacity: 0, transform: 'translate(0,30px)' }, { opacity: 1, offset: .3 }, { opacity: 0, transform: 'translate(50px,-70px)' }], 3000, { delay: i * 900, easing: 'ease-out' }));
+    this.loop(P.body, [{ transform: 'none' }, { transform: 'scale(1.03,.97)' }, { transform: 'none' }], 3800);
+  }
+  // моргает в случайные моменты, иногда дважды
+  blinkLoop() {
+    const blink = () => {
+      if (POSE[this.state]?.top >= .9) return;
+      this.p.top.forEach(l => { const t0 = l.style.transform; l.animate([{ transform: t0 }, { transform: `translateY(${LID}px)` }, { transform: t0 }], { duration: 170, easing: 'ease-in-out' }); });
+    };
+    const next = () => { if (!this.el.isConnected) return; this.bt = setTimeout(() => { if (!this.el.isConnected) return; blink(); if (Math.random() < .22) setTimeout(blink, 240); next(); }, 2200 + Math.random() * 3800); };
+    next();
+  }
+  // в покое иногда оглядывается или подпрыгивает
+  idleLoop() {
+    const act = () => {
+      if (!this.el.isConnected) return;
+      if (this.state === 'idle' && !this.hover) {
+        if (Math.random() < .6) { this.lookAt(-1, .1, true); setTimeout(() => this.lookAt(1, .1, true), 700); setTimeout(() => { this.fixed = false; }, 1500); }
+        else this.hop(28);
+      }
+      this.it = setTimeout(act, 7000 + Math.random() * 6000);
+    };
+    this.it = setTimeout(act, 5000);
+  }
+  lookAt(x, y, fixed) {
+    if (fixed) this.fixed = true;
+    this.p.pupils.forEach(l => l.style.transform = `translate(${x * 22}px,${y * 26}px)`);
+    this.p.face.style.transform = `translate(${x * 12}px,${y * 8}px)`;
+  }
+  follow() {
+    const on = e => {
+      if (!this.el.isConnected) { removeEventListener('pointermove', on); return; }
+      if (this.fixed) return;
+      const r = this.p.svg.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height * .55);
+      const d = Math.hypot(dx, dy) || 1, k = Math.min(1, d / 500);
+      this.lookAt(dx / d * k, dy / d * k);
+    };
+    addEventListener('pointermove', on);
+  }
+}
+return Ada;
+})();
+
 // «Спросить»: вопрос о делах студии, ответ — по данным Hub (заявки, брифы и КП,
 // план, кампании, проверенная база). Переписка живёт, пока открыта вкладка.
 const ASK_HINTS = ['Что горит сегодня?', 'Сколько денег в работе и у кого?', 'Кому пора напомнить о КП?', 'Что выходит в контенте на этой неделе?'];
 let askChat = [], askBusy = false;
 function askOpen() {
-  const msgs = askChat.map(m => `<div class="askmsg ${m.who}">${m.who === 'ai' ? `<i>${icon('assistant', 15)}</i>` : ''}<p>${E(m.text).replace(/\n/g, '<br>')}</p></div>`).join('');
-  modal(`<div class="askhead"><span class="askmark">${icon('assistant', 20)}</span><div><h2>Спросить</h2>
-      <small class="muted">Отвечает ИИ по данным Hub: заявки, брифы и КП, план, кампании, база знаний</small></div></div>
+  const msgs = askChat.map(m => `<div class="askmsg ${m.who}">${m.who === 'ai' ? `<span class="askava" data-err="${m.err ? 1 : ''}"></span>` : ''}<p>${E(m.text).replace(/\n/g, '<br>')}</p></div>`).join('');
+  modal(`<div class="askhead"><span class="askmark" id="askada"></span><div><h2>Спросить Аду</h2>
+      <small class="muted">Отвечаю по данным Hub: заявки, брифы и КП, план, кампании, база знаний</small></div></div>
     <div class="asklog" id="asklog" aria-live="polite">${msgs || `<div class="askhints">${ASK_HINTS.map(h => `<button type="button" class="chip" data-askhint="${E(h)}">${E(h)}</button>`).join('')}</div>`}
-      ${askBusy ? `<div class="askmsg ai busy"><i>${icon('assistant', 15)}</i><p><span class="askdots"><b></b><b></b><b></b></span></p></div>` : ''}</div>
+      ${askBusy ? `<div class="askmsg ai busy"><span class="askava"></span><p><span class="askdots"><b></b><b></b><b></b></span></p></div>` : ''}</div>
     <form id="askf" class="askform"><textarea id="askq" rows="1" maxlength="1000" placeholder="Например: у кого из клиентов КП без ответа больше трёх дней?" ${askBusy ? 'disabled' : ''}></textarea>
       <button class="primary" ${askBusy ? 'disabled' : ''} aria-label="Отправить вопрос">${icon('send', 17)}</button></form>
     <p class="muted asknote">Вопрос и данные Hub, включая суммы, уходят в ИИ. Ответ может ошибаться: важное проверяйте в разделе.</p>`, 'askdlg');
+  // Ада в шапке живёт вместе с разговором: думает, пока ждём ответ, говорит, когда он пришёл
+  const last = askChat[askChat.length - 1];
+  const ada = new Ada($('#askada'), { mood: askBusy ? 'think' : last?.err ? 'oops' : last?.who === 'ai' ? 'talk' : 'hello' });
+  if (!askBusy) setTimeout(() => ada.el.isConnected && ['talk', 'hello'].includes(ada.state) && ada.set('idle'), last?.who === 'ai' ? 2200 : 1600);
+  document.querySelectorAll('#asklog .askava').forEach(el => new Ada(el, { mood: el.closest('.busy') ? 'think' : el.dataset.err ? 'oops' : 'idle', still: !el.closest('.busy'), follow: false, interactive: false }));
   const log = $('#asklog'); log.scrollTop = log.scrollHeight;
   const q = $('#askq'); if (!askBusy) q.focus();
   q.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#askf').requestSubmit(); } };
@@ -7531,7 +7721,7 @@ async function askSend(text) {
     const r = await api.generate({ mode: 'ask', question: text, history });
     askChat.push({ who: 'ai', text: r.text || 'Пустой ответ.' });
   } catch (err) {
-    askChat.push({ who: 'ai', text: 'Не получилось ответить: ' + (err.message || 'ошибка сервера') });
+    askChat.push({ who: 'ai', err: true, text: 'Не получилось ответить: ' + (err.message || 'ошибка сервера') });
   } finally {
     askBusy = false;
     if ($('#modal').open && $('#modal').classList.contains('askdlg')) askOpen();
@@ -9109,7 +9299,8 @@ const hubMark = () => hubPlace($('.hubind'), $('#hubtabs .hubtab.active'));
 addEventListener('resize', hubMark);
 document.fonts?.ready.then(hubMark);
 $('#menu').innerHTML = `${icon('menu')}<span>Все разделы</span>`;
-$('#ask').innerHTML = `${icon('assistant', 18)}<span>Спросить</span>`;
+$('#ask').innerHTML = `<span class="askada"></span><span>Спросить Аду<small>отвечу по данным Hub</small></span>`;
+new Ada($('#ask .askada'), { mood: 'idle' });
 $('#ask').onclick = () => askOpen();
 $('#refresh').innerHTML = icon('refresh');
 $('#theme').innerHTML = icon('theme');
