@@ -7623,15 +7623,16 @@ function navCounts() {
 // полумесяцы, как у голосовых помощников. Думает — форма плывёт, ответ готов —
 // собирается в знак ADERVIS.
 const Ada = (() => {
-const ring = f => Array.from({ length: 12 }, (_, i) => f(i * Math.PI / 6));
+const ring = f => Array.from({ length: 24 }, (_, i) => f(i * Math.PI / 12));
 const roundTri = a => { const t = ((a % (2 * Math.PI / 3)) + 2 * Math.PI / 3) % (2 * Math.PI / 3); return Math.cos(Math.PI / 3) / Math.cos(t - Math.PI / 3); };
 const heart = ring(a => { const t = a + Math.PI; return [16 * Math.sin(t) ** 3 * 11.5, -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * 11.5 + 10]; });
 const SHAPES = {
   drop: ring(a => [Math.sin(a) * (150 + 18 * Math.max(0, -Math.cos(a))), -Math.cos(a) * 172 + 10]),
   gum: ring(a => { const r = 200 * (.6 * roundTri(a) + .4); return [Math.sin(a) * r * 1.04, -Math.cos(a) * r + 32]; }),
-  mark: ring(a => { const r = 205 * (.7 * roundTri(a) + .3); return [Math.sin(a) * r * 1.12, -Math.cos(a) * r + 30]; }).map((p, i) => i === 6 ? [0, 122] : p),
-  heart: heart.map((p, i, a) => a[(i + 6) % 12]),
-  tri: ring(a => { const r = 196 * (.6 * roundTri(a) + .4); return [Math.sin(a) * r * 1.12, -Math.cos(a) * r + 36]; }).map((p, i) => i === 6 ? [0, 126] : p),
+  mark: ring(a => { const r = 205 * (.7 * roundTri(a) + .3); return [Math.sin(a) * r * 1.12, -Math.cos(a) * r + 30]; }).map((p, i) => i === 12 ? [0, 122] : p),
+  heart: heart.map((p, i, a) => a[(i + 12) % 24]),
+  // «А» ADERVIS: 24 точки, снятые с настоящего контура знака с adervis.ru
+  tri: [[0, -169.9], [51.5, -141.2], [79.7, -86.8], [99.5, -48.3], [116.1, -15.9], [132.3, 15.7], [150.5, 51.2], [174.3, 97.9], [188.7, 160.1], [149.0, 200.2], [78.5, 187.0], [31.4, 168.4], [0.0, 155.9], [-31.4, 168.3], [-78.3, 186.9], [-148.9, 200.0], [-188.7, 160.1], [-174.4, 97.9], [-150.5, 51.2], [-132.4, 15.7], [-116.2, -15.9], [-99.5, -48.3], [-79.7, -86.9], [-51.6, -141.3]],
   tile: ring(a => { const n = 5, c = Math.abs(Math.cos(a)), si = Math.abs(Math.sin(a)); const r = 172 / Math.pow(c ** n + si ** n, 1 / n); return [Math.sin(a) * r, -Math.cos(a) * r + 20]; })
 };
 // буква U знака Hub (сетка 1000), ставится в плитку
