@@ -814,16 +814,16 @@ export function parseVoice(text: string): string {
 
 // Структура «режиссёр → актёр»: модели TTS 3.x читают вслух всё, что похоже на
 // текст, поэтому звучит только блок ТРАНСКРИПТ.
-export const VOICE_DIRECTION = `# AUDIO PROFILE: Russian female, a friendly producer at a video studio, telling her colleague about a client
-## THE SCENE: A short voice message in a work chat. The colleague forgot who this client is; the producer quickly and vividly brings them up to speed.
+export const VOICE_DIRECTION = `# AUDIO PROFILE: Russian young woman, a warm, playful and charming producer at a video studio, telling her colleague about a client
+## THE SCENE: A light, friendly voice message in a work chat. She is in a great mood, smiling the whole time, a little playful and teasing, but kind.
 ### DIRECTOR'S NOTES
-Style: lively, warm and expressive, with a smile in the voice, genuinely interested in the project. Conversational, like a real person, never like a robot or a news anchor. Clear emphasis on names, numbers and the next step.
-Pacing: brisk but clear, short natural pauses between thoughts.
+Style: feminine, soft and playful, with a clear smile in the voice and gentle, musical intonation that rises and falls. Light, cheerful, a bit flirty-friendly, never hurried, never like a news anchor or a robot.
+Pacing: unhurried and relaxed, slightly slower than normal conversation, with small playful pauses before names and numbers.
 Pronunciation: native Russian. Read numbers as words.
 #### TRANSCRIPT
 `;
 
-export function ttsRequest(model: string, key: string, baseUrl: string, script: string, voice = 'Kore') {
+export function ttsRequest(model: string, key: string, baseUrl: string, script: string, voice = 'Leda') {
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   return {
     url: `${base}/models/${model}:generateContent`,
@@ -980,7 +980,7 @@ const BRIEF_BASE_URL = Deno.env.get('BRIEF_AI_BASE_URL') || '';
 // Голосовая сводка читается только Gemini TTS: свой ключ VOICE_AI_KEY или ключ Gemini проекта.
 const VOICE_KEY = Deno.env.get('VOICE_AI_KEY') || (PROVIDER === 'gemini' ? AI_KEY : Deno.env.get('GEMINI_API_KEY')) || '';
 const VOICE_MODEL = Deno.env.get('VOICE_TTS_MODEL') || '';
-const VOICE_NAME = Deno.env.get('VOICE_TTS_VOICE') || 'Kore';
+const VOICE_NAME = Deno.env.get('VOICE_TTS_VOICE') || 'Leda';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

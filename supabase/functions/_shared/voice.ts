@@ -12,7 +12,7 @@ import type { Sb } from './outreach.ts';
 
 const PROVIDER = Deno.env.get('AI_PROVIDER') || 'gemini';
 const KEY = Deno.env.get('VOICE_AI_KEY') || (PROVIDER === 'gemini' ? Deno.env.get('AI_API_KEY') : '') || Deno.env.get('GEMINI_API_KEY') || '';
-const VOICE = Deno.env.get('VOICE_TTS_VOICE') || 'Kore';
+const VOICE = Deno.env.get('VOICE_TTS_VOICE') || 'Leda';
 let ttsModel = Deno.env.get('VOICE_TTS_MODEL') || '';
 
 export const voiceReady = () => !!KEY;

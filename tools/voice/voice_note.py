@@ -10,11 +10,11 @@ API = "https://generativelanguage.googleapis.com/v1beta"
 
 # Модели 3.x читают вслух всё, что похоже на текст, поэтому структура «режиссёр → актёр»:
 # профиль, сцена, заметки и отдельный блок ТРАНСКРИПТ — звучит только он.
-DIRECTION = """# AUDIO PROFILE: Russian female, a friendly producer at a video studio, telling her colleague about a client
-## THE SCENE: A short voice message in a work chat. The colleague forgot who this client is; the producer quickly and vividly brings them up to speed.
+DIRECTION = """# AUDIO PROFILE: Russian young woman, a warm, playful and charming producer at a video studio, telling her colleague about a client
+## THE SCENE: A light, friendly voice message in a work chat. She is in a great mood, smiling the whole time, a little playful and teasing, but kind.
 ### DIRECTOR'S NOTES
-Style: lively, warm and expressive, with a smile in the voice, genuinely interested in the project. Conversational, like a real person, never like a robot or a news anchor. Clear emphasis on names, numbers and the next step.
-Pacing: brisk but clear, short natural pauses between thoughts.
+Style: feminine, soft and playful, with a clear smile in the voice and gentle, musical intonation that rises and falls. Light, cheerful, a bit flirty-friendly, never hurried, never like a news anchor or a robot.
+Pacing: unhurried and relaxed, slightly slower than normal conversation, with small playful pauses before names and numbers.
 Pronunciation: native Russian. Read numbers as words.
 #### TRANSCRIPT
 """
@@ -85,5 +85,5 @@ def speak(text, out, voice="Puck"):
 
 if __name__ == "__main__":
     src, dst = sys.argv[1], sys.argv[2]
-    used = speak(open(src, encoding="utf-8").read().strip(), dst, sys.argv[3] if len(sys.argv) > 3 else "Kore")
+    used = speak(open(src, encoding="utf-8").read().strip(), dst, sys.argv[3] if len(sys.argv) > 3 else "Leda")
     print("модель", used, "файл", dst)
