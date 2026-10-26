@@ -3374,7 +3374,8 @@ for (const id of sections) {
       .filter(e => e.getBoundingClientRect().right > window.innerWidth + 1)
       .map(e => e.className || e.tagName).slice(0, 3);
     const tap = [...document.querySelectorAll('.main button, .main label.task')]
-      .filter(b => b.getBoundingClientRect().height > 0 && b.getBoundingClientRect().height < 36).length;
+      .filter(b => b.getBoundingClientRect().height > 0 && b.getBoundingClientRect().height < 36)
+      .map(b => `${b.className || b.tagName}|${b.textContent.trim().slice(0, 24)}@${Math.round(b.getBoundingClientRect().height)}`);
     return { scroll: doc.scrollWidth > window.innerWidth + 1, over, tap };
   });
   // снимки разделов продаж на телефоне — для глаз, не для проверки
@@ -3382,7 +3383,7 @@ for (const id of sections) {
     await m.screenshot({ path: path.join(OUT, `intel-mobile-${id}.png`), fullPage: true });
   }
   if (r.scroll) wide.push(id + ' (' + r.over.join(', ') + ')');
-  if (r.tap) small.push(id + ':' + r.tap);
+  if (r.tap.length) small.push(id + ':' + r.tap.join(', '));
 }
 check('ни один раздел не уезжает вбок на телефоне', wide.length === 0, wide.join(' | '));
 check('кнопки на телефоне не мельче 36 точек', small.length === 0, small.join(' | '));

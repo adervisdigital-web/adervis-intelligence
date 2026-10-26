@@ -15,7 +15,7 @@ import {
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
   providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider,
   sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav,
-  sanitizeAsk, askContext, buildAskPrompt, parseAsk
+  sanitizeAsk, askContext, buildAskPrompt, parseAsk, buildSayPrompt
 } from './compose.ts';
 
 // В новых проектах Supabase ключи называются иначе, чем в старых,
@@ -121,14 +121,19 @@ Deno.serve(async (req) => {
     // текст пишет модель, читает Gemini TTS. В ответе — WAV в base64 и сам текст.
     if (input?.mode === 'voice') {
       if (!VOICE_KEY) return json({ error: 'Для голоса нужен ключ Gemini: секрет VOICE_AI_KEY.' }, 500);
-      const task = sanitizeVoiceTask(input);
-      // по заявке берём и её бриф, если он есть: там разбор, КП и вопросы
-      const { data: brief } = task.brief ? await supabase.from('briefs').select('*').eq('id', task.brief).maybeSingle()
-        : await supabase.from('briefs').select('*').eq('lead_id', task.lead).order('updated_at', { ascending: false }).limit(1).maybeSingle();
-      const leadId = task.lead || brief?.lead_id;
-      const { data: lead } = leadId ? await supabase.from('leads').select('*').eq('id', leadId).maybeSingle() : { data: null };
-      if (!brief && !lead) return json({ error: 'Клиент не найден' }, 404);
-      const prompt = buildVoicePrompt(voiceContext(brief || {}, lead));
+      // «Послушать» ответ Ады — пересказ готового текста; иначе сводка по клиенту
+      const say = typeof input?.say === 'string' ? input.say.trim().slice(0, 4000) : '';
+      let prompt = say ? buildSayPrompt(say) : '';
+      if (!say) {
+        const task = sanitizeVoiceTask(input);
+        // по заявке берём и её бриф, если он есть: там разбор, КП и вопросы
+        const { data: brief } = task.brief ? await supabase.from('briefs').select('*').eq('id', task.brief).maybeSingle()
+          : await supabase.from('briefs').select('*').eq('lead_id', task.lead).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+        const leadId = task.lead || brief?.lead_id;
+        const { data: lead } = leadId ? await supabase.from('leads').select('*').eq('id', leadId).maybeSingle() : { data: null };
+        if (!brief && !lead) return json({ error: 'Клиент не найден' }, 404);
+        prompt = buildVoicePrompt(voiceContext(brief || {}, lead));
+      }
 
       const claude = !!BRIEF_KEY, provider = claude ? BRIEF_PROVIDER : PROVIDER;
       let script = '', usedModel = '', lastStatus = 0;

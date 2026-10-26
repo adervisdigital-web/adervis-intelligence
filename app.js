@@ -7700,7 +7700,8 @@ return Ada;
 const ASK_HINTS = ['Что горит сегодня?', 'Сколько денег в работе и у кого?', 'Кому пора напомнить о КП?', 'Что выходит в контенте на этой неделе?'];
 let askChat = [], askBusy = false, askFresh = false;
 function askOpen() {
-  const msgs = askChat.map(m => `<div class="askmsg ${m.who}">${m.who === 'ai' ? `<span class="askava" data-err="${m.err ? 1 : ''}"></span>` : ''}<p>${E(m.text).replace(/\n/g, '<br>')}</p></div>`).join('');
+  const msgs = askChat.map((m, i) => `<div class="askmsg ${m.who}">${m.who === 'ai' ? `<span class="askava" data-err="${m.err ? 1 : ''}"></span>` : ''}<div><p>${E(m.text).replace(/\n/g, '<br>')}</p>
+    ${m.who === 'ai' && !m.err ? `<button type="button" class="asklisten${askSay.i === i ? ' on' : ''}" data-say="${i}">${askSay.i === i ? (askSay.busy ? `${icon('loading', 14)} Ада записывает…` : `${icon('close', 14)} Остановить`) : `${icon('sound', 14)} Послушать`}</button>` : ''}</div></div>`).join('');
   modal(`<div class="askhead"><span class="askmark" id="askada"></span><div><h2>Спросить Аду</h2>
       <small class="muted">Отвечаю по данным Hub: заявки, брифы и КП, план, кампании, база знаний</small></div></div>
     <div class="asklog" id="asklog" aria-live="polite">${msgs || `<div class="askhints">${ASK_HINTS.map(h => `<button type="button" class="chip" data-askhint="${E(h)}">${E(h)}</button>`).join('')}</div>`}
@@ -7710,7 +7711,7 @@ function askOpen() {
     <p class="muted asknote">Вопрос и данные Hub, включая суммы, уходят в ИИ. Ответ может ошибаться: важное проверяйте в разделе.</p>`, 'askdlg');
   // Ада в шапке живёт вместе с разговором: думает, пока ждём ответ, говорит, когда он пришёл
   const last = askChat[askChat.length - 1];
-  const ada = new Ada($('#askada'), { mood: askBusy ? 'think' : last?.err ? 'oops' : last?.who === 'ai' && askFresh ? 'idle' : last?.who === 'ai' ? 'talk' : 'hello' });
+  const ada = askAda = new Ada($('#askada'), { mood: askBusy ? 'think' : last?.err ? 'oops' : last?.who === 'ai' && askFresh ? 'idle' : last?.who === 'ai' ? 'talk' : 'hello' });
   if (last?.who === 'ai' && !last.err && askFresh) { askFresh = false; ada.formed('talk'); }
   if (!askBusy) setTimeout(() => ada.el.isConnected && ['talk', 'hello'].includes(ada.state) && ada.set('idle'), last?.who === 'ai' ? 3800 : 1600);
   document.querySelectorAll('#asklog .askava').forEach(el => new Ada(el, { mood: el.closest('.busy') ? 'think' : el.dataset.err ? 'oops' : 'idle', still: !el.closest('.busy'), follow: false, interactive: false }));
@@ -7719,6 +7720,38 @@ function askOpen() {
   q.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#askf').requestSubmit(); } };
   $('#askf').onsubmit = e => { e.preventDefault(); askSend(q.value); };
   log.querySelectorAll('[data-askhint]').forEach(b => { b.onclick = () => askSend(b.dataset.askhint); });
+  log.querySelectorAll('[data-say]').forEach(b => { b.onclick = () => askListen(Number(b.dataset.say)); });
+  if (askSay.i >= 0 && !askSay.busy) ada.set('talk');
+}
+// «Послушать»: ответ Ады её голосом. Пока звучит — Ада говорит в шапке окна.
+let askAda = null, askSay = { i: -1, busy: false, audio: null }, askVoices = {};
+function askSayStop() {
+  askSay.audio?.pause();
+  askSay = { i: -1, busy: false, audio: null };
+  if ($('#modal').open && $('#modal').classList.contains('askdlg')) askOpen();
+}
+async function askListen(i) {
+  if (askSay.i === i) { askSayStop(); return; }
+  askSay.audio?.pause();
+  askSay = { i, busy: !askVoices[i], audio: null };
+  askOpen();
+  try {
+    if (!askVoices[i]) {
+      const r = await api.generate({ mode: 'voice', say: askChat[i].text });
+      const bytes = Uint8Array.from(atob(r.audio), c => c.charCodeAt(0));
+      askVoices[i] = URL.createObjectURL(new Blob([bytes], { type: r.mime || 'audio/wav' }));
+    }
+    if (askSay.i !== i) return;
+    const a = new Audio(askVoices[i]);
+    askSay = { i, busy: false, audio: a };
+    a.onended = askSayStop;
+    await a.play();
+    if ($('#modal').open) askOpen();
+  } catch (err) {
+    askSay = { i: -1, busy: false, audio: null };
+    toast('Голос не получился: ' + (err.message || 'ошибка сервера'));
+    if ($('#modal').open && $('#modal').classList.contains('askdlg')) askOpen();
+  }
 }
 async function askSend(text) {
   text = String(text || '').trim();

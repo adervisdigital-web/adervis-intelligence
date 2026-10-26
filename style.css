@@ -2620,3 +2620,8 @@ body.ptdragging,body.ptdragging *{cursor:grabbing!important;user-select:none}
 .hubtip.on{opacity:1;transform:none}
 html:not([data-theme=dark]) .hubtip{background:#16161a}
 @media(prefers-reduced-motion:reduce){.hubtip{transition:none}}
+
+.asklisten{display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:4px 10px;min-height:30px;border-radius:999px;font-size:12.5px;font-weight:600;color:var(--muted);background:none;border:1px solid var(--line)}
+.asklisten:hover,.asklisten.on{color:var(--ink);border-color:var(--gold)}
+.asklisten.on{background:color-mix(in srgb,var(--gold) 14%,transparent)}
+.askmsg > div{min-width:0}
