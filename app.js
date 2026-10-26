@@ -5237,6 +5237,8 @@ function briefAudit(b) {
   else if (!a.summary) add('warn', 'ТЗ', 'ТЗ ещё не разобрано: нажмите «Разобрать ТЗ с ИИ»', 'tz');
   else add('ok', 'ТЗ', 'ТЗ разобрано', 'analysis');
   if (a.summary && !(a.deliverables || []).length) add('warn', 'ТЗ', 'В разборе нет списка «Что сдаём»: в КП он берётся из этапов сметы', 'analysis');
+  const gaps = tzGaps(b).filter(g => !g.asked);   // уже спросили — ждём ответа, это видно в «Вопросах»
+  if ((b.source_text || '').trim().length >= 80 && gaps.length) add('warn', 'ТЗ', `В ТЗ и ответах клиента не нашёл: ${gaps.map(g => g.label).join(', ')}. Без этого цена и срок неточные`, 'questions', 'bfgaps');
   if (!String(b.client || '').trim()) add('err', 'ТЗ', 'Не указан клиент: его имя стоит в КП и смете', 'tz', 'bfedit');
 
   // Вопросы
@@ -5343,6 +5345,20 @@ function briefAudit(b) {
   return out;
 }
 
+// Чек-лист ТЗ: что обязательно знать до расчёта. Ищем в тексте ТЗ, разборе и ответах клиента.
+const TZ_CHECK = [
+  ['deadline', 'сроки', /срок|дедлайн|deadline|к\s+(январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)|до\s+\d{1,2}[.\s]|недел|\d{1,2}\.\d{1,2}(\.\d{2,4})?|запуск|старт/i, 'Какие сроки у проекта?'],
+  ['budget', 'бюджет', /бюджет|₽|руб|млн|тыс\.?\s*(руб|₽)|\d\s*к\b|стоимост|цена/i, 'Есть ли ориентир по бюджету?'],
+  ['format', 'формат и хронометраж', /хрономет|секунд|\bсек\b|минут|формат|16:9|9:16|вертикал|горизонт|4k|1080|разрешени|страниц|слайд|объ[её]м|\d+\s*(шт|серий|ролик)/i, 'Какой хронометраж и формат нужен?'],
+  ['place', 'где будут показывать', /площадк|\bvk\b|вконтакт|\bвк\b|telegram|телеграм|youtube|ютуб|сайт|выставк|экран|\bтв\b|reels|клип|соцсет|конференц|презентац|рутуб|rutube/i, 'Где будут показывать?'],
+  ['assets', 'материалы клиента', /логотип|брендбук|фирменн|шрифт|исходник|материал|гайдлайн|фото\s|стиль\s+компании/i, 'Сможете прислать логотип, брендбук и исходники?']
+];
+function tzGaps(b) {
+  const text = [b.source_text, b.title, b.analysis?.summary, ...(b.analysis?.deliverables || []).map(d => `${d.name} ${d.details}`), ...(b.questions || []).map(q => q.answer || '')].join(' \n ');
+  const asked = (b.questions || []).map(q => q.q || '').join(' \n ');
+  return TZ_CHECK.filter(([, , re]) => !re.test(text)).map(([id, label, re, q]) => ({ id, label, q, asked: re.test(asked) }));
+}
+
 const AUDIT_AREAS = ['ТЗ', 'Вопросы', 'Смета', 'Цены', 'План', 'КП', 'Документы'];
 function bfCheck(b) {
   const list = briefAudit(b), er = list.filter(x => x.lvl === 'err').length, w = list.filter(x => x.lvl === 'warn').length;
@@ -5357,7 +5373,7 @@ function bfCheck(b) {
       const xs = list.filter(x => x.area === area).sort((p, q) => ['err', 'warn', 'ok'].indexOf(p.lvl) - ['err', 'warn', 'ok'].indexOf(q.lvl));
       if (!xs.length) return '';
       return `<section class="audarea"><h3>${area}</h3><ul>${xs.map(x => `<li class="aud-${x.lvl}"><i>${icon(x.lvl === 'ok' ? 'check' : x.lvl === 'err' ? 'error' : 'warn', 15)}</i><span>${E(x.text)}</span>
-        ${x.lvl !== 'ok' ? (x.fix === 'kpdash' ? `<button data-action="bfdash">Убрать тире</button>` : x.fix ? `<button data-action="${x.fix}">Исправить</button>` : `<button data-action="bftab" data-id="${x.tab}">${E(tabName(x.tab))} ${icon('next', 13)}</button>`) : ''}</li>`).join('')}</ul></section>`;
+        ${x.lvl !== 'ok' ? (x.fix === 'kpdash' ? `<button data-action="bfdash">Убрать тире</button>` : x.fix === 'bfgaps' ? `<button data-action="bfgaps">Добавить вопросы</button>` : x.fix ? `<button data-action="${x.fix}">Исправить</button>` : `<button data-action="bftab" data-id="${x.tab}">${E(tabName(x.tab))} ${icon('next', 13)}</button>`) : ''}</li>`).join('')}</ul></section>`;
     }).join('')}
     <p class="muted">Проверка идёт по правилам студии: без длинных тире, без срока действия, предоплата 50%, цены круглые, смета для клиента сходится с итогом КП.</p></div>`;
 }
@@ -5636,7 +5652,7 @@ async function briefAi(b) {
     b.analysis = { summary: r.summary, goal: r.goal, audience: r.audience, deliverables: r.deliverables, risks: r.risks, unknowns: r.unknowns, model: r.model, at: today() };
     b.questions = (r.questions || []).map(q => ({ q: q.q, why: q.why, status: 'новый', answer: '' }));
     b.estimate = { reserve: b.estimate?.reserve ?? 10, round: b.estimate?.round || 5000,
-      items: (r.items || []).map(it => ({ group: it.group, name: it.name, role: it.role, min: it.min, max: it.max, variant: it.base === false ? 'full' : 'both' })),
+      items: (r.items || []).map(it => ({ group: it.group, name: it.name, ...(it.hint ? { hint: it.hint } : {}), role: it.role, min: it.min, max: it.max, variant: it.base === false ? 'full' : 'both' })),
       options: (r.options || []).map(o => ({ name: o.name, why: o.why, role: o.role, min: o.min, max: o.max })) };
     b.plan = r.plan || [];
     if (b.stage === 'Разбор') { b.stage = 'Вопросы'; b.next_step = 'Отправить клиенту вопросы по ТЗ'; b.next_on = today(); }
@@ -5820,6 +5836,14 @@ async function briefAction(btn) {
       const gs = estGroups(b), all = gs.every(g => (briefView.estShut || []).includes(g));
       briefView.estShut = all ? [] : gs;
       render(); break;
+    }
+    case 'bfgaps': {
+      const add = tzGaps(b).filter(g => !g.asked);
+      (b.questions ||= []).push(...add.map(g => ({ q: g.q, why: `В ТЗ нет: ${g.label}`, status: 'новый', answer: '' })));
+      briefView.tab = 'questions';
+      redraw();
+      toast(add.length ? `Добавлено вопросов: ${add.length}. Проверьте и отправьте клиенту` : 'Вопросы по этим пробелам уже есть: дождитесь ответа');
+      break;
     }
     case 'bfdash': {
       let n = 0;
