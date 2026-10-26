@@ -2577,3 +2577,12 @@ body.ptdragging,body.ptdragging *{cursor:grabbing!important;user-select:none}
 @keyframes ptland{0%,30%{box-shadow:inset 0 0 0 2px var(--gold);background:color-mix(in srgb,var(--gold) 10%,var(--panel))}100%{box-shadow:inset 0 0 0 2px transparent}}
 @media(hover:none){.ptgrip{opacity:.6}}
 @media(prefers-reduced-motion:reduce){.ptghost{transform:none}.ptlanded{animation:none}}
+
+/* строка плана: ручка в своём отступе, сводка рубрик в заголовке недели */
+.ptrow{padding-left:34px}
+.pthead{padding-left:34px}
+.ptgrip{left:9px}
+.ptrubs{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto}
+.ptrubs span{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:12px;color:var(--muted);background:color-mix(in srgb,var(--ink) 5%,transparent)}
+.ptrubs i{width:7px;height:7px;border-radius:2px;background:var(--rt)}
+@media(max-width:980px){.ptrow{padding-left:30px}.ptrubs{display:none}}

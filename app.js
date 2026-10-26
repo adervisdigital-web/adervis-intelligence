@@ -2046,7 +2046,7 @@ function planTable(items) {
     ${groups.map(g => `<section class="ptweek${g.key === cur ? ' now' : ''}" role="rowgroup">
       <header><h3>${title(g.key)}</h3>${g.key !== 'none' ? `<small class="muted">${shortDate(g.key)} — ${shortDate(addDays(g.key, 6))}</small>` : ''}
         <span class="ptwcount">${g.rows.length} ${plural(g.rows.length, 'публикация', 'публикации', 'публикаций')}${g.rows.some(p => p.status === 'Опубликовано') ? ` · вышло ${g.rows.filter(p => p.status === 'Опубликовано').length}` : ''}</span>
-        <span class="rubbar mini">${g.rows.map(p => `<i style="--rt:var(--tone-${rubricOf(p.rubric)?.tone || 'gray'})"></i>`).join('')}</span></header>
+        <span class="ptrubs">${[...new Set(g.rows.map(p => p.rubric).filter(Boolean))].map(rb => `<span style="--rt:var(--tone-${rubricOf(rb)?.tone || 'gray'})"><i></i>${E(rb)} ${g.rows.filter(p => p.rubric === rb).length}</span>`).join('')}</span></header>
       ${g.rows.map(planRow).join('')}</section>`).join('')}
   </div>`;
 }
