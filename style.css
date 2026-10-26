@@ -2599,8 +2599,12 @@ body.ptdragging,body.ptdragging *{cursor:grabbing!important;user-select:none}
 .ada .a-shut{opacity:0;transition:opacity .2s .1s}
 .ada-host[data-mood=sleep] .a-shut{opacity:1}
 @media (prefers-reduced-motion:reduce){.ada *{transition:none!important}}
-.askbtn .askada{width:46px;flex:none;margin:-4px 0 0 -6px}
+.askbtn .askada{width:58px;flex:none;margin:-4px 0 0 -6px}
 .askbtn > span:last-child{display:grid;line-height:1.15;text-align:left}
 .askbtn small{font-size:11.5px;font-weight:500;color:var(--muted)}
-.askhead .askmark{width:62px;height:auto;background:none;border-radius:0;display:block}
-.askmsg .askava{flex:none;width:34px;margin-top:2px}
+.askhead .askmark{width:78px;height:auto;background:none;border-radius:0;display:block}
+.askmsg .askava{flex:none;width:42px;margin-top:2px}
+
+/* Ада v2: стеклянное тело меняет форму */
+.ada .a-face,.ada .eqb{transform-box:fill-box;transform-origin:center}
+.ada .a-look{transition:transform .18s ease-out}

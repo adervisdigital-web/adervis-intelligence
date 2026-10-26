@@ -7503,196 +7503,189 @@ function navCounts() {
   return out;
 }
 
-// Ада — маскот «Спросить»: тело — знак ADERVIS, характер — в глазах и движении.
+// Ада — помощник Hub: «идеи обретают форму». Одно стеклянное тело перетекает
+// между формами (капля, леденец, знак ADERVIS, сердце), лицо — светящиеся
+// полумесяцы, как у голосовых помощников. Думает — форма плывёт, ответ готов —
+// собирается в знак ADERVIS.
 const Ada = (() => {
-const OUTER = 'M2283.48,1138.57C2261.30,1152.80 2227.88,1159.00 2207.62,1156.29C2150.29,1148.62 2071.07,1115.92 2071.07,1115.92L1919.99,1055.74L1769.06,1115.53C1769.06,1115.53 1689.80,1148.24 1632.43,1155.91C1612.16,1158.62 1578.72,1152.41 1556.53,1138.18C1470.88,1083.26 1511.23,980.40 1514.02,972.71C1516.93,964.69 1799.30,415.32 1806.51,402.42C1813.72,389.52 1832.74,368.65 1859.13,355.14C1887.09,340.84 1919.99,339.31 1919.99,339.31C1924.20,339.62 1955.10,342.37 1981.05,355.65C2007.43,369.15 2026.44,390.02 2033.65,402.92C2040.85,415.82 2323.05,965.10 2325.96,973.12C2328.75,980.81 2369.07,1083.66 2283.48,1138.57Z';
-const C = { base: '#f6bd3a', shade: '#e09a1c', light: '#ffd767', ink: '#2a1d05', white: '#fffdf6' };
-const VB = { x: 1440, y: 300, w: 960, h: 920 };
-const E = { y: 805, x: [1838, 2002], rx: 66, ry: 80 };
-const LID = E.ry * 2 + 10;
-const lashes = (x, i) => {
-  const s = i ? -1 : 1;                       // у правого глаза — зеркально
-  return [[206, 44], [228, 52], [250, 42]].map(([t, len]) => {
-    const a = (i ? 540 - t : t) * Math.PI / 180;
-    const bx = x + E.rx * Math.cos(a), by = E.y + E.ry * Math.sin(a);
-    const dx = Math.cos(a), dy = Math.sin(a) - .35;
-    const n = Math.hypot(dx, dy), ex = bx + dx / n * len, ey = by + dy / n * len;
-    return `<path d="M${bx.toFixed(1)},${by.toFixed(1)} Q${(bx + ex) / 2 - s * 6},${((by + ey) / 2 - 10).toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}" stroke="${C.ink}" stroke-width="13" fill="none" stroke-linecap="round"/>`;
-  }).join('');
+const ring = f => Array.from({ length: 12 }, (_, i) => f(i * Math.PI / 6));
+const roundTri = a => { const t = ((a % (2 * Math.PI / 3)) + 2 * Math.PI / 3) % (2 * Math.PI / 3); return Math.cos(Math.PI / 3) / Math.cos(t - Math.PI / 3); };
+const heart = ring(a => { const t = a + Math.PI; return [16 * Math.sin(t) ** 3 * 11.5, -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * 11.5 + 10]; });
+const SHAPES = {
+  drop: ring(a => [Math.sin(a) * (150 + 18 * Math.max(0, -Math.cos(a))), -Math.cos(a) * 172 + 10]),
+  gum: ring(a => { const r = 200 * (.6 * roundTri(a) + .4); return [Math.sin(a) * r * 1.04, -Math.cos(a) * r + 32]; }),
+  mark: ring(a => { const r = 205 * (.7 * roundTri(a) + .3); return [Math.sin(a) * r * 1.12, -Math.cos(a) * r + 30]; }).map((p, i) => i === 6 ? [0, 122] : p),
+  heart: heart.map((p, i, a) => a[(i + 6) % 12])
 };
-// у всех ртов одна структура пути (M Q Q Z) — формы плавно перетекают друг в друга
+// Catmull-Rom → Безье: у всех форм одна структура пути, поэтому они плавно перетекают
+const pathOf = P => {
+  const n = P.length, f = v => v.toFixed(1);
+  let d = `M${f(P[0][0])},${f(P[0][1])}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = P[(i - 1 + n) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
+    d += ` C${f(p1[0] + (p2[0] - p0[0]) / 6)},${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)},${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])},${f(p2[1])}`;
+  }
+  return d + ' Z';
+};
+const D = Object.fromEntries(Object.entries(SHAPES).map(([k, v]) => [k, pathOf(v)]));
+const P = { g: ['#fff0bf', '#ffbb45', '#ee7a1e', '#b2441a'], bounce: '#ff5f6d', rim: '#fff4dc', eye: '#fffef8', eyeb: '#ffe0a8', glow: '#fff3d2', aura: '#ff9a2a' };
+const FY = 26, FDX = 64, MY = 86;
+const cres = (x, y, w, h, t, rot) => `<path d="M${x - w},${y} Q${x},${y - h * 2} ${x + w},${y} Q${x},${y - h * 2 + t * 2} ${x - w},${y} Z" transform="rotate(${rot} ${x} ${y})" class="e"/>`;
+const lash = (x, y, w, h, s) => { const px = x + s * w * .84, py = y - h * .55; return `<path d="M${px},${py} l${s * 10},-12 M${px + s * 9},${py + 10} l${s * 15},-5" class="ls"/>`; };
+const EYES = {
+  open: (x, y, s) => cres(x, y + 12, 36, 34, 24, s * 8) + lash(x, y + 12, 36, 34, s),
+  happy: (x, y, s) => cres(x, y + 14, 38, 34, 16, s * 4) + lash(x, y + 14, 38, 34, s),
+  wink: (x, y, s) => s > 0 ? cres(x, y + 6, 36, -12, 9, 0) : cres(x, y + 12, 36, 34, 24, -8) + lash(x, y + 12, 36, 34, -1),
+  up: (x, y, s) => cres(x + 8, y - 4, 32, 30, 22, s * 14) + lash(x + 8, y - 4, 32, 30, s),
+  wide: (x, y, s) => `<ellipse cx="${x}" cy="${y}" rx="26" ry="34" class="e"/><path d="M${x + s * 16},${y - 30} l${s * 8},-12 M${x + s * 24},${y - 20} l${s * 13},-5" class="ls"/>`,
+  sad: (x, y, s) => cres(x, y + 12, 34, 26, 18, s * -22) + lash(x, y + 12, 34, 26, s),
+  shut: (x, y) => cres(x, y + 4, 38, -15, 11, 0),
+  heart: (x, y) => `<path d="M${x},${y + 24} C${x - 38},${y - 2} ${x - 28},${y - 36} ${x},${y - 16} C${x + 28},${y - 36} ${x + 38},${y - 2} ${x},${y + 24} Z" class="eh"/>`,
+  star: (x, y) => { const p = []; for (let i = 0; i < 10; i++) { const r = i % 2 ? 12 : 30, a = -Math.PI / 2 + i * Math.PI / 5; p.push(`${(x + r * Math.cos(a)).toFixed(1)},${(y + r * Math.sin(a)).toFixed(1)}`); } return `<polygon points="${p.join(' ')}" class="e" stroke-linejoin="round"/>`; }
+};
 const MOUTH = {
-  smile: 'M1876,915 Q1920,968 1964,915 Q1920,940 1876,915 Z',
-  open: 'M1870,908 Q1920,1006 1970,908 Q1920,922 1870,908 Z',
-  o: 'M1898,930 Q1920,982 1942,930 Q1920,880 1898,930 Z',
-  flat: 'M1890,924 Q1920,936 1950,924 Q1920,916 1890,924 Z',
-  sad: 'M1880,950 Q1920,900 1960,950 Q1920,926 1880,950 Z',
-  tiny: 'M1904,928 Q1920,946 1936,928 Q1920,936 1904,928 Z'
+  smile: `<path d="M-24,${MY} Q0,${MY + 28} 24,${MY} Q0,${MY + 13} -24,${MY} Z" class="e"/>`,
+  open: `<path d="M-26,${MY - 4} Q0,${MY + 46} 26,${MY - 4} Q0,${MY + 6} -26,${MY - 4} Z" class="e"/>`,
+  o: `<ellipse cx="0" cy="${MY + 6}" rx="11" ry="14" class="e"/>`,
+  flat: `<path d="M-16,${MY + 4} Q0,${MY + 10} 16,${MY + 4} Q0,${MY} -16,${MY + 4} Z" class="e"/>`,
+  sad: `<path d="M-20,${MY + 14} Q0,${MY - 10} 20,${MY + 14} Q0,${MY + 2} -20,${MY + 14} Z" class="e"/>`,
+  eq: [8, 18, 28, 16, 24, 12, 7].map((h, i) => `<rect class="e eqb" x="${-34 + i * 10}" y="${MY + 8 - h / 2}" width="6" height="${h}" rx="3"/>`).join('')
 };
-// top/low — сколько закрыто веками (0..1), tilt — наклон верхнего века, look — взгляд
+// состояние: форма тела, глаза, рот, руки, румянец
 const POSE = {
-  idle:    { top: 0, low: 0, tilt: 0, mouth: 'smile', look: null },
-  hello:   { top: 0, low: .36, tilt: 0, mouth: 'open', look: [0, 0] },
-  curious: { top: 0, low: 0, tilt: 0, mouth: 'o', look: null, wide: true },
-  think:   { top: .38, low: 0, tilt: 0, mouth: 'flat', look: [.7, -.8] },
-  talk:    { top: 0, low: .12, tilt: 0, mouth: 'open', look: [0, .1] },
-  done:    { top: 0, low: .42, tilt: 0, mouth: 'open', look: [0, 0] },
-  alert:   { top: 0, low: 0, tilt: 0, mouth: 'o', look: [.8, -.3], wide: true },
-  sly:     { top: .32, low: 0, tilt: 22, mouth: 'smile', look: [-.6, 0] },
-  oops:    { top: .3, low: 0, tilt: -24, mouth: 'sad', look: [0, .7] },
-  sleep:   { top: 1, low: 0, tilt: 0, mouth: 'tiny', look: [0, 0] }
+  idle: ['drop', 'open', 'smile', 'rest'], hello: ['drop', 'happy', 'open', 'wave'], curious: ['drop', 'wide', 'o', 'rest'],
+  think: ['gum', 'up', 'flat', 'rest'], talk: ['drop', 'open', 'eq', 'rest'], done: ['mark', 'star', 'open', 'up'],
+  love: ['heart', 'heart', 'smile', 'rest', 1], alert: ['drop', 'wide', 'o', 'rest'], sly: ['drop', 'wink', 'smile', 'rest'],
+  oops: ['drop', 'sad', 'sad', 'rest'], sleep: ['drop', 'shut', 'flat', 'rest']
 };
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 let seq = 0;
-
 class Ada {
   constructor(el, o = {}) {
-    this.el = el; this.id = 'ada' + (++seq); this.state = ''; this.loops = [];
+    this.el = el; this.id = 'ada' + (++seq); this.state = ''; this.loops = []; this.still = !!o.still;
     el.classList.add('ada-host');
     el.innerHTML = this.svg();
-    const q = s => [...el.querySelectorAll(s)];
-    this.p = { body: q('.a-body')[0], eyes: q('.a-eye'), pupils: q('.a-pupil'), top: q('.a-top'), lash: q('.a-lash'), low: q('.a-low'),
-      mouth: q('.a-mouth')[0], face: q('.a-face')[0], fx: q('.a-fx')[0], svg: q('svg')[0] };
-    // веки вращаются вокруг центра своего глаза
-    [...this.p.top, ...this.p.lash].forEach((l, k) => { const i = k % 2; l.style.transformBox = 'view-box'; l.style.transformOrigin = `${E.x[i]}px ${E.y}px`; });
-    this.still = !!o.still;
+    const q = s => el.querySelector(s);
+    this.p = { svg: q('svg'), shapes: [...el.querySelectorAll('.a-shape')], face: q('.a-face'), look: q('.a-look'), hands: q('.a-hands'), body: q('.a-body'), fx: q('.a-fx') };
+    this.shape = 'drop';
     this.set(o.mood || 'idle');
     if (!calm() && !this.still) { this.blinkLoop(); this.idleLoop(); }
     if (o.follow !== false && !this.still) this.follow();
-    if (o.interactive !== false) {
+    if (o.interactive !== false && !this.still) {
       el.addEventListener('pointerenter', () => { this.hover = true; if (this.state === 'idle') this.set('curious'); });
       el.addEventListener('pointerleave', () => { this.hover = false; if (this.state === 'curious') this.set('idle'); });
       el.addEventListener('pointerdown', () => this.squash(.12));
     }
   }
   svg() {
-    const g = this.id;
-    const eye = (x, i) => `<g class="a-eye">
-      <clipPath id="${g}e${i}"><ellipse cx="${x}" cy="${E.y}" rx="${E.rx}" ry="${E.ry}"/></clipPath>
-      <g clip-path="url(#${g}e${i})">
-        <ellipse cx="${x}" cy="${E.y}" rx="${E.rx}" ry="${E.ry}" fill="${C.white}"/>
-        <g class="a-pupil"><ellipse cx="${x}" cy="${E.y + 8}" rx="40" ry="50" fill="${C.ink}"/><circle cx="${x + 15}" cy="${E.y - 12}" r="15" fill="#fff"/></g>
-        <path class="a-top" d="M${x - 95},${E.y - E.ry - 4 - 260} H${x + 95} V${E.y - E.ry - 4} Q${x},${E.y - E.ry + 8} ${x - 95},${E.y - E.ry - 4} Z" fill="${C.base}"/>
-        <path class="a-low" d="M${x - 95},${E.y + E.ry + 4 + 260} H${x + 95} V${E.y + E.ry + 4} Q${x},${E.y + E.ry - 36} ${x - 95},${E.y + E.ry + 4} Z" fill="${C.base}"/>
-      </g>
-      <ellipse cx="${x}" cy="${E.y}" rx="${E.rx}" ry="${E.ry}" fill="none" stroke="${C.base}" stroke-width="5"/>
-      <path class="a-shut" d="M${x - 50},${E.y + 6} Q${x},${E.y + 44} ${x + 50},${E.y + 6}" stroke="${C.ink}" stroke-width="20" fill="none" stroke-linecap="round"/>
-      <g class="a-lash">${lashes(x, i)}</g>
-    </g>`;
-    return `<svg viewBox="${VB.x} ${VB.y} ${VB.w} ${VB.h}" class="ada" role="img" aria-label="Ада">
-      <defs><clipPath id="${g}b"><path d="${OUTER}"/></clipPath></defs>
-      <ellipse class="a-shadow" cx="1920" cy="1176" rx="290" ry="26" fill="#000" opacity=".2"/>
-      <g class="a-body">
-        <g clip-path="url(#${g}b)">
-          <rect x="1400" y="300" width="1000" height="900" fill="${C.shade}"/>
-          <path d="${OUTER}" fill="${C.base}" transform="translate(-26,-34)"/>
-          <path d="M1700,820 Q1760,600 1880,420" stroke="${C.light}" stroke-width="44" stroke-linecap="round" fill="none" opacity=".85"/>
-        </g>
-        <g class="a-face">${eye(E.x[0], 0)}${eye(E.x[1], 1)}<path class="a-mouth" d="${MOUTH.smile}" fill="${C.ink}"/></g>
-      </g>
-      <g class="a-fx"></g>
-    </svg>`;
+    const g = this.id, body = cls => `<path class="a-shape" d="${D.drop}" ${cls}`;
+    return `<svg viewBox="-270 -250 540 480" class="ada" data-ada="${g}" role="img" aria-label="Ада">
+  <defs>
+    <linearGradient id="${g}g" gradientUnits="userSpaceOnUse" x1="-160" y1="-190" x2="160" y2="190"><stop offset="0" stop-color="${P.g[0]}"/><stop offset=".33" stop-color="${P.g[1]}"/><stop offset=".7" stop-color="${P.g[2]}"/><stop offset="1" stop-color="${P.g[3]}"/></linearGradient>
+    <radialGradient id="${g}b" gradientUnits="userSpaceOnUse" cx="110" cy="170" r="190"><stop offset="0" stop-color="${P.bounce}" stop-opacity=".75"/><stop offset="1" stop-color="${P.bounce}" stop-opacity="0"/></radialGradient>
+    <radialGradient id="${g}s" gradientUnits="userSpaceOnUse" cx="-70" cy="-90" r="120"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#fff" stop-opacity=".3"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <pattern id="${g}led" patternUnits="userSpaceOnUse" width="6" height="5.6"><rect width="6" height="5.6" fill="${P.eyeb}" opacity=".75"/><rect width="6" height="3.4" fill="${P.eye}"/></pattern>
+    <filter id="${g}glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6" result="b"/><feFlood flood-color="${P.glow}"/><feComposite in2="b" operator="in" result="cb"/><feMerge><feMergeNode in="cb"/><feMergeNode in="cb"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="${g}aura" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="26"/></filter>
+    <filter id="${g}soft"><feGaussianBlur stdDeviation="8"/></filter>
+    <clipPath id="${g}c">${body('')}/></clipPath>
+  </defs>
+  <style>[data-ada=${g}] .e{fill:url(#${g}led)}[data-ada=${g}] .eh{fill:#ff8fbf}[data-ada=${g}] .ls{fill:none;stroke:${P.eye};stroke-width:5;stroke-linecap:round}</style>
+  <ellipse cx="0" cy="208" rx="150" ry="14" fill="#000" opacity=".25" filter="url(#${g}soft)"/>
+  <g class="a-body">
+    ${body(`fill="${P.aura}" opacity=".5" filter="url(#${g}aura)"`)}/>
+    <g class="a-hands"></g>
+    ${body(`fill="url(#${g}g)" opacity=".92"`)}/>
+    <g clip-path="url(#${g}c)">
+      <rect x="-270" y="-250" width="540" height="480" fill="url(#${g}b)"/>
+      ${body(`fill="none" stroke="${P.rim}" stroke-width="26" opacity=".5" filter="url(#${g}soft)"`)}/>
+      <ellipse cx="-66" cy="-92" rx="44" ry="80" transform="rotate(28 -66 -92)" fill="url(#${g}s)"/>
+      <ellipse cx="-84" cy="-118" rx="9" ry="22" transform="rotate(28 -84 -118)" fill="#fff" opacity=".85"/>
+    </g>
+    <g class="a-look"><g class="a-face" filter="url(#${g}glow)"></g></g>
+  </g>
+  <g class="a-fx"></g>
+</svg>`;
   }
-  set(name) {
-    if (name === this.state) return this;
-    const p = POSE[name] || POSE.idle, P = this.p, prev = this.state;
-    this.state = name; this.el.dataset.mood = name;
-    this.stopLoops();
-    P.top.forEach((l, i) => l.style.transform = `translateY(${p.top * LID}px) rotate(${(i ? -1 : 1) * p.tilt}deg)`);
-    // ресницы держатся за кромку века; у спящей лежат вниз на закрытом глазу
-    P.lash.forEach((l, i) => l.style.transform = p.top >= .9 ? 'translateY(14px) scaleY(-.9)' : `translateY(${p.top * LID * .82}px) rotate(${(i ? -1 : 1) * p.tilt}deg)`);
-    P.low.forEach(l => l.style.transform = `translateY(${-p.low * LID}px)`);
-    P.eyes.forEach(e => e.style.transform = p.wide ? 'scale(1.08)' : '');
-    P.mouth.style.d = `path('${MOUTH[p.mouth]}')`;
-    if (p.look) this.lookAt(p.look[0], p.look[1], true); else this.fixed = false;
-    P.fx.innerHTML = '';
-    if (calm() || this.still) return this;
-    if (prev && name !== 'idle') this.squash(.07);
-    ({ hello: () => this.hop(70), curious: () => this.hop(30), think: () => this.think(), talk: () => this.talk(), done: () => this.celebrate(),
-       alert: () => this.alert(), oops: () => this.loop(P.body, [{ transform: 'none' }, { transform: 'translateY(10px) scale(1.03,.96)' }, { transform: 'none' }], 2600),
-       sleep: () => this.sleep(), sly: () => this.loop(P.body, [{ transform: 'rotate(0)' }, { transform: 'rotate(-4deg)' }, { transform: 'rotate(0)' }], 2400) }[name] || (() => {}))();
-    return this;
-  }
-  loop(el, frames, duration, o = {}) { const a = el.animate(frames, { duration, iterations: Infinity, easing: 'ease-in-out', ...o }); this.loops.push(a); return a; }
-  stopLoops() { this.loops.forEach(a => a.cancel()); this.loops = []; }
-  squash(k = .1) {
-    if (calm()) return;
-    this.p.body.animate([{ transform: 'none' }, { transform: `scale(${1 + k},${1 - k})` }, { transform: `scale(${1 - k / 2},${1 + k / 2})` }, { transform: 'none' }],
-      { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)', composite: 'add' });
-  }
-  // прыжок: присела → взлетела вытянувшись → приземлилась сплющившись
-  hop(h = 60) {
-    this.p.body.animate([{ transform: 'none' }, { transform: 'scale(1.08,.9)', offset: .18 }, { transform: `translateY(-${h}px) scale(.95,1.06)`, offset: .48 },
-      { transform: 'scale(1.06,.94)', offset: .8 }, { transform: 'none' }], { duration: 620, easing: 'cubic-bezier(.33,1,.68,1)', composite: 'add' });
-  }
-  think() {
-    const P = this.p;
-    P.fx.innerHTML = `<g fill="${C.base}">${[0, 1, 2].map(i => `<circle cx="${2210 + i * 65}" cy="${520 - i * 58}" r="${20 + i * 7}"/>`).join('')}</g>`;
-    [...P.fx.querySelectorAll('circle')].forEach((c, i) => this.loop(c, [{ opacity: .25, transform: 'none' }, { opacity: 1, transform: 'translateY(-16px)' }, { opacity: .25, transform: 'none' }], 1200, { delay: i * 180 }));
-    this.loop(P.body, [{ transform: 'rotate(0)' }, { transform: 'rotate(-3deg)' }, { transform: 'rotate(2deg)' }, { transform: 'rotate(0)' }], 2600);
-  }
-  talk() {
-    const m = this.p.mouth, seqm = ['open', 'tiny', 'o', 'smile', 'open', 'flat', 'o'];
-    let i = 0;
-    const t = setInterval(() => { if (this.state !== 'talk') return clearInterval(t); m.style.d = `path('${MOUTH[seqm[i++ % seqm.length]]}')`; }, 140);
-    this.loops.push({ cancel: () => clearInterval(t) });
-    this.loop(this.p.body, [{ transform: 'none' }, { transform: 'translateY(-6px)' }, { transform: 'none' }], 900);
-  }
-  celebrate() {
-    this.hop(110); setTimeout(() => this.state === 'done' && this.hop(70), 680);
-    const P = this.p, cols = ['#f6bd3a', '#a07cff', '#ff5a4f', '#3ddc74', '#4cc3f5'];
-    P.fx.innerHTML = Array.from({ length: 24 }, (_, i) => `<rect x="1910" y="560" width="${18 + (i % 3) * 8}" height="${10 + (i % 2) * 8}" rx="4" fill="${cols[i % cols.length]}"/>`).join('');
-    [...P.fx.children].forEach((c, i) => {
-      const a = (i / 24) * Math.PI * 2, r = 330 + (i % 4) * 70;
-      c.animate([{ transform: 'translate(0,0) rotate(0)', opacity: 1 }, { transform: `translate(${Math.cos(a) * r}px,${Math.sin(a) * r * .7 - 120}px) rotate(${(i % 2 ? 1 : -1) * 280}deg)`, opacity: 1, offset: .6 },
-        { transform: `translate(${Math.cos(a) * r * 1.1}px,${Math.sin(a) * r * .7 + 260}px) rotate(${(i % 2 ? 1 : -1) * 420}deg)`, opacity: 0 }], { duration: 1500, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' });
+  morph(to) {
+    if (to === this.shape) return;
+    const from = this.shape; this.shape = to;
+    this.p.shapes.forEach(s => {
+      s.setAttribute('d', D[to]);
+      if (!calm() && !this.still) s.animate([{ d: `path('${D[from]}')` }, { d: `path('${D[to]}')` }], { duration: 520, easing: 'cubic-bezier(.34,1.3,.64,1)' });
     });
   }
-  alert() {
-    const P = this.p;
-    P.fx.innerHTML = `<g><rect x="2280" y="400" width="44" height="130" rx="22" fill="#ff5a4f"/><circle cx="2302" cy="575" r="25" fill="#ff5a4f"/></g>`;
-    P.fx.firstChild.animate([{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.25)', opacity: 1, offset: .6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.34,1.56,.64,1)', fill: 'forwards' });
-    this.hop(50);
+  set(name) {
+    if (name === this.state || !POSE[name]) return this;
+    const [shape, eyes, mouth, hands, blush] = POSE[name], prev = this.state;
+    this.state = name; this.el.dataset.mood = name;
+    this.stopLoops();
+    this.morph(shape);
+    const hand = (x, y, r) => `<g transform="rotate(${r} ${x} ${y})"><ellipse cx="${x}" cy="${y}" rx="23" ry="32" fill="url(#${this.id}g)"/><ellipse cx="${x - 7}" cy="${y - 12}" rx="6" ry="9" fill="#fff" opacity=".65"/></g>`;
+    this.p.hands.innerHTML = { rest: hand(-212, 116, 24) + hand(212, 108, -20), wave: hand(-212, 116, 24) + hand(212, -40, 30), up: hand(-200, -70, -26) + hand(200, -70, 26) }[hands];
+    this.p.face.innerHTML = (blush ? `<g fill="#ff6f9a" opacity=".5"><ellipse cx="-96" cy="72" rx="24" ry="13"/><ellipse cx="96" cy="72" rx="24" ry="13"/></g>` : '')
+      + EYES[eyes](-FDX, FY, -1) + EYES[eyes](FDX, FY, 1) + MOUTH[mouth];
+    this.p.fx.innerHTML = '';
+    if (calm() || this.still) return this;
+    if (prev) this.squash(.07);
+    if (name === 'hello' || name === 'curious' || name === 'alert') this.hop(name === 'curious' ? 26 : 50);
+    if (name === 'think') {
+      // идея зреет: форма плывёт между каплей и леденцом
+      this.loop(this.p.shapes, [{ d: `path('${D.gum}')` }, { d: `path('${D.drop}')` }, { d: `path('${D.gum}')` }], 1800);
+      this.p.fx.innerHTML = `<g fill="#fff3d2">${[0, 1, 2].map(i => `<rect x="${170 + i * 32}" y="${-150 - i * 30}" width="${14 + i * 4}" height="${14 + i * 4}" rx="4"/>`).join('')}</g>`;
+      [...this.p.fx.querySelectorAll('rect')].forEach((r, i) => this.loops.push(r.animate([{ opacity: .2 }, { opacity: 1 }, { opacity: .2 }], { duration: 1100, delay: i * 180, iterations: Infinity })));
+    }
+    if (name === 'talk') this.el.querySelectorAll('.eqb').forEach((b, i) => this.loops.push(b.animate([{ transform: 'scaleY(.35)' }, { transform: 'scaleY(1.15)' }, { transform: 'scaleY(.5)' }],
+      { duration: 380 + i * 37, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out' })));
+    if (name === 'done') { this.hop(90); setTimeout(() => this.state === 'done' && this.hop(60), 650); this.confetti(); }
+    if (name === 'love') this.hop(40);
+    if (name === 'sleep') this.loop([this.p.body], [{ transform: 'none' }, { transform: 'scale(1.03,.97)' }, { transform: 'none' }], 3800);
+    return this;
   }
-  sleep() {
-    const P = this.p;
-    P.fx.innerHTML = `<g fill="${C.base}" font-family="Unbounded, sans-serif" font-weight="700">${[0, 1, 2].map(i => `<text x="${2180 + i * 60}" y="${560 - i * 70}" font-size="${70 + i * 26}">z</text>`).join('')}</g>`;
-    [...P.fx.querySelectorAll('text')].forEach((t, i) => this.loop(t, [{ opacity: 0, transform: 'translate(0,30px)' }, { opacity: 1, offset: .3 }, { opacity: 0, transform: 'translate(50px,-70px)' }], 3000, { delay: i * 900, easing: 'ease-out' }));
-    this.loop(P.body, [{ transform: 'none' }, { transform: 'scale(1.03,.97)' }, { transform: 'none' }], 3800);
+  loop(els, frames, duration) { (Array.isArray(els) ? els : [els]).forEach(e => this.loops.push(e.animate(frames, { duration, iterations: Infinity, easing: 'ease-in-out' }))); }
+  stopLoops() { this.loops.forEach(a => a.cancel()); this.loops = []; }
+  squash(k = .1) {
+    if (calm() || this.still) return;
+    this.p.body.animate([{ transform: 'none' }, { transform: `scale(${1 + k},${1 - k})` }, { transform: `scale(${1 - k / 2},${1 + k / 2})` }, { transform: 'none' }], { duration: 420, easing: 'cubic-bezier(.22,1,.36,1)' });
   }
-  // моргает в случайные моменты, иногда дважды
+  hop(h = 60) {
+    this.p.body.animate([{ transform: 'none' }, { transform: 'scale(1.08,.9)', offset: .18 }, { transform: `translateY(-${h}px) scale(.95,1.06)`, offset: .48 },
+      { transform: 'scale(1.06,.94)', offset: .8 }, { transform: 'none' }], { duration: 620, easing: 'cubic-bezier(.33,1,.68,1)' });
+  }
+  confetti() {
+    const cols = ['#ffbb45', '#ff8fbf', '#fff3d2', '#a07cff', '#3ddc74'];
+    this.p.fx.innerHTML = Array.from({ length: 22 }, (_, i) => `<rect x="-8" y="-60" width="${10 + (i % 3) * 4}" height="${6 + (i % 2) * 4}" rx="2" fill="${cols[i % 5]}"/>`).join('');
+    [...this.p.fx.children].forEach((c, i) => {
+      const a = (i / 22) * Math.PI * 2, r = 170 + (i % 4) * 35;
+      c.animate([{ transform: 'translate(0,0)', opacity: 1 }, { transform: `translate(${Math.cos(a) * r}px,${Math.sin(a) * r * .7 - 60}px) rotate(${(i % 2 ? 1 : -1) * 300}deg)`, opacity: 1, offset: .6 },
+        { transform: `translate(${Math.cos(a) * r * 1.1}px,${Math.sin(a) * r * .7 + 140}px) rotate(${(i % 2 ? 1 : -1) * 420}deg)`, opacity: 0 }], { duration: 1500, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' });
+    });
+  }
+  // «ответ готов»: на пару секунд собирается в знак ADERVIS, потом обратно в каплю
+  formed(next = 'talk') {
+    if (calm() || this.still) return this.set(next);
+    this.set('done'); setTimeout(() => this.el.isConnected && this.state === 'done' && this.set(next), 1500);
+    return this;
+  }
   blinkLoop() {
-    const blink = () => {
-      if (POSE[this.state]?.top >= .9) return;
-      this.p.top.forEach(l => { const t0 = l.style.transform; l.animate([{ transform: t0 }, { transform: `translateY(${LID}px)` }, { transform: t0 }], { duration: 170, easing: 'ease-in-out' }); });
-      this.p.lash.forEach(l => { const t0 = l.style.transform; l.animate([{ transform: t0 }, { transform: 'translateY(14px) scaleY(-.9)' }, { transform: t0 }], { duration: 170, easing: 'ease-in-out' }); });
-    };
+    const blink = () => { if (['sleep', 'done', 'love'].includes(this.state)) return; this.p.face.animate([{ transform: 'none' }, { transform: 'scaleY(.1)' }, { transform: 'none' }], { duration: 170, easing: 'ease-in-out' }); };
     const next = () => { if (!this.el.isConnected) return; this.bt = setTimeout(() => { if (!this.el.isConnected) return; blink(); if (Math.random() < .22) setTimeout(blink, 240); next(); }, 2200 + Math.random() * 3800); };
     next();
   }
-  // в покое иногда оглядывается или подпрыгивает
   idleLoop() {
     const act = () => {
       if (!this.el.isConnected) return;
-      if (this.state === 'idle' && !this.hover) {
-        if (Math.random() < .6) { this.lookAt(-1, .1, true); setTimeout(() => this.lookAt(1, .1, true), 700); setTimeout(() => { this.fixed = false; }, 1500); }
-        else this.hop(28);
-      }
+      if (this.state === 'idle' && !this.hover) { if (Math.random() < .5) this.hop(26); else { this.fixed = true; this.lookAt(-1, 0); setTimeout(() => this.lookAt(1, 0), 700); setTimeout(() => { this.fixed = false; }, 1500); } }
       this.it = setTimeout(act, 7000 + Math.random() * 6000);
     };
     this.it = setTimeout(act, 5000);
   }
-  lookAt(x, y, fixed) {
-    if (fixed) this.fixed = true;
-    this.p.pupils.forEach(l => l.style.transform = `translate(${x * 22}px,${y * 26}px)`);
-    this.p.face.style.transform = `translate(${x * 12}px,${y * 8}px)`;
-  }
+  lookAt(x, y) { this.p.look.style.transform = `translate(${x * 16}px,${y * 12}px)`; }
   follow() {
     const on = e => {
       if (!this.el.isConnected) { removeEventListener('pointermove', on); return; }
       if (this.fixed) return;
-      const r = this.p.svg.getBoundingClientRect();
-      const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height * .55);
+      const r = this.p.svg.getBoundingClientRect(), dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height * .5);
       const d = Math.hypot(dx, dy) || 1, k = Math.min(1, d / 500);
       this.lookAt(dx / d * k, dy / d * k);
     };
@@ -7705,7 +7698,7 @@ return Ada;
 // «Спросить»: вопрос о делах студии, ответ — по данным Hub (заявки, брифы и КП,
 // план, кампании, проверенная база). Переписка живёт, пока открыта вкладка.
 const ASK_HINTS = ['Что горит сегодня?', 'Сколько денег в работе и у кого?', 'Кому пора напомнить о КП?', 'Что выходит в контенте на этой неделе?'];
-let askChat = [], askBusy = false;
+let askChat = [], askBusy = false, askFresh = false;
 function askOpen() {
   const msgs = askChat.map(m => `<div class="askmsg ${m.who}">${m.who === 'ai' ? `<span class="askava" data-err="${m.err ? 1 : ''}"></span>` : ''}<p>${E(m.text).replace(/\n/g, '<br>')}</p></div>`).join('');
   modal(`<div class="askhead"><span class="askmark" id="askada"></span><div><h2>Спросить Аду</h2>
@@ -7717,8 +7710,9 @@ function askOpen() {
     <p class="muted asknote">Вопрос и данные Hub, включая суммы, уходят в ИИ. Ответ может ошибаться: важное проверяйте в разделе.</p>`, 'askdlg');
   // Ада в шапке живёт вместе с разговором: думает, пока ждём ответ, говорит, когда он пришёл
   const last = askChat[askChat.length - 1];
-  const ada = new Ada($('#askada'), { mood: askBusy ? 'think' : last?.err ? 'oops' : last?.who === 'ai' ? 'talk' : 'hello' });
-  if (!askBusy) setTimeout(() => ada.el.isConnected && ['talk', 'hello'].includes(ada.state) && ada.set('idle'), last?.who === 'ai' ? 2200 : 1600);
+  const ada = new Ada($('#askada'), { mood: askBusy ? 'think' : last?.err ? 'oops' : last?.who === 'ai' && askFresh ? 'idle' : last?.who === 'ai' ? 'talk' : 'hello' });
+  if (last?.who === 'ai' && !last.err && askFresh) { askFresh = false; ada.formed('talk'); }
+  if (!askBusy) setTimeout(() => ada.el.isConnected && ['talk', 'hello'].includes(ada.state) && ada.set('idle'), last?.who === 'ai' ? 3800 : 1600);
   document.querySelectorAll('#asklog .askava').forEach(el => new Ada(el, { mood: el.closest('.busy') ? 'think' : el.dataset.err ? 'oops' : 'idle', still: !el.closest('.busy'), follow: false, interactive: false }));
   const log = $('#asklog'); log.scrollTop = log.scrollHeight;
   const q = $('#askq'); if (!askBusy) q.focus();
@@ -7733,7 +7727,7 @@ async function askSend(text) {
   askChat.push({ who: 'me', text }); askBusy = true; askOpen();
   try {
     const r = await api.generate({ mode: 'ask', question: text, history });
-    askChat.push({ who: 'ai', text: r.text || 'Пустой ответ.' });
+    askChat.push({ who: 'ai', text: r.text || 'Пустой ответ.' }); askFresh = true;
   } catch (err) {
     askChat.push({ who: 'ai', err: true, text: 'Не получилось ответить: ' + (err.message || 'ошибка сервера') });
   } finally {
