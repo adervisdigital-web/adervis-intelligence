@@ -2918,3 +2918,28 @@ html:not([data-theme=dark]) body::before{opacity:.04;mix-blend-mode:multiply}
   html body .main{padding-bottom:140px}
 }
 @media (prefers-reduced-motion:reduce){.ddhint,.ddpop,.ddava{transition:none;animation:none}}
+
+/* ===== Проверка брифа ===== */
+.bfok{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:color-mix(in srgb,#22c55e 22%,transparent);color:#22c55e;vertical-align:-3px}
+.bfaudit{display:grid;gap:18px}
+.audhead{display:flex;gap:14px;align-items:center;padding:16px 18px;border-radius:16px;border:1px solid var(--line)}
+.audhead h2{margin:0 0 2px}.audhead p{margin:0;color:var(--muted)}
+.audicon{flex:none;width:44px;height:44px;border-radius:14px;display:grid;place-items:center}
+.aud-ok.audhead{background:color-mix(in srgb,#22c55e 9%,var(--panel));border-color:color-mix(in srgb,#22c55e 35%,var(--line))}
+.aud-ok .audicon{background:#22c55e;color:#06210f}
+.aud-warn.audhead{background:color-mix(in srgb,var(--gold) 9%,var(--panel));border-color:color-mix(in srgb,var(--gold) 35%,var(--line))}
+.aud-warn .audicon{background:var(--gold);color:#141414}
+.aud-err.audhead{background:color-mix(in srgb,#ef4444 9%,var(--panel));border-color:color-mix(in srgb,#ef4444 40%,var(--line))}
+.aud-err .audicon{background:#ef4444;color:#fff}
+.audarea h3{margin:0 0 6px;font-size:13px;color:var(--muted);font-weight:600}
+.audarea ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.audarea li{display:flex;gap:10px;align-items:center;padding:9px 10px;border-radius:12px;background:color-mix(in srgb,var(--ink) 3%,transparent)}
+.audarea li i{flex:none;display:grid;place-items:center}
+.audarea li span{flex:1;min-width:0;font-size:13.5px;line-height:1.4}
+.audarea li.aud-ok i{color:#22c55e}.audarea li.aud-ok span{color:var(--muted)}
+.audarea li.aud-warn i{color:var(--gold)}
+.audarea li.aud-err i{color:#ef4444}
+.audarea li.aud-err{background:color-mix(in srgb,#ef4444 8%,transparent)}
+.audarea li button{flex:none;height:32px;padding:0 12px;border-radius:10px;font-size:12.5px;display:inline-flex;align-items:center;gap:4px}
+.kpchecks li.err svg{color:#ef4444}
+@media(max-width:720px){.audarea li{flex-wrap:wrap}.audarea li button{margin-left:25px}}

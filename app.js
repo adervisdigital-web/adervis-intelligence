@@ -4379,7 +4379,7 @@ async function tgLink() {
 // «На сегодня».
 
 const BRIEF_STAGES = ['Разбор', 'Вопросы', 'Расчёт', 'КП', 'Переговоры', 'Сделка'];
-const BRIEF_TABS = [['tz', 'ТЗ'], ['analysis', 'Разбор'], ['questions', 'Вопросы'], ['estimate', 'Смета'], ['plan', 'План'], ['kp', 'КП'], ['talk', 'Диалог']];
+const BRIEF_TABS = [['tz', 'ТЗ'], ['analysis', 'Разбор'], ['questions', 'Вопросы'], ['estimate', 'Смета'], ['plan', 'План'], ['kp', 'КП'], ['check', 'Проверка'], ['talk', 'Диалог']];
 const VARIANTS = [['both', 'В обоих'], ['full', 'Только полный'], ['base', 'Только базовый']];
 const Q_STATUS = ['новый', 'задан', 'ответ'];
 let briefView = { id: '', tab: 'tz', busy: false, error: '' };
@@ -4659,7 +4659,7 @@ function renderBrief(b) {
     ${briefNow(b)}
     <div class="subnav bftabs" role="tablist">${BRIEF_TABS.map(([k, t]) => `<button role="tab" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}" data-action="bftab" data-id="${k}">${t}${tabBadge(b, k)}</button>`).join('')}</div>
   </div>`;
-  const body = { tz: bfTz, analysis: bfAnalysis, questions: bfQuestions, estimate: bfEstimate, plan: bfPlan, kp: bfKp, talk: bfTalk }[tab](b);
+  const body = { tz: bfTz, analysis: bfAnalysis, questions: bfQuestions, estimate: bfEstimate, plan: bfPlan, kp: bfKp, check: bfCheck, talk: bfTalk }[tab](b);
   return head + `<div class="bfbody">${body}</div>`;
 }
 
@@ -4744,6 +4744,8 @@ async function briefVoiceNote(b) {
 function tabBadge(b, k) {
   if (k === 'questions') { const n = (b.questions || []).filter(q => q.status !== 'ответ').length; return n ? ` <b class="navbadge">${n}</b>` : ''; }
   if (k === 'estimate') { const n = (b.estimate?.items || []).length; return n ? ` <small>${n}</small>` : ''; }
+  if (k === 'check') { const a = briefAudit(b), er = a.filter(x => x.lvl === 'err').length, w = a.filter(x => x.lvl === 'warn').length;
+    return er ? ` <b class="navbadge late">${er}</b>` : w ? ` <b class="navbadge">${w}</b>` : ` <span class="bfok">${icon('check', 13)}</span>`; }
   return '';
 }
 
@@ -5208,6 +5210,151 @@ function kpChecks(b) {
   ];
 }
 
+// ---- Проверка брифа: ТЗ, вопросы, смета, цены, тексты КП и документы.
+// Всё по правилам студии и по данным самого брифа, без ИИ: результат одинаковый
+// при каждом открытии. lvl: err — так отправлять нельзя, warn — проверьте, ok — в порядке.
+// Бюджет клиента из ответов: «3–4 млн», «до 500 тыс», «около 200 000 ₽».
+function parseBudget(text) {
+  const t = String(text || '').toLowerCase().replace(/\u00a0/g, ' ');
+  const unit = u => /млн|миллион/.test(u) ? 1e6 : /тыс|т\.р|к\b|k\b/.test(u) ? 1e3 : 1;
+  const n = x => Number(String(x).replace(/\s/g, '').replace(',', '.'));
+  let m = t.match(/(\d[\d\s]*(?:[.,]\d+)?)\s*(?:-|–|—|до)\s*(\d[\d\s]*(?:[.,]\d+)?)\s*(млн|миллион\w*|тыс\w*|т\.р\.?|k|к)?/);
+  if (m) { const u = unit(m[3] || ''); const a = n(m[1]) * u, b = n(m[2]) * u; if (b >= 1e4) return [Math.min(a, b), Math.max(a, b)]; }
+  m = t.match(/(?:до|не более|в пределах|максимум)\s*(\d[\d\s]*(?:[.,]\d+)?)\s*(млн|миллион\w*|тыс\w*|т\.р\.?|k|к)?/);
+  if (m) { const v = n(m[1]) * unit(m[2] || ''); if (v >= 1e4) return [0, v]; }
+  m = t.match(/(\d[\d\s]*(?:[.,]\d+)?)\s*(млн|миллион\w*|тыс\w*|т\.р\.?|₽|руб)/);
+  if (m) { const v = n(m[1]) * unit(m[2]); if (v >= 1e4) return [v * .9, v * 1.1]; }
+  return null;
+}
+const AUDIT_PLACEHOLDER = /(новая работа|новый этап|дополнительная работа|todo|xxx|\?\?\?|\[.+?\]|…\s*$)/i;
+function briefAudit(b) {
+  const out = [], add = (lvl, area, text, tab, fix) => out.push({ lvl, area, text, tab, fix });
+  const a = b.analysis || {}, e = b.estimate || {}, items = e.items || [], kp = b.kp || {}, k = kpData(b);
+  const qs = b.questions || [], plan = b.plan || [];
+  const stageAt = BRIEF_STAGES.indexOf(b.stage), late = stageAt >= BRIEF_STAGES.indexOf('КП');
+
+  // ТЗ и разбор
+  if ((b.source_text || '').trim().length < 80 && !a.summary) add('err', 'ТЗ', 'Нет текста ТЗ: без него разбор и смета держатся на догадках', 'tz');
+  else if (!a.summary) add('warn', 'ТЗ', 'ТЗ ещё не разобрано: нажмите «Разобрать ТЗ с ИИ»', 'tz');
+  else add('ok', 'ТЗ', 'ТЗ разобрано', 'analysis');
+  if (a.summary && !(a.deliverables || []).length) add('warn', 'ТЗ', 'В разборе нет списка «Что сдаём»: в КП он берётся из этапов сметы', 'analysis');
+  if (!String(b.client || '').trim()) add('err', 'ТЗ', 'Не указан клиент: его имя стоит в КП и смете', 'tz', 'bfedit');
+
+  // Вопросы
+  const notSent = qs.filter(q => q.status === 'новый').length, waiting = qs.filter(q => q.status === 'задан').length;
+  const emptyAns = qs.filter(q => q.status === 'ответ' && !String(q.answer || '').trim()).length;
+  if (emptyAns) add('err', 'Вопросы', `${emptyAns} ${plural(emptyAns, 'вопрос отмечен', 'вопроса отмечены', 'вопросов отмечены')} «ответ», но сам ответ не записан`, 'questions');
+  if (notSent && late) add('warn', 'Вопросы', `${notSent} ${plural(notSent, 'вопрос', 'вопроса', 'вопросов')} так и не ушли клиенту: они попадут в сообщение с КП`, 'questions');
+  if (waiting) add('warn', 'Вопросы', `Ждём ответ на ${waiting} ${plural(waiting, 'вопрос', 'вопроса', 'вопросов')}: цена остаётся предварительной, так и пишем клиенту`, 'questions');
+  if (qs.length && !notSent && !waiting && !emptyAns) add('ok', 'Вопросы', 'На все вопросы есть ответы', 'questions');
+
+  // Смета
+  const rates = new Map(db.studio_rates.map(r => [r.id, Number(r.rate) || 0]));
+  if (!items.length) add('err', 'Смета', 'Смета пустая', 'estimate');
+  else {
+    const bad = (cond, text) => { const xs = items.filter(cond); if (xs.length) add('err', 'Смета', `${text}: ${xs.slice(0, 3).map(it => `«${it.name || 'без названия'}»`).join(', ')}${xs.length > 3 ? ` и ещё ${xs.length - 3}` : ''}`, 'estimate'); return xs.length; };
+    let errs = 0;
+    errs += bad(it => !String(it.name || '').trim() || AUDIT_PLACEHOLDER.test(it.name), 'Работы без нормального названия');
+    errs += bad(it => !rates.get(it.role), 'Роль без ставки — строка стоит 0 ₽');
+    errs += bad(it => Number(it.min) > Number(it.max), 'Часов «от» больше, чем «до»');
+    errs += bad(it => !(Number(it.max) > 0), 'Ноль часов');
+    const wide = items.filter(it => Number(it.min) > 0 && Number(it.max) / Number(it.min) > 2.5);
+    if (wide.length) add('warn', 'Смета', `Слишком широкая вилка часов (больше чем в 2,5 раза): ${wide.slice(0, 3).map(it => `«${it.name}»`).join(', ')}. Уточните после ответов клиента`, 'estimate');
+    // повтор — только внутри одного этапа: у двух роликов этапы могут называться одинаково
+    const names = items.map(it => (it.group || '') + '|' + String(it.name || '').trim().toLowerCase()), dup = [...new Set(names.filter((x, i) => !x.endsWith('|') && names.indexOf(x) !== i))].map(x => x.split('|')[1]);
+    if (dup.length) add('warn', 'Смета', `Повторяются работы: ${dup.slice(0, 3).map(x => `«${x}»`).join(', ')}. Не посчитали ли дважды?`, 'estimate');
+    const res = Number(e.reserve ?? 10);
+    if (res < 5 || res > 25) add('warn', 'Смета', `Запас на правки и ведение ${res}%: обычно 10–15%`, 'estimate');
+    const aiJob = /нейросет|ии-|\bии\b|генерац|ai[- ]|midjourney|kling|seedance|sora|veo/i.test([b.source_text, b.title, a.summary, ...items.map(it => it.name)].join(' '));
+    if (aiJob && !items.some(it => it.role === 'cost')) add('warn', 'Смета', 'Проект с ИИ-генерацией, а строки расходов на сервисы и подписки нет', 'estimate');
+    if (!items.some(it => it.role === 'pm') && items.length >= 4) add('warn', 'Смета', 'Нет ведения проекта: созвоны, согласования и переписка тоже время', 'estimate');
+    const full = briefTotals(b, 'full'), hidden = items.filter(it => it.fold && inVariant(it, 'full')).reduce((n, it) => n + ((Number(it.min) + Number(it.max)) / 2) * rateIn(b, it.role), 0);
+    if (full.max && hidden / ((full.min + full.max) / 2 / (1 + res / 100)) > .4) add('warn', 'Смета', 'Больше 40% стоимости «вшито» в другие строки: клиенту будет непонятно, за что цена', 'estimate');
+    if (!errs) add('ok', 'Смета', `Смета в порядке: ${items.length} ${plural(items.length, 'работа', 'работы', 'работ')}`, 'estimate');
+  }
+
+  // Цены
+  const priceMark = out.length;
+  const calcFull = suggested(b, 'full'), calcBase = hasBase(b) ? suggested(b, 'base') : 0;
+  if (!(k.full > 0)) add('err', 'Цены', 'Нет цены полного варианта', 'kp');
+  else {
+    const dev = calcFull ? (k.full - calcFull) / calcFull : 0;
+    if (Math.abs(dev) > .25) add('warn', 'Цены', `Цена в КП ${rub(k.full)} ${dev > 0 ? 'выше' : 'ниже'} расчёта сметы (${rub(calcFull)}) на ${Math.round(Math.abs(dev) * 100)}%. Если так задумано, всё в порядке`, 'kp');
+    if (k.full % 1000) add('warn', 'Цены', `Цена ${rub(k.full)} не круглая: округлите до тысяч`, 'kp');
+    if (k.base > 0 && k.base >= k.full) add('err', 'Цены', `Базовый вариант (${rub(k.base)}) не дешевле полного (${rub(k.full)})`, 'kp');
+    if (k.base > 0 && k.base % 1000) add('warn', 'Цены', `Цена базового ${rub(k.base)} не круглая`, 'kp');
+    if (calcBase && !(k.base > 0)) add('warn', 'Цены', 'В смете есть работы «только полный/базовый», а цена базового варианта не задана: клиент увидит один вариант', 'kp');
+    if (k.base > 0 && !hasBase(b)) add('err', 'Цены', 'Задана цена базового варианта, но в смете нет отличий между вариантами: строки в обоих одинаковые', 'estimate');
+    if (k.base > 0 && !(kp.label_full && kp.label_base)) add('warn', 'КП', 'Не подписано, чем отличаются варианты («Полный — коротко», «Базовый — коротко»)', 'kp');
+    // бюджет клиента из ответов на вопросы
+    const ansText = qs.filter(q => /бюджет|стоим|цен|сумм/i.test(q.q + ' ' + (q.answer || ''))).map(q => q.answer || '').join(' ');
+    const budget = parseBudget(ansText);
+    if (budget) {
+      const [lo, hi] = budget, top = Math.max(k.full, k.base || 0), bottom = k.base > 0 ? k.base : k.full;
+      const span = lo ? `${rub(lo)}–${rub(hi)}` : `до ${rub(hi)}`;
+      if (top > hi * 1.05) add('warn', 'Цены', `Цена выше бюджета клиента (${span}): объясните, за что, или предложите базовый вариант`, 'kp');
+      else if (lo && top < lo * .85) add('warn', 'Цены', `Цена заметно ниже бюджета клиента (${span}): можно поднять или добавить работ`, 'kp');
+      else add('ok', 'Цены', `Цена в бюджете клиента (${span})`, 'kp');
+      void bottom;
+    }
+    if (k.prepay !== 50) add('warn', 'Цены', `Предоплата ${k.prepay}%: обычно берём 50%`, 'kp');
+  }
+  if (k.full > 0 && !out.slice(priceMark).some(x => x.area === 'Цены')) add('ok', 'Цены', `Цены: ${k.base > 0 ? `${rub(k.base)} / ` : ''}${rub(k.full)}`, 'kp');
+  (e.options || []).filter(o => o.name && !(optionPrice(b, o) > 0)).forEach(o => add('err', 'Цены', `У опции «${o.name}» нет цены`, 'estimate'));
+
+  // Тексты КП
+  const slots = kpTextSlots(b), dashes = slots.reduce((n, [o, f]) => n + (o[f].match(/—/g) || []).length, 0);
+  if (dashes) add('err', 'КП', `Длинные тире в текстах для клиента: ${dashes}. Их не ставим`, 'kp', 'kpdash');
+  const holders = slots.filter(([o, f]) => AUDIT_PLACEHOLDER.test(o[f]));
+  if (holders.length) add('err', 'КП', `Черновые слова в текстах: ${holders.slice(0, 3).map(([o, f]) => `«${String(o[f]).slice(0, 40)}»`).join(', ')}`, 'kp');
+  if (slots.some(([o, f]) => /действует до|предложение действительно/i.test(o[f]))) add('err', 'КП', 'В тексте есть срок действия предложения: владельцы просили его не показывать', 'kp');
+  if (!String(k.intro || '').trim()) add('warn', 'КП', 'Нет вступления: клиент не увидит свою задачу нашими словами', 'kp');
+  if (!String(kp.contact || '').trim()) add('err', 'КП', 'Не указано контактное лицо', 'kp');
+  if (!String(k.phone || '').trim()) add('err', 'КП', 'Нет телефона в КП', 'kp');
+  if (!(kp.media || []).length) add('warn', 'КП', 'Нет примеров: клиент увидит только текст. Добавьте кадры в «КП-ссылке»', 'kp', 'bfshare');
+
+  // План
+  if (!plan.length) add('warn', 'План', 'Нет этапов работ: в КП не будет сроков', 'plan');
+  else {
+    const emptyRes = plan.filter(st => !String(st.result || '').trim()).length;
+    if (plan.some(st => !(Number(st.days) > 0))) add('err', 'План', 'Есть этап без срока', 'plan');
+    if (plan.some(st => AUDIT_PLACEHOLDER.test(st.stage || ''))) add('err', 'План', 'Есть этап с черновым названием', 'plan');
+    if (emptyRes) add('warn', 'План', `У ${emptyRes} ${plural(emptyRes, 'этапа', 'этапов', 'этапов')} не написано, что клиент получит`, 'plan');
+    if (!plan.some(st => !(Number(st.days) > 0)) && !emptyRes) add('ok', 'План', `План: ${planDays(b)} ${plural(planDays(b), 'рабочий день', 'рабочих дня', 'рабочих дней')}`, 'plan');
+  }
+
+  // Документы: смета для клиента сходится с ценами КП
+  if (items.length && k.full > 0) {
+    const d = estimateDoc(b), rows = d.groups.flatMap(g => g.rows);
+    const sum = v => rows.reduce((n, r) => n + (r[v] || 0), 0);
+    const okFull = Math.abs(sum('full') - d.k.full) < 1, okBase = !d.two || Math.abs(sum('base') - d.k.base) < 1;
+    const zero = rows.filter(r => r.full === 0 || r.base === 0).length;
+    if (!okFull || !okBase) add('err', 'Документы', `Строки сметы для клиента не сходятся с итогом: ${rub(sum('full'))} против ${rub(d.k.full)}`, 'estimate');
+    else if (zero) add('warn', 'Документы', `${zero} ${plural(zero, 'строка', 'строки', 'строк')} в смете для клиента по 0 ₽`, 'estimate');
+    else add('ok', 'Документы', `Смета, PDF и Excel сходятся с КП: ${d.two ? `${rub(d.k.base)} / ` : ''}${rub(d.k.full)}`, 'kp');
+  }
+  return out;
+}
+
+const AUDIT_AREAS = ['ТЗ', 'Вопросы', 'Смета', 'Цены', 'План', 'КП', 'Документы'];
+function bfCheck(b) {
+  const list = briefAudit(b), er = list.filter(x => x.lvl === 'err').length, w = list.filter(x => x.lvl === 'warn').length;
+  const tabName = id => (BRIEF_TABS.find(([k]) => k === id) || [])[1] || '';
+  const verdict = er ? ['err', `${er} ${plural(er, 'ошибка', 'ошибки', 'ошибок')}${w ? ` и ${w} ${plural(w, 'замечание', 'замечания', 'замечаний')}` : ''}`, 'С ошибками КП отправлять нельзя: клиент увидит неверные цифры или черновой текст.']
+    : w ? ['warn', `${w} ${plural(w, 'замечание', 'замечания', 'замечаний')}`, 'Ошибок нет. Посмотрите замечания: часть из них может быть задумана так.']
+    : ['ok', 'Всё в порядке', 'Можно отправлять КП клиенту.'];
+  return `<div class="card bfaudit">
+    <div class="audhead aud-${verdict[0]}"><span class="audicon">${icon(verdict[0] === 'ok' ? 'check' : 'warn', 22)}</span>
+      <div><h2>${verdict[1]}</h2><p>${verdict[2]}</p></div></div>
+    ${AUDIT_AREAS.map(area => {
+      const xs = list.filter(x => x.area === area).sort((p, q) => ['err', 'warn', 'ok'].indexOf(p.lvl) - ['err', 'warn', 'ok'].indexOf(q.lvl));
+      if (!xs.length) return '';
+      return `<section class="audarea"><h3>${area}</h3><ul>${xs.map(x => `<li class="aud-${x.lvl}"><i>${icon(x.lvl === 'ok' ? 'check' : x.lvl === 'err' ? 'error' : 'warn', 15)}</i><span>${E(x.text)}</span>
+        ${x.lvl !== 'ok' ? (x.fix === 'kpdash' ? `<button data-action="bfdash">Убрать тире</button>` : x.fix ? `<button data-action="${x.fix}">Исправить</button>` : `<button data-action="bftab" data-id="${x.tab}">${E(tabName(x.tab))} ${icon('next', 13)}</button>`) : ''}</li>`).join('')}</ul></section>`;
+    }).join('')}
+    <p class="muted">Проверка идёт по правилам студии: без длинных тире, без срока действия, предоплата 50%, цены круглые, смета для клиента сходится с итогом КП.</p></div>`;
+}
+
 // Сообщение клиенту со ссылкой на КП — по правилам владельцев: коротко,
 // по-человечески, без длинных тире; цены из КП, открытые вопросы из брифа.
 function kpMessage(b, link) {
@@ -5269,8 +5416,9 @@ async function kpShareModal(b) {
       <input type="file" id="kpmfile" accept="image/*,video/mp4,video/webm,video/quicktime" multiple hidden> <small class="muted" id="kpmst"></small></p>
     <p class="muted">На странице: задача, ${media.length ? 'примеры, ' : ''}стиль${kp.concept ? ', концепция' : ''}, что сделаем, смета, этапы, условия, наши работы и кнопка «Позвонить». Часов и ставок студии там нет.</p>
     <h3>Перед отправкой</h3>
-    <ul class="kpchecks">${kpChecks(b).map(c => `<li class="${c.ok ? 'ok' : 'warn'}">${icon(c.ok ? 'check' : 'warn', 15)}<span>${E(c.text)}</span>
-      ${c.fix ? `<button data-action="${c.fix}">Убрать</button>` : ''}</li>`).join('')}</ul>
+    ${(() => { const au = briefAudit(b).filter(x => x.lvl !== 'ok'); return au.length ? `<ul class="kpchecks">${au.slice(0, 8).map(c => `<li class="${c.lvl === 'err' ? 'err' : 'warn'}">${icon(c.lvl === 'err' ? 'error' : 'warn', 15)}<span>${E(c.text)}</span>
+      ${c.fix === 'kpdash' ? `<button data-action="kpdash">Убрать</button>` : ''}</li>`).join('')}</ul>${au.length > 8 ? `<p class="muted">И ещё ${au.length - 8}: всё во вкладке «Проверка».</p>` : ''}`
+      : `<ul class="kpchecks"><li class="ok">${icon('check', 15)}<span>Проверка пройдена: цены, смета и тексты в порядке</span></li></ul>`; })()}
     <div class="formactions"><button class="primary" id="kppublish">${icon('link', 15)} ${kp.share_token ? 'Обновить страницу' : 'Опубликовать и получить ссылку'}</button></div>`, 'wide');
   const box = $('#modal');
   box.querySelectorAll('[data-kpm]').forEach(inp => inp.oninput = () => { media[Number(inp.dataset.kpm)][inp.dataset.k] = inp.value; queueBriefSave(b); });
@@ -5320,6 +5468,8 @@ async function kpShareModal(b) {
   const copy = box.querySelector('[data-action=kpcopy]');
   if (copy) copy.onclick = () => copyText(kpLink(kp.share_token), 'Ссылка на КП скопирована — отправьте клиенту');
   $('#kppublish').onclick = async ev => {
+    const errs = briefAudit(b).filter(x => x.lvl === 'err');
+    if (errs.length && !confirm(`В КП ${errs.length} ${plural(errs.length, 'ошибка', 'ошибки', 'ошибок')}:\n\n${errs.slice(0, 5).map(x => '• ' + x.text).join('\n')}\n\nВсё равно опубликовать?`)) return;
     ev.target.disabled = true;
     try {
       flushPendingBrief();
@@ -5662,6 +5812,12 @@ async function briefAction(btn) {
     case 'bfgrpall': {
       const gs = estGroups(b), all = gs.every(g => (briefView.estShut || []).includes(g));
       briefView.estShut = all ? [] : gs;
+      render(); break;
+    }
+    case 'bfdash': {
+      let n = 0;
+      for (const [o, f] of kpTextSlots(b)) { const v = dashFix(o[f]); if (v !== o[f]) { n += (o[f].match(/—/g) || []).length; o[f] = v; } }
+      await saveBriefNow(b, `Заменено длинных тире: ${n}`);
       render(); break;
     }
     case 'bfitemdel': b.estimate.items.splice(i, 1); b.estimate.edited = true; redraw(); break;

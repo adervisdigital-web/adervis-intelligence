@@ -2159,7 +2159,7 @@ await page.waitForSelector('.bftabs');
 let stB = await state();
 const nb = stB.briefs[0], nlead = stB.leads.find(l => l.id === nb.lead_id);
 check('бриф создан и сразу завёл заявку в воронке', nb && nb.client === 'Химпром' && nlead && nlead.source === 'ВКонтакте' && nlead.status === 'В работе' && nlead.next_on === localDay());
-check('рабочая область: вкладки цепочки', (await page.$$('.bftabs button')).length === 7 && (await page.textContent('h1')) === 'Видеодайджест');
+check('рабочая область: вкладки цепочки', (await page.$$('.bftabs button')).length === 8 && (await page.textContent('h1')) === 'Видеодайджест');
 
 await page.click('[data-action=bfai]');
 await page.waitForSelector('.bftabs button.active:has-text("Разбор")');
@@ -2201,6 +2201,13 @@ await page.waitForFunction(() => /235000/.test(document.querySelector('#bftotals
 check('правка часов пересчитывает сумму на месте, без перерисовки', await page.evaluate(() => document.activeElement?.dataset.bf === 'estimate.items.0.max'));
 await page.waitForFunction(() => window.__STATE__.briefs[0].estimate.items[0].max === 40);
 check('правка сметы сохранилась сама', true);
+// проверка брифа: вердикт, разделы, сверка сметы для клиента с ценой КП
+await page.click('[data-action=bftab][data-id=check]');
+await page.waitForSelector('.bfaudit');
+const audit = await page.innerText('.bfaudit');
+check('во вкладке «Проверка» — вердикт и разделы', await page.isVisible('.audhead') && /Смета/.test(audit) && /Цены/.test(audit), audit.slice(0, 200));
+check('проверка сверяет смету для клиента с ценой КП', /сходятся с КП/.test(audit), audit.slice(-300));
+await page.click('[data-action=bftab][data-id=estimate]');
 await page.click('.bfbody [data-action=bfrates]');
 await page.fill('#ratef input[name=rate1]', '2000');
 await page.click('#ratef button.primary');
@@ -2241,6 +2248,7 @@ await page.fill('.kpmedia [data-k=group]', 'Направление 1 «Техн�
 // клиент уже выбрал вариант на странице: после публикации окно показывает выбор
 await page.evaluate(() => { window.__KPCHOICE__ = { label: 'Базовый вариант', options: [{ name: 'Звук', price: 20000 }], total: 115000, comment: 'Созвонимся в понедельник' };
   window.__KPENG__ = { total_sec: 190, seen: ['Стоимость', 'Как видим оформление'], ended: true, events: ['pdf'], visits: [{ id: 'v1', at: new Date().toISOString(), sec: 190, seen: ['Стоимость'], ended: true, events: ['pdf'], variant: 'base' }] }; });
+page.once('dialog', d => d.accept());   // в тестовом КП есть ошибки проверки — публикуем всё равно
 await page.click('#kppublish');
 await page.waitForFunction(() => Object.keys(window.__KPSHARES__ || {}).length === 1);
 await page.waitForSelector('.kpchoice');
