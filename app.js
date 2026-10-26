@@ -4800,58 +4800,106 @@ function bfQuestions(b) {
     <button data-action="bfqadd">+ Вопрос</button></div>`;
 }
 
+// Смета как в CRM: этапы карточками со своей суммой (сворачиваются), работа — одна строка,
+// справа закреплены «Итоги сметы»: доля каждого этапа, итог для клиента и все выгрузки.
+const EST_TONES = ['violet', 'sky', 'green', 'gold', 'red', 'gray'];
+const estGroups = b => [...new Set((b.estimate?.items || []).map(it => it.group || 'Работы'))];
+const estK = b => 1 + (Number(b.estimate?.reserve) || 0) / 100;
+function estGroupSum(b, g) {
+  const its = (b.estimate?.items || []).filter(it => (it.group || 'Работы') === g && inVariant(it, 'full'));
+  const k = estK(b), f = x => its.reduce((n, it) => n + (Number(it[x]) || 0) * rateIn(b, it.role), 0) * k;
+  return { min: f('min'), max: f('max'), hmin: its.reduce((n, it) => n + (Number(it.min) || 0), 0), hmax: its.reduce((n, it) => n + (Number(it.max) || 0), 0) };
+}
+const estRange = (b, t) => `${rub(roundUp(t.min, b.estimate?.round || 1000))} – ${rub(roundUp(t.max, b.estimate?.round || 1000))}`;
+const lineSum = (b, it) => `${rub(it.min * rateIn(b, it.role))} – ${rub(it.max * rateIn(b, it.role))}`;
+
 function bfEstimate(b) {
   const e = b.estimate || {}, items = e.items || [], options = e.options || [];
   const roles = db.studio_rates;
-  const roleSel = (path, v) => `<select class="input" data-bf="${path}" aria-label="Роль">${roles.map(r => `<option value="${E(r.id)}" ${r.id === v ? 'selected' : ''}>${E(r.name)}</option>`).join('')}</select>`;
-  const groups = [...new Set(items.map(it => it.group || 'Работы'))];
-  const rows = groups.map(g => `<tr class="bfgroup"><th colspan="7">${E(g)}</th></tr>` + items.map((it, i) => (it.group || 'Работы') !== g ? '' : `<tr class="${it.fold ? 'folded' : ''}">
-    <td><input class="input" data-bf="estimate.items.${i}.name" maxlength="200" value="${E(it.name)}" aria-label="Работа">
-      <input class="input bfhint" data-bf="estimate.items.${i}.hint" maxlength="400" value="${E(it.hint || '')}" placeholder="Пояснение для клиента: что это и зачем" aria-label="Пояснение для клиента"></td>
-    <td>${roleSel(`estimate.items.${i}.role`, it.role)}</td>
-    <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.min" value="${E(it.min)}" aria-label="Часов от"></td>
-    <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.max" value="${E(it.max)}" aria-label="Часов до"></td>
-    <td class="bfsum" data-sum="${i}">${rub(it.min * rateIn(b, it.role))} – ${rub(it.max * rateIn(b, it.role))}</td>
-    <td><select class="input" data-bf="estimate.items.${i}.variant" aria-label="Вариант">${VARIANTS.map(([k, t]) => `<option value="${k}" ${(it.variant || 'both') === k ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
-    <td class="bfrowacts"><button class="fold${it.fold ? ' on' : ''}" data-action="bfitemfold" data-id="${i}" aria-pressed="${!!it.fold}"
-        title="${it.fold ? 'Вшито в стоимость: клиент не видит строку, её доля — в других работах' : 'Вшить в стоимость — не показывать клиенту отдельной строкой'}"
-        aria-label="Вшить «${E(it.name)}» в стоимость работ">${icon(it.fold ? 'hidden' : 'eye', 15)}</button>
-      <button class="del" data-action="bfitemdel" data-id="${i}" aria-label="Удалить работу">${icon('close', 15)}</button></td></tr>`).join('')).join('');
-  return `<div class="card"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Смета</h2>
-      <div class="headactions">${items.length ? `<span class="dlpair"><button class="primary" data-action="bfxlsx">${icon('download', 15)} Скачать смету</button>
-        <button data-action="bfpdf" title="Смета в PDF" aria-label="Скачать смету в PDF">PDF</button></span>
-        <button data-action="bftext">${icon('copy', 15)} Скопировать текстом</button>` : ''}
-        <button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button></div></div>
-    <p class="muted">Часы — вилкой: от и до. Сумма = часы × ставка роли + запас. «Только полный» — работа, которой нет в облегчённом варианте; «Только базовый» — её замена подешевле.
-      ${icon('eye', 13)} — вшить работу в стоимость: клиент не увидит её отдельной строкой (ведение, правки, разбор ТЗ), её доля разойдётся по остальным работам.</p>
-    ${items.length ? `<div class="tablewrap"><table class="table bftable"><thead><tr><th>Работа</th><th>Роль</th><th>Часов от</th><th>до</th><th>Сумма</th><th>Вариант</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div>` : '<p class="muted">Работ пока нет — разберите ТЗ с ИИ или добавьте вручную.</p>'}
-    <div class="formactions"><button data-action="bfitemadd">+ Работа</button></div>
-    <div class="formgrid bfset">
-      <div><label for="bfratek">Ставки для этого клиента</label><select class="input" id="bfratek" data-bf="estimate.rate_k">${RATE_K.map(([k, t]) => `<option value="${k}" ${Number(e.rate_k || 100) === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
-        <small class="muted">Расходы (подписки, лицензии) не меняются. Цены в КП пересчитаются.</small></div>
-      <div><label for="bfreserve">Запас на правки и ведение, %</label><input class="input" id="bfreserve" type="number" min="0" max="100" data-bf="estimate.reserve" value="${E(e.reserve ?? 10)}"></div>
-      <div><label class="checkitem bfsubs"><input type="checkbox" data-bf="estimate.subtotals" ${e.subtotals ? 'checked' : ''}><span>Итоги по разделам в смете для клиента — например, цена каждого ролика</span></label></div>
-      <div><label for="bfround">Округлять цену до, ₽</label><select class="input" id="bfround" data-bf="estimate.round">${[1000, 5000, 10000].map(n => `<option value="${n}" ${Number(e.round || 1000) === n ? 'selected' : ''}>${num(n)}</option>`).join('')}</select></div>
+  const roleSel = (path, v) => `<select class="input estsel" data-bf="${path}" aria-label="Роль">${roles.map(r => `<option value="${E(r.id)}" ${r.id === v ? 'selected' : ''}>${E(r.name)}</option>`).join('')}</select>`;
+  const shut = briefView.estShut || [];
+  const groups = estGroups(b);
+  const line = (it, i) => `<div class="estline${it.fold ? ' folded' : ''}${(it.variant || 'both') !== 'both' ? ' var-' + it.variant : ''}">
+      <span class="estgrip" aria-hidden="true"></span>
+      <div class="estname"><input class="input estn" data-bf="estimate.items.${i}.name" maxlength="200" value="${E(it.name)}" aria-label="Работа">
+        <input class="input esthint bfhint" data-bf="estimate.items.${i}.hint" maxlength="400" value="${E(it.hint || '')}" placeholder="Пояснение для клиента: что это и зачем" aria-label="Пояснение для клиента"></div>
+      <div class="estrole">${roleSel(`estimate.items.${i}.role`, it.role)}</div>
+      <div class="esthours"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.min" value="${E(it.min)}" aria-label="Часов от"><em>–</em><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.items.${i}.max" value="${E(it.max)}" aria-label="Часов до"><small>ч</small></div>
+      <div class="estsum" data-sum="${i}">${lineSum(b, it)}</div>
+      <select class="input estvar" data-bf="estimate.items.${i}.variant" aria-label="Вариант">${VARIANTS.map(([k, t]) => `<option value="${k}" ${(it.variant || 'both') === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+      <div class="estacts"><button class="fold${it.fold ? ' on' : ''}" data-action="bfitemfold" data-id="${i}" aria-pressed="${!!it.fold}"
+          title="${it.fold ? 'Вшито в стоимость: клиент не видит строку, её доля в других работах' : 'Вшить в стоимость: не показывать клиенту отдельной строкой'}"
+          aria-label="Вшить «${E(it.name)}» в стоимость работ">${icon(it.fold ? 'hidden' : 'eye', 15)}</button>
+        <button class="del" data-action="bfitemdel" data-id="${i}" aria-label="Удалить работу">${icon('close', 15)}</button></div>
+    </div>`;
+  const grp = (g, gi) => {
+    const t = estGroupSum(b, g), n = items.filter(it => (it.group || 'Работы') === g).length, closed = shut.includes(g);
+    return `<section class="estgrp tone-${EST_TONES[gi % EST_TONES.length]}${closed ? ' shut' : ''}">
+      <header class="estghead"><button class="estgtoggle" data-action="bfgrp" data-id="${gi}" aria-expanded="${!closed}">
+          <span class="estgname">${E(g)}</span><small>${n} ${plural(n, 'работа', 'работы', 'работ')} · ${t.hmin}–${t.hmax} ч</small></button>
+        <b class="estgsum" data-gsum="${gi}">${estRange(b, t)}</b>
+        <button class="estgbtn" data-action="bfgrp" data-id="${gi}" aria-label="${closed ? 'Развернуть' : 'Свернуть'} «${E(g)}»">${icon('expand', 15)}</button></header>
+      <div class="estbody"><div>
+        ${items.map((it, i) => (it.group || 'Работы') === g ? line(it, i) : '').join('')}
+        <button class="estadd" data-action="bfitemadd" data-g="${E(g)}">${icon('plus', 14)} Работа в «${E(g)}»</button>
+      </div></div>
+    </section>`;
+  };
+  const allShut = groups.length && groups.every(g => shut.includes(g));
+  return `<div class="estwrap">
+    <div class="estmain">
+      <div class="estbar"><div><h2>Смета</h2><small class="muted">${items.length} ${plural(items.length, 'работа', 'работы', 'работ')} · часы × ставка роли + запас ${E(e.reserve ?? 10)}%</small></div>
+        <div class="headactions">${groups.length > 1 ? `<button data-action="bfgrpall">${icon('expand', 15)} ${allShut ? 'Развернуть всё' : 'Свернуть всё'}</button>` : ''}
+          <button data-action="bfitemadd" data-g="">${icon('plus', 15)} Этап</button>
+          <button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button></div></div>
+      ${items.length ? groups.map(grp).join('')
+        : '<div class="card empty"><p class="muted">Работ пока нет: разберите ТЗ с ИИ или добавьте вручную.</p><button class="primary" data-action="bfitemadd" data-g="">+ Работа</button></div>'}
+      <details class="esthelp"><summary>Как считается и что значат варианты</summary>
+        <p class="muted">Часы вилкой: от и до. Сумма = часы × ставка роли + запас. «Только полный» — работа, которой нет в облегчённом варианте; «Только базовый» — её замена подешевле.
+        ${icon('eye', 13)} вшивает работу в стоимость: клиент не увидит её отдельной строкой (ведение, правки, разбор ТЗ), её доля разойдётся по остальным работам.</p></details>
+      <section class="estgrp estopts tone-gray">
+        <header class="estghead"><div class="estgtoggle"><span class="estgname">Опции для КП</span><small>${options.length ? `${options.length} ${plural(options.length, 'опция', 'опции', 'опций')}, клиент выбирает сам` : 'дополнительно к основной смете'}</small></div></header>
+        <div class="estbody"><div>
+        ${options.map((o, i) => `<div class="estline estopt">
+          <span class="estgrip" aria-hidden="true"></span>
+          <div class="estname"><input class="input estn" data-bf="estimate.options.${i}.name" maxlength="200" value="${E(o.name)}" aria-label="Опция">${o.why ? `<small class="muted">${E(o.why)}</small>` : ''}</div>
+          <div class="estrole">${roleSel(`estimate.options.${i}.role`, o.role)}</div>
+          <div class="esthours"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.options.${i}.min" value="${E(o.min)}" aria-label="Часов от"><em>–</em><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.options.${i}.max" value="${E(o.max)}" aria-label="Часов до"><small>ч</small></div>
+          <div class="estsum" data-opt="${i}">${rub(optionCalc(b, o))}</div>
+          <input class="input estfixed" type="number" min="0" step="1000" data-bf="estimate.options.${i}.fixed" value="${Number(o.fixed) > 0 ? E(o.fixed) : ''}" placeholder="цена вручную" aria-label="Цена опции вручную">
+          <div class="estacts"><button class="del" data-action="bfoptdel" data-id="${i}" aria-label="Удалить опцию">${icon('close', 15)}</button></div></div>`).join('')}
+        <button class="estadd" data-action="bfoptadd">${icon('plus', 14)} Опция</button></div></div>
+      </section>
     </div>
-    <div id="bftotals">${totalsHtml(b)}</div></div>
-    <div class="card" style="margin-top:16px"><div class="head" style="margin:0 0 6px"><h2 style="margin:0">Дополнительно — опции для КП</h2></div>
-      ${options.length ? `<div class="tablewrap"><table class="table bftable"><thead><tr><th>Опция</th><th>Роль</th><th>Часов от</th><th>до</th><th>Цена по часам</th><th>Цена вручную, ₽</th><th></th></tr></thead><tbody>
-      ${options.map((o, i) => `<tr><td><input class="input" data-bf="estimate.options.${i}.name" maxlength="200" value="${E(o.name)}" aria-label="Опция">${o.why ? `<small class="muted">${E(o.why)}</small>` : ''}</td>
-        <td>${roleSel(`estimate.options.${i}.role`, o.role)}</td>
-        <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.options.${i}.min" value="${E(o.min)}" aria-label="Часов от"></td>
-        <td class="bfnum"><input class="input" type="number" min="0" max="500" step="0.5" data-bf="estimate.options.${i}.max" value="${E(o.max)}" aria-label="Часов до"></td>
-        <td class="bfsum" data-opt="${i}">${rub(optionCalc(b, o))}</td>
-        <td class="bfnum"><input class="input" type="number" min="0" step="1000" data-bf="estimate.options.${i}.fixed" value="${Number(o.fixed) > 0 ? E(o.fixed) : ''}" placeholder="как по часам" aria-label="Цена опции вручную"></td>
-        <td><button class="del" data-action="bfoptdel" data-id="${i}" aria-label="Удалить опцию">${icon('close', 15)}</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Опций нет.</p>'}
-      <button data-action="bfoptadd">+ Опция</button></div>`;
+    <aside class="estside">
+      <div class="card estsum-card">
+        <h3>${icon('estimate', 17)} Итоги сметы</h3>
+        <div id="bftotals">${totalsHtml(b)}</div>
+        ${items.length ? `<div class="estdl"><span class="dlpair"><button class="primary" data-action="bfxlsx">${icon('download', 15)} Скачать смету</button>
+          <button data-action="bfpdf" title="Смета в PDF" aria-label="Скачать смету в PDF">PDF</button></span>
+          <button data-action="bftext">${icon('copy', 15)} Скопировать текстом</button>
+          <button data-action="bftab" data-id="kp">${icon('proposal', 15)} Перейти к КП</button></div>` : ''}
+        <details class="estset" open><summary>Настройки расчёта</summary>
+          <label for="bfratek">Ставки для этого клиента</label><select class="input" id="bfratek" data-bf="estimate.rate_k">${RATE_K.map(([k, t]) => `<option value="${k}" ${Number(e.rate_k || 100) === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+          <small class="muted">Расходы (подписки, лицензии) не меняются. Цены в КП пересчитаются.</small>
+          <div class="estset2"><div><label for="bfreserve">Запас, %</label><input class="input" id="bfreserve" type="number" min="0" max="100" data-bf="estimate.reserve" value="${E(e.reserve ?? 10)}"></div>
+          <div><label for="bfround">Округлять до, ₽</label><select class="input" id="bfround" data-bf="estimate.round">${[1000, 5000, 10000].map(n => `<option value="${n}" ${Number(e.round || 1000) === n ? 'selected' : ''}>${num(n)}</option>`).join('')}</select></div></div>
+          <label class="checkitem bfsubs"><input type="checkbox" data-bf="estimate.subtotals" ${e.subtotals ? 'checked' : ''}><span>Итоги по разделам в смете для клиента, например цена каждого ролика</span></label>
+        </details>
+      </div>
+    </aside>
+  </div>`;
 }
 
 function totalsHtml(b) {
   const f = briefTotals(b, 'full'), base = briefTotals(b, 'base'), r = b.estimate?.round || 1000;
-  const line = (name, t, v) => `<div class="bftotal"><span>${name}</span><b>${rub(roundUp(t.min, r))} – ${rub(roundUp(t.max, r))}</b>
+  if (!f.count) return '<p class="muted">Добавьте работы, и здесь появится итог.</p>';
+  const groups = estGroups(b), mids = groups.map(g => { const t = estGroupSum(b, g); return (t.min + t.max) / 2; });
+  const all = mids.reduce((n, x) => n + x, 0) || 1;
+  const bars = groups.length > 1 ? `<ul class="estshare">${groups.map((g, gi) => `<li class="tone-${EST_TONES[gi % EST_TONES.length]}"><span>${E(g)}</span><small>${Math.round(mids[gi] / all * 100)}%</small><b>${rub(roundUp(mids[gi], r))}</b><i style="--w:${(mids[gi] / all * 100).toFixed(1)}%"></i></li>`).join('')}</ul>` : '';
+  const line = (name, t, v, big) => `<div class="bftotal${big ? ' big' : ''}"><span>${name}</span><b>${rub(roundUp(t.min, r))} – ${rub(roundUp(t.max, r))}</b>
     <small class="muted">${t.hmin}–${t.hmax} ч · середина ${rub(suggested(b, v))}</small></div>`;
-  return f.count ? line('Полный вариант', f, 'full') + (hasBase(b) ? line('Базовый вариант', base, 'base') : '') : '';
+  return bars + line('Полный вариант', f, 'full', true) + (hasBase(b) ? line('Базовый вариант', base, 'base') : '');
 }
 
 function bfPlan(b) {
@@ -5402,8 +5450,10 @@ function onBriefInput(e) {
   if (totals) totals.innerHTML = totalsHtml(b);
   document.querySelectorAll('[data-sum]').forEach(td => {
     const it = b.estimate.items[Number(td.dataset.sum)];
-    if (it) td.textContent = `${rub(it.min * rateIn(b, it.role))} – ${rub(it.max * rateIn(b, it.role))}`;
+    if (it) td.textContent = lineSum(b, it);
   });
+  const gs = estGroups(b);
+  document.querySelectorAll('[data-gsum]').forEach(el => { const g = gs[Number(el.dataset.gsum)]; if (g !== undefined) { const t = estGroupSum(b, g); el.textContent = estRange(b, t); } });
   document.querySelectorAll('[data-opt]').forEach(td => { const o = b.estimate.options[Number(td.dataset.opt)]; if (o) td.textContent = rub(optionCalc(b, o)); });
   if (el.dataset.bf.startsWith('plan.') || el.dataset.bf === 'kp.start') {
     const dates = planDates(b, b.kp?.start || dayShift(3));
@@ -5589,8 +5639,30 @@ async function briefAction(btn) {
     case 'bfqadd': (b.questions ||= []).push({ q: '', why: '', status: 'новый', answer: '' }); redraw(); break;
     case 'bfitemadd': {
       const items = ((b.estimate ||= {}).items ||= []);
-      items.push({ group: items[items.length - 1]?.group || 'Работы', name: 'Новая работа', role: db.studio_rates[0]?.id || 'motion', min: 1, max: 2, variant: 'both' });
-      b.estimate.edited = true; redraw(); break;
+      // «+ Работа в этапе» — в конец этого этапа; «+ Этап» — новый этап с первой работой
+      let g = btn.dataset.g ?? (items[items.length - 1]?.group || 'Работы');
+      if (g === '') {
+        g = (prompt('Название этапа', items.length ? 'Новый этап' : 'Работы') || '').trim();
+        if (!g) break;
+      }
+      const it = { group: g, name: 'Новая работа', role: db.studio_rates[0]?.id || 'motion', min: 1, max: 2, variant: 'both' };
+      let at = -1;
+      items.forEach((x, k) => { if ((x.group || 'Работы') === g) at = k; });
+      items.splice(at < 0 ? items.length : at + 1, 0, it);
+      briefView.estShut = (briefView.estShut || []).filter(x => x !== g);
+      b.estimate.edited = true; redraw();
+      requestAnimationFrame(() => { const el = document.querySelector(`[data-bf="estimate.items.${at < 0 ? items.length - 1 : at + 1}.name"]`); el?.focus(); el?.select(); });
+      break;
+    }
+    case 'bfgrp': {
+      const g = estGroups(b)[i], shut = briefView.estShut || [];
+      briefView.estShut = shut.includes(g) ? shut.filter(x => x !== g) : [...shut, g];
+      render(); break;
+    }
+    case 'bfgrpall': {
+      const gs = estGroups(b), all = gs.every(g => (briefView.estShut || []).includes(g));
+      briefView.estShut = all ? [] : gs;
+      render(); break;
     }
     case 'bfitemdel': b.estimate.items.splice(i, 1); b.estimate.edited = true; redraw(); break;
     case 'bfitemfold': { const it = b.estimate.items[i]; it.fold = !it.fold; b.estimate.edited = true; redraw(); toast(it.fold ? 'Вшито в стоимость — в смете для клиента строки нет' : 'Строка снова видна клиенту'); break; }

@@ -2396,13 +2396,13 @@ const smText = await page.evaluate(() => navigator.clipboard.readText());
 check('смета текстом: разделы, строки с ценами, итог как в КП, без часов', smText.startsWith('Смета: Видеодайджест') && /• Заставка 10–15 с: базовый/.test(smText) && /• 3D-студия, 3 плана: [\d\s]+₽ \(только в полном\)/.test(smText)
   && smText.replace(/\s/g, '').includes('полный210000₽') && !smText.includes('—') && !/ч ·|Моушн-дизайнер/.test(smText), smText.slice(0, 300));
 // «вшить в стоимость»: строка не видна клиенту, итог тот же
-const foldRow = await page.$$eval('.bftable tbody tr', rs => rs.find(r => r.querySelector('input')?.value.startsWith('Мастер-отбивка'))?.querySelector('[data-action=bfitemfold]').dataset.id);
+const foldRow = await page.$$eval('.estline', rs => rs.find(r => r.querySelector('input')?.value.startsWith('Мастер-отбивка'))?.querySelector('[data-action=bfitemfold]').dataset.id);
 await page.click(`[data-action=bfitemfold][data-id="${foldRow}"]`);
 await page.waitForFunction(i => window.__STATE__.briefs[0].estimate.items[i]?.fold === true, foldRow);
 await page.click('[data-action=bftext]');
 const foldText = await page.evaluate(() => navigator.clipboard.readText());
 check('вшитая работа: в смете для клиента строки нет, итог прежний', !foldText.includes('Мастер-отбивка') && foldText.replace(/\s/g, '').includes('полный210000₽') && !smText.includes('—')
-  && await page.isVisible('.bftable tr.folded'), foldText.slice(0, 200));
+  && await page.isVisible('.estline.folded'), foldText.slice(0, 200));
 await page.click(`[data-action=bfitemfold][data-id="${foldRow}"]`);
 await page.waitForFunction(i => !window.__STATE__.briefs[0].estimate.items[i]?.fold, foldRow);
 // итоги по разделам — например, цена каждого ролика отдельно
