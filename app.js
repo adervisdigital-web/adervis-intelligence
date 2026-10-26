@@ -7631,6 +7631,7 @@ const SHAPES = {
   gum: ring(a => { const r = 200 * (.6 * roundTri(a) + .4); return [Math.sin(a) * r * 1.04, -Math.cos(a) * r + 32]; }),
   mark: ring(a => { const r = 205 * (.7 * roundTri(a) + .3); return [Math.sin(a) * r * 1.12, -Math.cos(a) * r + 30]; }).map((p, i) => i === 6 ? [0, 122] : p),
   heart: heart.map((p, i, a) => a[(i + 6) % 12]),
+  tri: ring(a => { const r = 196 * (.6 * roundTri(a) + .4); return [Math.sin(a) * r * 1.12, -Math.cos(a) * r + 36]; }).map((p, i) => i === 6 ? [0, 126] : p),
   tile: ring(a => { const n = 5, c = Math.abs(Math.cos(a)), si = Math.abs(Math.sin(a)); const r = 172 / Math.pow(c ** n + si ** n, 1 / n); return [Math.sin(a) * r, -Math.cos(a) * r + 20]; })
 };
 // буква U знака Hub (сетка 1000), ставится в плитку
@@ -7688,6 +7689,45 @@ const POSE = {
   oops: ['drop', 'sad', 'sad', 'rest'], sleep: ['drop', 'shut', 'flat', 'rest']
 };
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Звук Ады — короткий цифровой «буль-динь»: пузырёк вверх и звоночек. Каждый раз чуть другой по высоте.
+let actx = null;
+const SOUNDS = {
+  tap: [['pop', 0, 380, .07], ['ding', .06, 1568, .16]],
+  hello: [['pop', 0, 420, .06], ['ding', .05, 1319, .1], ['ding', .13, 1760, .16]],
+  love: [['pop', 0, 360, .07], ['ding', .07, 1175, .18], ['ding', .2, 1568, .26]],
+  shift: [['pop', 0, 520, .08], ['pop', .09, 300, .09], ['ding', .17, 1397, .16]],
+  logo: [['pop', 0, 400, .06], ['ding', .06, 1047, .1], ['ding', .13, 1319, .1], ['ding', .2, 1568, .1], ['ding', .27, 2093, .3]],
+  done: [['pop', 0, 440, .06], ['ding', .05, 1568, .12], ['ding', .14, 2093, .24]]
+};
+function chirp(kind = 'tap') {
+  try {
+    if (localStorage.getItem('hub.sound') === 'off') return;
+    actx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    const now = actx.currentTime + .01, out = actx.createGain(), k = 1 + (Math.random() - .5) * .06;
+    out.gain.value = .14; out.connect(actx.destination);
+    for (const [type, t, f, d] of SOUNDS[kind] || SOUNDS.tap) {
+      const o = actx.createOscillator(), g = actx.createGain(), at = now + t;
+      if (type === 'pop') {
+        // пузырёк: синус быстро уходит вверх
+        o.type = 'sine';
+        o.frequency.setValueAtTime(f * k, at);
+        o.frequency.exponentialRampToValueAtTime(f * 2.6 * k, at + d);
+        g.gain.setValueAtTime(.0001, at); g.gain.exponentialRampToValueAtTime(.9, at + .008); g.gain.exponentialRampToValueAtTime(.0001, at + d + .03);
+      } else {
+        // звоночек: треугольник с лёгким обертоном и мягким хвостом
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(f * k, at);
+        g.gain.setValueAtTime(.0001, at); g.gain.exponentialRampToValueAtTime(.55, at + .01); g.gain.exponentialRampToValueAtTime(.0001, at + d + .12);
+        const h = actx.createOscillator(), hg = actx.createGain();
+        h.type = 'sine'; h.frequency.setValueAtTime(f * 2 * k, at);
+        hg.gain.setValueAtTime(.0001, at); hg.gain.exponentialRampToValueAtTime(.12, at + .01); hg.gain.exponentialRampToValueAtTime(.0001, at + d * .7 + .05);
+        h.connect(hg).connect(out); h.start(at); h.stop(at + d + .2);
+      }
+      o.connect(g).connect(out); o.start(at); o.stop(at + d + .2);
+    }
+  } catch (e) { /* без звука */ }
+}
 // Объёмный логотип внутри Ады. metal — знак ADERVIS как на adervis.ru: хром, переходящий в золото.
 // Объёмный логотип внутри Ады — из её же медового стекла: тот же градиент, ореол,
 // розовый рефлекс снизу, мягкий ободок и блик. Толщина — стопка янтарных слоёв.
@@ -7725,7 +7765,7 @@ class Ada {
     this.logos = Object.fromEntries([...el.querySelectorAll('.a-logo')].map(l => [l.dataset.logo, { logo: l, front: l.querySelector('.a-front'),
       depth: [...l.querySelectorAll('.a-depth > g')], sweep: l.querySelector('.a-sweep'), dim: l.querySelector('.a-dim'), chrome: l.querySelector('.a-chrome') }]));
     this.cur = this.logos.hub;
-    this.shape = 'drop';
+    this.shape = 'drop'; this.form = 'drop';
     this.set(o.mood || 'idle');
     if (!calm() && !this.still) { this.blinkLoop(); this.idleLoop(); }
     if (o.follow !== false && !this.still) this.follow();
@@ -7786,7 +7826,7 @@ class Ada {
     const [shape, eyes, mouth, hands, blush] = POSE[name], prev = this.state;
     this.state = name; this.el.dataset.mood = name;
     this.stopLoops();
-    this.morph(shape);
+    this.morph(shape === 'drop' ? this.form : shape);
     const hand = (x, y, r) => `<g transform="rotate(${r} ${x} ${y})"><ellipse cx="${x}" cy="${y}" rx="23" ry="32" fill="url(#${this.id}g)"/><ellipse cx="${x - 7}" cy="${y - 12}" rx="6" ry="9" fill="#fff" opacity=".65"/></g>`;
     this.p.hands.innerHTML = { rest: hand(-212, 116, 24) + hand(212, 108, -20), wave: hand(-212, 116, 24) + hand(212, -40, 30), up: hand(-200, -70, -26) + hand(200, -70, 26) }[hands];
     this.p.face.innerHTML = (blush ? `<g fill="#ff6f9a" opacity=".5"><ellipse cx="-96" cy="72" rx="24" ry="13"/><ellipse cx="96" cy="72" rx="24" ry="13"/></g>` : '')
@@ -7797,7 +7837,7 @@ class Ada {
     if (name === 'hello' || name === 'curious' || name === 'alert') this.hop(name === 'curious' ? 26 : 50);
     if (name === 'think') {
       // идея зреет: форма плывёт между каплей и леденцом
-      this.loop(this.p.shapes, [{ d: `path('${D.gum}')` }, { d: `path('${D.drop}')` }, { d: `path('${D.gum}')` }], 1800);
+      this.loop(this.p.shapes, [{ d: `path('${D.gum}')` }, { d: `path('${D[this.form]}')` }, { d: `path('${D.gum}')` }], 1800);
       this.p.fx.innerHTML = `<g fill="#fff3d2">${[0, 1, 2].map(i => `<rect x="${170 + i * 32}" y="${-150 - i * 30}" width="${14 + i * 4}" height="${14 + i * 4}" rx="4"/>`).join('')}</g>`;
       [...this.p.fx.querySelectorAll('rect')].forEach((r, i) => this.loops.push(r.animate([{ opacity: .2 }, { opacity: 1 }, { opacity: .2 }], { duration: 1100, delay: i * 180, iterations: Infinity })));
     }
@@ -7842,6 +7882,7 @@ class Ada {
     const act = () => {
       if (!this.el.isConnected) return;
       if (this.state === 'idle' && !this.hover && !this.logoOn && Math.random() < .2) this.logo();
+      else if (['idle', 'curious', 'alert'].includes(this.state) && !this.hover && !this.logoOn && Math.random() < .3) this.shift();
       else if (this.state === 'idle' && !this.hover) { if (Math.random() < .5) this.hop(26); else { this.fixed = true; this.lookAt(-1, 0); setTimeout(() => this.lookAt(1, 0), 700); setTimeout(() => { this.fixed = false; }, 1500); } }
       this.it = setTimeout(act, 7000 + Math.random() * 6000);
     };
@@ -7919,7 +7960,7 @@ class Ada {
       } else if (kind === 'melt') {
         await tween(260, t => { q.logo.setAttribute('opacity', (1 - t).toFixed(3)); bodyOp(t); });
         hideLogo();
-        this.morph('drop');
+        this.morph(this.form);
         q.face.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 200, fill: 'forwards' }).finished.then(() => q.face.getAnimations().forEach(a => a.cancel()));
         q.hands.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 200, fill: 'forwards' }).finished.then(() => q.hands.getAnimations().forEach(a => a.cancel()));
       } else {
@@ -7931,7 +7972,8 @@ class Ada {
     } finally {
       this.logoOn = false;
       if (this.el.isConnected) {
-        if (this.shape !== (POSE[back]?.[0] || 'drop')) this.morph(POSE[back]?.[0] || 'drop');
+        const home = POSE[back]?.[0] && POSE[back][0] !== 'drop' ? POSE[back][0] : this.form;
+        if (this.shape !== home) this.morph(home);
         const next = this.after || back;
         this.state = ''; this.set(next);
       }
@@ -7943,13 +7985,22 @@ class Ada {
     const base = this.poking ? this.pokeBase : this.state;
     this.pokeBase = base;
     const n = this.pokes = (this.pokes || 0) + 1;
-    const pick = n % 2 === 1 ? 'logo' : ['love', 'hello', 'sly', 'done'][Math.floor(n / 2) % 4];
+    const pick = n % 2 === 1 ? 'logo' : ['shift', 'love', 'hello', 'shift', 'sly', 'done'][(Math.floor(n / 2) - 1) % 6];
     clearTimeout(this.pt);
+    chirp(pick === 'sly' ? 'tap' : pick);
     if (pick === 'logo') { this.poking = false; this.logo(); return; }
+    if (pick === 'shift') { this.poking = false; this.shift(); return; }
     this.poking = true;
     this.set(pick);
     if (pick === 'love') this.sparks('heart');
     this.pt = setTimeout(() => { this.poking = false; if (this.el.isConnected && this.state === pick) this.set(base); }, 1900);
+  }
+  // домашняя форма: капля ↔ мягкий треугольник «А» ADERVIS
+  shift(to) {
+    if (calm() || this.still || this.logoOn) return;
+    this.form = to || (this.form === 'drop' ? 'tri' : 'drop');
+    const cur = POSE[this.state]?.[0];
+    if (!cur || cur === 'drop') { this.morph(this.form); this.squash(.12); }
   }
   sparks() {
     this.p.fx.innerHTML = Array.from({ length: 7 }, (_, i) => `<path d="M0,10 C-14,0 -10,-12 0,-5 C10,-12 14,0 0,10 Z" fill="${i % 2 ? '#ff8fbf' : '#ffb3d1'}"/>`).join('');
@@ -7970,6 +8021,7 @@ class Ada {
     addEventListener('pointermove', on);
   }
 }
+Ada.chirp = chirp;
 return Ada;
 })();
 
@@ -9863,7 +9915,7 @@ function dockToggle(open) {
   d.classList.toggle('open', dockOpen);
   d.querySelector('.ddava').setAttribute('aria-expanded', String(dockOpen));
   d.querySelector('.ddpop').hidden = !dockOpen;
-  if (dockOpen) { dockHint(false); dockAda?.set('hello'); setTimeout(() => dockOpen && drawDock(), 900); d.querySelector('.ddask input')?.focus({ preventScroll: true }); }
+  if (dockOpen) { dockHint(false); Ada.chirp('hello'); dockAda?.set('hello'); setTimeout(() => dockOpen && drawDock(), 900); d.querySelector('.ddask input')?.focus({ preventScroll: true }); }
   else drawDock();
 }
 function drawDock() {
