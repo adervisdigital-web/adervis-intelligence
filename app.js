@@ -7636,6 +7636,8 @@ const SHAPES = {
 // буква U знака Hub (сетка 1000), ставится в плитку
 const LOGO_U = 'M220,265 L220,455 A280,280 0 0 0 500,735 A280,280 0 0 0 780,455 L780,265 L660,265 L660,455 A160,160 0 0 1 500,615 A160,160 0 0 1 340,455 L340,265 Z';
 const LOGO_DEPTH = 13;
+const MARK_A = 'M1580.87,1460.95c-2.86-28.37-37.65-89.84-65.61-144.16l-348.64-683.49s-16.06-36.74-39.16-57.23c-18.59-16.48-47.44-17.06-47.44-17.06,0,0-28.35-.15-46.95,16.34-23.13,20.5-39.21,57.25-39.21,57.25l-349.04,683.71c-27.99,54.33-62.82,115.83-65.68,144.21-4.06,40.31,13.99,84.78,76.91,73.39,58.44-10.57,220.37-74.81,220.18-74.86l203.79-82.04,204.09,82.48c-.19.05,161.56,64.28,219.93,74.84,62.85,11.38,80.88-33.07,76.83-73.37h0ZM1644.09,1652.56c-34.42,22.09-86.28,31.73-117.72,27.51-88.97-11.91-211.9-62.67-211.9-62.67l-234.45-93.41-234.23,92.8s-123,50.77-212.03,62.68c-31.46,4.21-83.35-5.42-117.8-27.51-132.9-85.25-70.29-244.9-65.96-256.84,4.51-12.45,442.71-865.15,453.9-885.17,11.19-20.02,40.7-52.42,81.67-73.39,43.38-22.19,94.45-24.57,94.45-24.57,6.52.47,54.47,4.74,94.75,25.36,40.94,20.95,70.44,53.35,81.62,73.37,11.18,20.02,449.11,872.59,453.62,885.04,4.33,11.94,66.89,171.57-65.93,256.8h.01Z';
+const MARK_XF = 'translate(0,24) scale(.262) translate(-1080,-1046)';
 const TILE = 'M-94,-152 H94 A78,78 0 0 1 172,-74 V114 A78,78 0 0 1 94,192 H-94 A78,78 0 0 1 -172,114 V-74 A78,78 0 0 1 -94,-152 Z';
 const tween = (ms, f, ease = t => t) => new Promise(res => {
   const t0 = performance.now();
@@ -7687,6 +7689,26 @@ const POSE = {
   oops: ['drop', 'sad', 'sad', 'rest'], sleep: ['drop', 'shut', 'flat', 'rest']
 };
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Объёмный логотип внутри Ады. metal — знак ADERVIS как на adervis.ru: хром, переходящий в золото.
+function logoLayer(g, name, d, xf, face, metal) {
+  const path = (fill, extra = '') => `<path d="${d}"${xf ? ` transform="${xf}"` : ''} fill-rule="evenodd" fill="${fill}"${extra}/>`;
+  const id = g + name;
+  return `<g class="a-logo" data-logo="${name}" opacity="0" style="display:none">
+    <defs><clipPath id="${id}c">${path('#000')}</clipPath></defs>
+    <g class="a-depth">${Array.from({ length: LOGO_DEPTH }, (_, i) => `<g data-i="${LOGO_DEPTH - i}">${path(`url(#${g}${metal ? 'cd' : 'ld'})`)}</g>`).join('')}</g>
+    <g class="a-front">
+      ${path(`url(#${g}${metal ? 'mg' : 'lg'})`)}
+      ${metal ? path(`url(#${g}ch)`, ' class="a-chrome"') : ''}
+      <g clip-path="url(#${id}c)">
+        <ellipse cx="-70" cy="-110" rx="150" ry="90" fill="#fff" opacity="${metal ? '.12' : '.22'}"/>
+        <rect class="a-sweep" x="-40" y="-260" width="80" height="560" fill="url(#${g}sw)" transform="rotate(16)"/>
+        <rect class="a-dim" x="-200" y="-220" width="400" height="460" fill="#2a1a00" opacity="0"/>
+      </g>
+      ${path('none', ` stroke="#fff3c8" stroke-width="3" vector-effect="non-scaling-stroke" opacity="${metal ? '.45' : '.6'}"`)}
+      ${face}
+    </g>
+  </g>`;
+}
 let seq = 0;
 class Ada {
   constructor(el, o = {}) {
@@ -7695,7 +7717,10 @@ class Ada {
     el.innerHTML = this.svg();
     const q = s => el.querySelector(s);
     this.p = { svg: q('svg'), shapes: [...el.querySelectorAll('.a-shape')], face: q('.a-face'), look: q('.a-look'), hands: q('.a-hands'), body: q('.a-body'), fx: q('.a-fx'),
-      logo: q('.a-logo'), front: q('.a-front'), depth: [...el.querySelectorAll('.a-depth path')], sweep: q('.a-sweep'), dim: q('.a-dim'), shadow: q('.a-shadow') };
+      shadow: q('.a-shadow') };
+    this.logos = Object.fromEntries([...el.querySelectorAll('.a-logo')].map(l => [l.dataset.logo, { logo: l, front: l.querySelector('.a-front'),
+      depth: [...l.querySelectorAll('.a-depth > g')], sweep: l.querySelector('.a-sweep'), dim: l.querySelector('.a-dim'), chrome: l.querySelector('.a-chrome') }]));
+    this.cur = this.logos.hub;
     this.shape = 'drop';
     this.set(o.mood || 'idle');
     if (!calm() && !this.still) { this.blinkLoop(); this.idleLoop(); }
@@ -7719,6 +7744,12 @@ class Ada {
     <filter id="${g}aura" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="26"/></filter>
     <filter id="${g}soft"><feGaussianBlur stdDeviation="8"/></filter>
     <clipPath id="${g}c">${body('')}/></clipPath>
+    <linearGradient id="${g}lg" gradientUnits="userSpaceOnUse" x1="-172" y1="0" x2="172" y2="0"><stop offset="0" stop-color="#ffd264"/><stop offset=".55" stop-color="#f0b53a"/><stop offset="1" stop-color="#c8901f"/></linearGradient>
+    <linearGradient id="${g}ld" gradientUnits="userSpaceOnUse" x1="0" y1="-160" x2="0" y2="200"><stop offset="0" stop-color="#b9821c"/><stop offset="1" stop-color="#6e4309"/></linearGradient>
+    <linearGradient id="${g}sw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${g}mg" gradientUnits="userSpaceOnUse" x1="-170" y1="-150" x2="170" y2="190"><stop offset="0" stop-color="#fff3c4"/><stop offset=".22" stop-color="#f6bd3a"/><stop offset=".45" stop-color="#a8700f"/><stop offset=".62" stop-color="#ffe08a"/><stop offset=".82" stop-color="#d79a24"/><stop offset="1" stop-color="#7a4c08"/></linearGradient>
+    <linearGradient id="${g}ch" gradientUnits="userSpaceOnUse" x1="-170" y1="-150" x2="170" y2="190"><stop offset="0" stop-color="#ffffff"/><stop offset=".25" stop-color="#c9ccd2"/><stop offset=".46" stop-color="#5d6068"/><stop offset=".64" stop-color="#f4f5f7"/><stop offset=".84" stop-color="#9a9da5"/><stop offset="1" stop-color="#3a3c42"/></linearGradient>
+    <linearGradient id="${g}cd" gradientUnits="userSpaceOnUse" x1="0" y1="-160" x2="0" y2="200"><stop offset="0" stop-color="#8a6a2a"/><stop offset="1" stop-color="#3b2a0c"/></linearGradient>
   </defs>
   <style>[data-ada=${g}] .e{fill:url(#${g}led)}[data-ada=${g}] .eh{fill:#ff8fbf}[data-ada=${g}] .ls{fill:none;stroke:${P.eye};stroke-width:5;stroke-linecap:round}</style>
   <ellipse class="a-shadow" cx="0" cy="208" rx="150" ry="14" fill="#000" opacity=".25" filter="url(#${g}soft)"/>
@@ -7734,29 +7765,11 @@ class Ada {
     </g>
     <g class="a-look"><g class="a-face" filter="url(#${g}glow)"></g></g>
   </g>
-  <g class="a-logo" opacity="0" style="display:none">
-    <defs>
-      <linearGradient id="${g}lg" gradientUnits="userSpaceOnUse" x1="-172" y1="0" x2="172" y2="0"><stop offset="0" stop-color="#ffd264"/><stop offset=".55" stop-color="#f0b53a"/><stop offset="1" stop-color="#c8901f"/></linearGradient>
-      <linearGradient id="${g}ld" gradientUnits="userSpaceOnUse" x1="0" y1="-160" x2="0" y2="200"><stop offset="0" stop-color="#b9821c"/><stop offset="1" stop-color="#6e4309"/></linearGradient>
-      <linearGradient id="${g}sw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-      <clipPath id="${g}tc"><path d="${TILE}"/></clipPath>
-    </defs>
-    <g class="a-depth">${Array.from({ length: LOGO_DEPTH }, (_, i) => `<path d="${TILE}" fill="url(#${g}ld)" data-i="${LOGO_DEPTH - i}"/>`).join('')}</g>
-    <g class="a-front">
-      <path d="${TILE}" fill="url(#${g}lg)"/>
-      <g clip-path="url(#${g}tc)">
-        <ellipse cx="-70" cy="-110" rx="150" ry="90" fill="#fff" opacity=".22"/>
-        <rect class="a-sweep" x="-40" y="-260" width="80" height="560" fill="url(#${g}sw)" transform="rotate(16)"/>
-        <rect class="a-dim" x="-200" y="-200" width="400" height="420" fill="#2a1a00" opacity="0"/>
-      </g>
-      <path d="${TILE}" fill="none" stroke="#fff3c8" stroke-width="5" opacity=".6"/>
-      <g transform="translate(0,20) scale(.335) translate(-500,-500)">
+  ${logoLayer(g, 'hub', TILE, '', `<g transform="translate(0,20) scale(.335) translate(-500,-500)">
         <path d="${LOGO_U}" fill="#fff0b8" opacity=".55" transform="translate(-9,-12)"/>
         <path d="${LOGO_U}" fill="#5a3606" opacity=".5" transform="translate(7,10)"/>
-        <path d="${LOGO_U}" fill="#141414"/>
-      </g>
-    </g>
-  </g>
+        <path d="${LOGO_U}" fill="#141414"/></g>`)}
+  ${logoLayer(g, 'adervis', MARK_A, MARK_XF, '', true)}
   <g class="a-fx"></g>
 </svg>`;
   }
@@ -7840,7 +7853,7 @@ class Ada {
   // Объёмная плитка Hub: θ — поворот вокруг вертикали, k — размер.
   // Толщина — стопка тёмных слоёв, которые расходятся вбок при повороте; блик бежит по лицу.
   pose3d(th, k = 1) {
-    const c = Math.cos(th), sn = Math.sin(th), q = this.p, f = v => v.toFixed(3);
+    const c = Math.cos(th), sn = Math.sin(th), q = { ...this.cur, shadow: this.p.shadow }, f = v => v.toFixed(3);
     q.front.setAttribute('transform', `translate(0 20) scale(${f(k * c)} ${f(k)}) translate(0 -20)`);
     q.depth.forEach(el => {
       const i = Number(el.dataset.i);
@@ -7851,11 +7864,17 @@ class Ada {
     q.shadow.setAttribute('rx', f(150 * k * (.75 + .25 * Math.abs(c))));
   }
   // Ада ненадолго становится логотипом Hub — каждый раз по-разному
-  async logo(kind) {
+  async logo(kind, mark) {
     if (calm() || this.still || this.logoOn || !this.el.isConnected) return;
     this.logoOn = true; this.after = null;
-    const q = this.p, back = this.state || 'idle', ways = ['melt', 'coin', 'burst'];
+    const back = this.state || 'idle', ways = ['melt', 'coin', 'burst'];
     kind ||= ways[Math.floor(Math.random() * ways.length)];
+    mark ||= this.lastMark === 'hub' ? 'adervis' : 'hub';
+    this.lastMark = mark;
+    this.cur = this.logos[mark];
+    const q = { ...this.p, ...this.cur };
+    const metal = t => { if (q.chrome) q.chrome.setAttribute('opacity', (1 - Math.min(1, t)).toFixed(3)); };
+    metal(0);
     this.stopLoops();
     const showLogo = () => { q.logo.style.display = ''; q.logo.setAttribute('opacity', '1'); };
     const hideLogo = () => { q.logo.style.display = 'none'; q.logo.setAttribute('opacity', '0'); };
@@ -7865,17 +7884,17 @@ class Ada {
         // капля перетекает в плитку, лицо гаснет, плитка оживает и делает оборот
         q.face.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, fill: 'forwards' });
         q.hands.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, fill: 'forwards' });
-        this.morph('tile');
+        this.morph(mark === 'adervis' ? 'mark' : 'tile');
         await wait(420);
         showLogo(); this.pose3d(0, 1); q.logo.setAttribute('opacity', '0');
         await tween(260, t => { q.logo.setAttribute('opacity', t.toFixed(3)); bodyOp(1 - t); });
-        await tween(1500, t => this.pose3d(t * Math.PI * 2, 1 + Math.sin(t * Math.PI) * .06), EASE.io);
+        await tween(1500, t => { this.pose3d(t * Math.PI * 2, 1 + Math.sin(t * Math.PI) * .06); metal(t * 1.3); }, EASE.io);
       } else if (kind === 'coin') {
         // Ада переворачивается как монета, на обороте — знак Hub
         await tween(200, t => { q.body.style.transform = `scaleX(${(1 - t).toFixed(3)})`; }, EASE.in);
         bodyOp(0); q.body.style.transform = '';
         showLogo();
-        await tween(1500, t => this.pose3d(Math.PI / 2 + t * Math.PI * 3.5, 1), EASE.out);
+        await tween(1500, t => { this.pose3d(Math.PI / 2 + t * Math.PI * 3.5, 1); metal(t * 1.3); }, EASE.out);
       } else {
         // рассыпается искрами, из них собирается знак
         const cols = ['#ffd264', '#f0b53a', '#fff3d2', '#c8901f'];
@@ -7890,7 +7909,7 @@ class Ada {
         q.fx.innerHTML = '';
         q.body.getAnimations().forEach(a => a.cancel()); bodyOp(0);
         showLogo();
-        await tween(1100, t => this.pose3d((1 - t) * Math.PI * 3, EASE.back(t)), EASE.out);
+        await tween(1100, t => { this.pose3d((1 - t) * Math.PI * 3, EASE.back(t)); metal(t * 1.3); }, EASE.out);
       }
       // постояла, покачалась, блик прошёл
       await tween(1300, t => this.pose3d(Math.sin(t * Math.PI * 2) * .28 * (1 - t), 1));
@@ -8131,6 +8150,7 @@ function updateNav() {
     if (c && c.n) { el.textContent = c.n; el.classList.toggle('late', c.late); }
   };
   if (typeof drawRail === 'function') drawRail(counts, badge);
+  if (typeof drawDock === 'function') drawDock();
   document.querySelectorAll('#nav [data-page], #tabbar [data-page], #hubtabs [data-page], #grouprail .gritem').forEach(b => {
     const on = b.dataset.page === page;
     b.classList.toggle('active', on);
@@ -9802,22 +9822,84 @@ $('#create').setAttribute('aria-expanded', 'false');
 $('#create').onclick = createOpen;
 addEventListener('resize', createClose);
 
-// Компьютер: «Спросить Аду» и профиль с выходом живут внизу бокового меню.
+// Компьютер: профиль с выходом — внизу бокового меню, Ада — живой плашкой справа внизу.
 // Телефон: всё возвращается на свои места (нижняя панель и «Ещё»).
 const shellDesk = matchMedia('(min-width: 721px)');
-const askHome = $('#ask').parentNode, askNext = $('#ask').nextSibling, userBox = $('.sidebar .bottom');
+const userBox = $('.sidebar .bottom');
 function placeShell() {
   if (shellDesk.matches) {
     const foot = $('#grfoot') || Object.assign(document.createElement('div'), { id: 'grfoot', className: 'grfoot' });
-    foot.append($('#ask'), userBox);
+    foot.append(userBox);
     $('#grouprail').appendChild(foot);
   } else {
-    askHome.insertBefore($('#ask'), askNext);
     $('.sidebar').appendChild(userBox);
   }
 }
+
+// Ада справа внизу: по одному делу на сегодня — «Открыть», «Завтра», «Ещё»,
+// и поле, чтобы сразу спросить её о делах. Сворачивается в одну Аду со счётчиком.
+let dockAda = null, dockI = 0, dockRef = '';
+let dockMin = false;
+try { dockMin = localStorage.getItem('hub.dock.min') === '1'; } catch (e) { /* без памяти */ }
+const DOCK_IDLE = ['Спросите меня, кому пора напомнить о КП', 'Могу посчитать, сколько денег в работе', 'Срочного нет. Хорошее время написать новым компаниям'];
+function dockTips() {
+  const list = db && typeof todayList === 'function' ? todayList() : [];
+  return list.map(x => ({ ref: x.ref, title: x.title, what: x.what, late: x.late, when: x.when, snooze: /^(l|pr|br):/.test(x.ref) }));
+}
+function drawDock() {
+  let d = $('#adadock');
+  if (!d) {
+    d = document.createElement('aside');
+    d.id = 'adadock'; d.className = 'adadock';
+    d.setAttribute('aria-label', 'Ада, помощник Hub');
+    d.innerHTML = `<button class="ddava" type="button" aria-label="Ада"><span class="ddada"></span><b class="navbadge" hidden></b></button>
+      <div class="ddbody"><header class="ddhead"><b>Ада</b><small class="ddcount" aria-live="polite"></small>
+        <button class="ddmin" type="button" aria-label="Свернуть Аду" title="Свернуть">${icon('expand', 15)}</button></header>
+        <div class="ddtip" aria-live="polite"></div>
+        <form class="ddask"><input class="input" name="q" maxlength="1000" autocomplete="off" placeholder="Спросите Аду о делах…" aria-label="Вопрос Аде">
+          <button class="primary" aria-label="Спросить">${icon('send', 15)}</button></form></div>`;
+    document.body.appendChild(d);
+    dockAda = new Ada(d.querySelector('.ddada'), { mood: 'idle' });
+    d.querySelector('.ddava').addEventListener('click', () => { if (dockMin) { dockMin = false; saveDock(); drawDock(); } });
+    d.querySelector('.ddmin').onclick = () => { dockMin = true; saveDock(); drawDock(); };
+    d.querySelector('.ddask').onsubmit = e => {
+      e.preventDefault();
+      const q = e.target.elements.q.value.trim();
+      e.target.elements.q.value = '';
+      askOpen();
+      if (q) askSend(q);
+    };
+    d.addEventListener('click', e => {
+      const b = e.target.closest('[data-dock]');
+      if (!b) return;
+      if (b.dataset.dock === 'next') { dockI++; dockRef = ''; drawDock(); dockAda?.hop(30); }
+    });
+  }
+  d.hidden = !me || !shellDesk.matches;
+  d.classList.toggle('min', dockMin);
+  const tips = dockTips();
+  if (dockRef) { const at = tips.findIndex(t => t.ref === dockRef); if (at >= 0 && at !== dockI % (tips.length || 1)) dockI = at; }
+  const t = tips.length ? tips[dockI % tips.length] : null;
+  dockRef = t?.ref || '';
+  const late = tips.filter(x => x.late).length;
+  const badge = d.querySelector('.ddava .navbadge');
+  badge.hidden = !dockMin || !tips.length;
+  badge.textContent = tips.length; badge.classList.toggle('late', !!late);
+  d.querySelector('.ddcount').textContent = tips.length ? `дело ${(dockI % tips.length) + 1} из ${tips.length}${late ? ` · просрочено ${late}` : ''}` : 'срочного нет';
+  d.querySelector('.ddtip').innerHTML = t
+    ? `<p class="ddsay"><b>${E(t.title)}</b><span>${E(t.what)}</span></p>
+      <div class="ddacts"><button class="primary" data-action="todayopen" data-id="${E(t.ref)}">Открыть</button>
+        ${t.snooze ? `<button data-action="snooze" data-id="${E(t.ref)}">${icon('time', 14)} Завтра</button>` : ''}
+        ${tips.length > 1 ? `<button data-dock="next">Ещё ${icon('next', 14)}</button>` : ''}</div>`
+    : `<p class="ddsay"><span>${E(DOCK_IDLE[dockI % DOCK_IDLE.length])}</span></p>`;
+  if (dockAda && !dockAda.logoOn) {
+    const mood = !t ? (new Date().getHours() >= 22 || new Date().getHours() < 7 ? 'sleep' : 'idle') : t.late ? 'alert' : 'curious';
+    if (dockAda.state !== 'talk') dockAda.set(mood);
+  }
+}
+const saveDock = () => { try { localStorage.setItem('hub.dock.min', dockMin ? '1' : '0'); } catch (e) { /* без памяти */ } };
 placeShell();
-shellDesk.addEventListener?.('change', placeShell);
+shellDesk.addEventListener?.('change', () => { placeShell(); drawDock(); });
 $('#refresh').onclick = async () => {
   try { await reload(); render(); toast('Данные обновлены'); }
   catch (err) { handleError(err); }

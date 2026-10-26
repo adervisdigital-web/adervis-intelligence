@@ -579,10 +579,15 @@ check('сверху видно, где я', (await page.textContent('#hubgroup')
 await nav('keywords');
 check('«Ключевые фразы» — свой пункт в группе «Реклама»', (await page.textContent('#crumb')) === 'Ключевые фразы'
   && await page.$eval('#grouprail .gritem[data-page=keywords]', b => b.closest('.grgrp').dataset.grp === 'Реклама'));
-check('«Создать» — справа в верхней строке, «Спросить Аду» — внизу меню', await page.evaluate(() => {
-  const c = document.querySelector('#create').getBoundingClientRect(), a = document.querySelector('#ask').getBoundingClientRect();
-  return c.right > innerWidth - 60 && c.top < 80 && !!document.querySelector('#grouprail #ask') && a.bottom > innerHeight - 160;
+check('«Создать» — справа в верхней строке, Ада — плашкой справа внизу', await page.evaluate(() => {
+  const c = document.querySelector('#create').getBoundingClientRect(), d = document.querySelector('#adadock').getBoundingClientRect();
+  return c.right > innerWidth - 60 && c.top < 80 && d.right > innerWidth - 40 && d.bottom > innerHeight - 40;
 }));
+check('Ада показывает дело на сегодня с кнопкой «Открыть»', await page.isVisible('#adadock .ddtip [data-action=todayopen]'));
+await page.click('#adadock .ddmin');
+check('Аду можно свернуть, счётчик дел виден', await page.isVisible('#adadock.min .ddava .navbadge'));
+await page.click('#adadock .ddava');
+check('и развернуть обратно', !(await page.$('#adadock.min')));
 await nav('home');
 
 await page.evaluate(() => { document.querySelector('#nav').scrollTop = 0; });
