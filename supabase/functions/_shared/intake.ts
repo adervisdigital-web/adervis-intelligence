@@ -6,17 +6,22 @@
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
 
-export const GO = '🧠 Разобрать';
-export const CANCEL = '✖ Отмена';
+// Кнопки говорят, что это за материал: человек выбирает смысл, а не действие бота.
+export const GO = '🆕 Это новая заявка';
+export const CANCEL = '🗑 Очистить';
+// старые подписи — у кого в Telegram ещё старая клавиатура
+export const OLD = { go: '🧠 Разобрать', cancel: '✖ Отмена', answers: '📝 Ответы к брифу', who: '🔊 Кто это?' };
 // «Ответы к брифу» — текст кнопки из answers.ts, здесь без импорта, чтобы модуль оставался чистым
-export const KEYBOARD = { keyboard: [[{ text: GO }, { text: '📝 Ответы к брифу' }], [{ text: '🔊 Кто это?' }, { text: CANCEL }]], resize_keyboard: true, is_persistent: true };
+export const KEYBOARD = { keyboard: [[{ text: '💬 Это ответ клиента' }, { text: GO }], [{ text: '🔊 Напомни про клиента' }, { text: CANCEL }]], resize_keyboard: true, is_persistent: true };
 export const NO_KEYBOARD = { remove_keyboard: true };
 // Меню команд бота (кнопка «Меню» в Telegram). Кнопки под строкой ввода
 // появляются после первого пересланного сообщения, а меню видно сразу.
 export const COMMANDS = [
-  { command: 'answers', description: 'Ответ клиента: разложить по вопросам брифа' },
-  { command: 'new', description: 'Новая заявка: переслать ТЗ и голосовые' },
-  { command: 'who', description: 'Кто это: голосовое про клиента' },
+  { command: 'answers', description: 'Пересланное — это ответ клиента по брифу' },
+  { command: 'new', description: 'Начать заново: очистить пересланное' },
+  { command: 'go', description: 'Пересланное — это новая заявка' },
+  { command: 'who', description: 'Напомнить голосом, кто клиент' },
+  { command: 'help', description: 'Как пользоваться ботом' },
   { command: 'today', description: 'Сводка «На сегодня»' },
   { command: 'stop', description: 'Не присылать утреннюю сводку' }
 ];

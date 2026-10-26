@@ -5,19 +5,23 @@
 // deno-lint-ignore no-explicit-any
 type Row = Record<string, any>;
 
-export const ANSWERS = '📝 Ответы к брифу';
+export const ANSWERS = '💬 Это ответ клиента';
 export const PICK = '↳ ';
 // «Кто это?»: тот же выбор брифа, но своя метка — бот понимает, что прислать голосовое.
-export const WHO = '🔊 Кто это?';
+export const WHO = '🔊 Напомни про клиента';
 export const WHO_PICK = '🔊 ';
 const CUT = 48;
 const label = (b: Row, mark = PICK) => mark + String(b.title || 'Бриф').slice(0, CUT);
+
+const TR: Record<string, string> = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+export const translit = (t: string) => t.replace(/[а-яё]/g, c => TR[c] ?? c);
 
 // Чей это ответ: фамилия или имя отправителя в названии заявки или в клиенте брифа.
 export function guessBrief(sender: string, briefs: Row[], leads: Row[]): Row | null {
   const words = String(sender || '').toLowerCase().split(/\s+/).filter(w => w.length >= 3);
   if (!words.length) return null;
-  const hay = (b: Row) => `${leads.find(l => l.id === b.lead_id)?.name || ''} ${b.client || ''} ${b.title || ''}`.toLowerCase();
+  // Telegram часто подписывает латиницей («Sofia Pichugina»), а в заявке — по-русски: сверяем и транслитом
+  const hay = (b: Row) => { const t = `${leads.find(l => l.id === b.lead_id)?.name || ''} ${b.client || ''} ${b.title || ''}`.toLowerCase(); return t + ' ' + translit(t); };
   const hits = briefs.filter(b => words.some(w => hay(b).includes(w)));
   return hits.length === 1 ? hits[0] : null;
 }
@@ -72,6 +76,6 @@ export function answersText(title: string, qs: Row[], got: number[], open: numbe
   for (const n of got) lines.push(`✓ ${n}. ${qs[n - 1].q}\n   ${qs[n - 1].answer}`);
   if (open.length) lines.push('', `Без ответа: ${open.join(', ')}.`);
   if (other) lines.push('', `Ещё клиент написал: ${other}`);
-  lines.push('', 'Переписка дописана к ТЗ. Проверьте смету и план.', link);
+  lines.push('', 'Переписка дописана к ТЗ.', 'Что дальше: откройте бриф, проверьте смету и план и обновите КП.', link);
   return lines.join('\n').slice(0, 4000);
 }
