@@ -5,7 +5,8 @@ import {
   sanitizeAdTask, buildKeywordPrompt, parseKeywords, buildAdPrompt, parseAds, DIRECT_LIMITS,
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost, RUBRICS,
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
-  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav, pcmOf, buildDigestVoicePrompt
+  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav, pcmOf, buildDigestVoicePrompt,
+  sanitizeAsk, askContext, buildAskPrompt, parseAsk
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -294,6 +295,17 @@ check('голос: из WAV — отсчёты и частота', pw.pcm.length
 check('голос: голый PCM — частота из mime', praw.pcm.length === 10 && praw.rate === 16000);
 const dv = buildDigestVoicePrompt('На сегодня: 2 заявки ждут ответа. https://hub.adervis.ru/');
 check('голос утром: пересказ сводки, «Доброе утро», без ссылок и выдумок', dv.includes('Доброе утро') && dv.includes('2 заявки ждут ответа') && dv.includes('Ничего не придумывай') && dv.includes('Ссылки'));
+
+
+// «Спросить»: вопрос и короткая история; ответ — только по данным Hub
+check('спросить: пустой вопрос отклоняется', !!throws(() => sanitizeAsk({ question: ' ' })));
+const at = sanitizeAsk({ question: 'Что горит?', history: Array.from({ length: 9 }, (_, i) => ({ who: i % 2 ? 'ai' : 'me', text: 'т' + i })) });
+check('спросить: в историю идут последние шесть реплик', at.history.length === 6 && at.history[5].text === 'т8');
+const actx = askContext({ today: '2026-10-26', leads: [{ name: 'Банк', status: 'Новое', amount: '0' }], briefs: [{ client: 'ДСК', title: 'Ролики', stage: 'КП', kp: { price_full: 750000, price_base: 540000 }, questions: [{ status: 'задан' }, { status: 'ответ' }] }] });
+check('спросить: в данных цена КП и открытые вопросы', actx.briefs[0].price === 750000 && actx.briefs[0].base_price === 540000 && actx.briefs[0].open_questions === 1);
+const askP = buildAskPrompt(at, actx);
+check('спросить: промпт с данными, вопросом и запретом выдумывать', askP.includes("ВОПРОС:") && askP.endsWith("Что горит?") && askP.includes("Только факты из данных") && askP.includes("\"ДСК\""));
+check('спросить: ответ без длинного тире и звёздочек', parseAsk('{"text":"**ДСК** — ждём ответ"}') === 'ДСК: ждём ответ');
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

@@ -878,3 +878,53 @@ export function buildDigestVoicePrompt(digest: string): string {
     '', 'СВОДКА:', digest.slice(0, 6000)
   ].join('\n');
 }
+
+
+// «Спросить»: вопрос владельца о делах студии. Отвечаем по данным Hub —
+// заявки, брифы и КП, план публикаций, кампании и проверенная база знаний.
+export function sanitizeAsk(input: any) {
+  const q = clip(input?.question, 1000);
+  if (q.length < 3) throw new Error('Напишите вопрос');
+  const history = (Array.isArray(input?.history) ? input.history : []).slice(-6)
+    .map((m: any) => ({ who: m?.who === 'ai' ? 'ai' : 'me', text: clip(m?.text, 1200) })).filter((m: any) => m.text);
+  return { question: q, history };
+}
+
+export function askContext(d: { leads?: any[]; briefs?: any[]; content?: any[]; campaigns?: any[]; facts?: any[]; today: string }) {
+  const money = (k: any) => Number(k?.price_full) || Number(k?.price_base) || 0;
+  return {
+    today: d.today,
+    leads: (d.leads || []).slice(0, 60).map(l => ({ name: clip(l.name, 120), status: clip(l.status, 30), came_on: clip(l.came_on, 10), source: clip(l.source, 40),
+      request: clip(l.request, 160), next_step: clip(l.next_step, 160), next_on: clip(l.next_on, 10), amount: Number(l.amount) || 0 })),
+    briefs: (d.briefs || []).slice(0, 40).map(b => ({ client: clip(b.client, 120), title: clip(b.title, 160), stage: clip(b.stage, 30),
+      price: money(b.kp), base_price: Number(b.kp?.price_base) || 0, kp_sent: clip(b.kp?.sent_on, 10), next_step: clip(b.next_step, 160), next_on: clip(b.next_on, 10),
+      open_questions: (Array.isArray(b.questions) ? b.questions : []).filter((q: any) => q?.status !== 'ответ').length })),
+    content: (d.content || []).slice(0, 40).map(c => ({ title: clip(c.title, 140), channel: clip(c.channel, 30), status: clip(c.status, 30), date: clip(c.publish_on || c.date, 10) })),
+    campaigns: (d.campaigns || []).slice(0, 20).map(c => ({ name: clip(c.name, 120), channel: clip(c.channel, 40), status: clip(c.status, 30), budget: Number(c.budget) || 0, spent: Number(c.spent) || 0 })),
+    facts: (d.facts || []).slice(0, 40).map(f => ({ title: clip(f.title, 140), body: clip(f.body, 400) }))
+  };
+}
+
+export function buildAskPrompt(task: ReturnType<typeof sanitizeAsk>, ctx: ReturnType<typeof askContext>): string {
+  return [
+    'Ты помощник владельцев видеостудии ADERVIS внутри их рабочей системы Hub. Отвечай на вопрос по данным ниже: заявки, брифы и КП, план публикаций, рекламные кампании, проверенные факты о студии.',
+    'Правила:',
+    '- Отвечай по-русски, коротко и по делу, как опытный коллега: сначала прямой ответ, потом 2–5 пунктов, если нужно.',
+    '- Только факты из данных. Если данных не хватает, так и скажи и подскажи, где в Hub это заполнить.',
+    '- Суммы с пробелами и знаком ₽. Даты по-русски («27 октября»).',
+    '- Если спрашивают, что делать, предложи конкретный следующий шаг и с кем.',
+    '- Без длинного тире «—»: используй двоеточие, запятую или точку. Без эмодзи и заголовков.',
+    'Верни строго JSON: {"text":"ответ"}',
+    '', 'ДАННЫЕ:', JSON.stringify(ctx),
+    ...(task.history.length ? ['', 'ПЕРЕПИСКА ДО ЭТОГО:', ...task.history.map(m => `${m.who === 'ai' ? 'Помощник' : 'Владелец'}: ${m.text}`)] : []),
+    '', 'ВОПРОС:', task.question
+  ].join('\n');
+}
+
+export function parseAsk(text: string): string {
+  let t = text.trim();
+  try { const j = JSON.parse(t.replace(/^```(?:json)?\s*|\s*```$/g, '')); if (typeof j?.text === 'string') t = j.text; } catch { /* просто текст */ }
+  t = t.replace(/\*\*/g, '').replace(/^#+\s*/gm, '').replace(/ — /g, ': ').trim();
+  if (!t) throw new Error('Модель не ответила. Попробуйте ещё раз.');
+  return t.slice(0, 4000);
+}

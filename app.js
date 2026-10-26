@@ -7368,6 +7368,41 @@ function navCounts() {
   return out;
 }
 
+// «Спросить»: вопрос о делах студии, ответ — по данным Hub (заявки, брифы и КП,
+// план, кампании, проверенная база). Переписка живёт, пока открыта вкладка.
+const ASK_HINTS = ['Что горит сегодня?', 'Сколько денег в работе и у кого?', 'Кому пора напомнить о КП?', 'Что выходит в контенте на этой неделе?'];
+let askChat = [], askBusy = false;
+function askOpen() {
+  const msgs = askChat.map(m => `<div class="askmsg ${m.who}">${m.who === 'ai' ? `<i>${icon('assistant', 15)}</i>` : ''}<p>${E(m.text).replace(/\n/g, '<br>')}</p></div>`).join('');
+  modal(`<div class="askhead"><span class="askmark">${icon('assistant', 20)}</span><div><h2>Спросить</h2>
+      <small class="muted">Отвечает ИИ по данным Hub: заявки, брифы и КП, план, кампании, база знаний</small></div></div>
+    <div class="asklog" id="asklog" aria-live="polite">${msgs || `<div class="askhints">${ASK_HINTS.map(h => `<button type="button" class="chip" data-askhint="${E(h)}">${E(h)}</button>`).join('')}</div>`}
+      ${askBusy ? `<div class="askmsg ai busy"><i>${icon('assistant', 15)}</i><p><span class="askdots"><b></b><b></b><b></b></span></p></div>` : ''}</div>
+    <form id="askf" class="askform"><textarea id="askq" rows="1" maxlength="1000" placeholder="Например: у кого из клиентов КП без ответа больше трёх дней?" ${askBusy ? 'disabled' : ''}></textarea>
+      <button class="primary" ${askBusy ? 'disabled' : ''} aria-label="Отправить вопрос">${icon('send', 17)}</button></form>
+    <p class="muted asknote">Вопрос и данные Hub, включая суммы, уходят в ИИ. Ответ может ошибаться: важное проверяйте в разделе.</p>`, 'askdlg');
+  const log = $('#asklog'); log.scrollTop = log.scrollHeight;
+  const q = $('#askq'); if (!askBusy) q.focus();
+  q.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#askf').requestSubmit(); } };
+  $('#askf').onsubmit = e => { e.preventDefault(); askSend(q.value); };
+  log.querySelectorAll('[data-askhint]').forEach(b => { b.onclick = () => askSend(b.dataset.askhint); });
+}
+async function askSend(text) {
+  text = String(text || '').trim();
+  if (!text || askBusy) return;
+  const history = askChat.slice(-6);
+  askChat.push({ who: 'me', text }); askBusy = true; askOpen();
+  try {
+    const r = await api.generate({ mode: 'ask', question: text, history });
+    askChat.push({ who: 'ai', text: r.text || 'Пустой ответ.' });
+  } catch (err) {
+    askChat.push({ who: 'ai', text: 'Не получилось ответить: ' + (err.message || 'ошибка сервера') });
+  } finally {
+    askBusy = false;
+    if ($('#modal').open && $('#modal').classList.contains('askdlg')) askOpen();
+  }
+}
+
 // Крупная сумма на главной один раз за сессию «набегает» от нуля — как счётчик.
 let counted = false;
 function countUp() {
@@ -8939,6 +8974,7 @@ addEventListener('resize', hubMark);
 document.fonts?.ready.then(hubMark);
 $('#menu').innerHTML = `${icon('menu')}<span>Все разделы</span>`;
 $('#ask').innerHTML = `${icon('assistant', 18)}<span>Спросить</span>`;
+$('#ask').onclick = () => askOpen();
 $('#refresh').innerHTML = icon('refresh');
 $('#theme').innerHTML = icon('theme');
 $('#search').innerHTML = `${icon('search', 17)}<span>Найти или сделать…</span><span class="kbd">Ctrl K</span>`;

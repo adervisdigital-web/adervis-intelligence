@@ -14,7 +14,8 @@ import {
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost,
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
   providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider,
-  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav
+  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav,
+  sanitizeAsk, askContext, buildAskPrompt, parseAsk
 } from './compose.ts';
 
 // В новых проектах Supabase ключи называются иначе, чем в старых,
@@ -169,6 +170,34 @@ Deno.serve(async (req) => {
       for (let i = 0; i < audio.length; i += 0x8000) bin += String.fromCharCode(...audio.subarray(i, i + 0x8000));
       await admin.from('ai_usage').insert({ actor: user.email, model: `${provider}/${usedModel}+${ttsModel}`, drafts: 0, chars: script.length });
       return json({ text: script, audio: btoa(bin), mime: 'audio/wav', model: usedModel, voice: ttsModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
+    }
+
+    // «Спросить»: данные читаем от имени вошедшего — политики доступа действуют.
+    if (input?.mode === 'ask') {
+      const task = sanitizeAsk(input);
+      const today = new Date().toISOString().slice(0, 10);
+      const [leads, briefs, content, campaigns, facts] = await Promise.all([
+        supabase.from('leads').select('name,status,came_on,source,request,next_step,next_on,amount').order('came_on', { ascending: false }).limit(60),
+        supabase.from('briefs').select('client,title,stage,kp,next_step,next_on,questions').order('updated_at', { ascending: false }).limit(40),
+        supabase.from('content').select('title,channel,status,publish_on').order('publish_on', { ascending: false }).limit(40),
+        supabase.from('campaigns').select('name,channel,status,budget,spent').limit(20),
+        supabase.from('knowledge').select('title,body').eq('access', 'Публичное').in('status', TRUSTED_STATUS).limit(40)
+      ]);
+      const prompt = buildAskPrompt(task, askContext({ leads: leads.data ?? [], briefs: briefs.data ?? [], content: content.data ?? [], campaigns: campaigns.data ?? [], facts: facts.data ?? [], today }));
+      const claude = !!BRIEF_KEY, provider = claude ? BRIEF_PROVIDER : PROVIDER;
+      let answer = '', usedModel = '', lastStatus = 0;
+      for (const [i, model] of (claude ? modelAttempts(BRIEF_MODEL, '') : modelAttempts(MODEL, FALLBACK_MODEL)).entries()) {
+        const r = claude ? providerRequest(BRIEF_PROVIDER, model, BRIEF_KEY, BRIEF_BASE_URL, prompt) : providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt, YANDEX_FOLDER);
+        const resp = await fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(r.body) });
+        if (resp.ok) { answer = parseAsk(providerText(provider, await resp.json())); usedModel = model; break; }
+        lastStatus = resp.status;
+        console.error('ai-write ask:', model, resp.status, (await resp.text()).slice(0, 300));
+        if (!RETRY_STATUS.includes(resp.status)) break;
+        if (i === 0) await new Promise(res => setTimeout(res, 1500));
+      }
+      if (!answer) return json({ error: RETRY_STATUS.includes(lastStatus) ? 'Модель сейчас перегружена. Попробуйте через минуту.' : `Ответ не получился (ошибка ${lastStatus}).` }, 502);
+      await admin.from('ai_usage').insert({ actor: user.email, model: `${provider}/${usedModel}`, drafts: 0, chars: answer.length });
+      return json({ text: answer, model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
     }
 
     const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post', 'brief', 'case'].includes(input?.mode) ? input.mode : 'write';
