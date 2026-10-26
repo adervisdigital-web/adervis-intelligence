@@ -2631,3 +2631,53 @@ html:not([data-theme=dark]) .hubtip{background:#16161a}
 .kpvalid label{display:inline-flex;align-items:center;gap:8px;margin:0;font-size:13px;color:var(--muted)}
 .kpvalid select{width:auto;padding:6px 10px}
 .kpvalid button{margin-left:auto;display:inline-flex;align-items:center;gap:6px}
+
+/* Ада на главной, в карточке «Сейчас» */
+.hmnow{position:relative}
+.hmada{position:absolute;top:10px;right:16px;width:132px;pointer-events:auto}
+.hmnow h2,.hmnow .hmfacts{padding-right:140px}
+@media(max-width:720px){.hmada{width:84px;top:8px;right:8px}.hmnow h2,.hmnow .hmfacts{padding-right:84px}}
+
+/* ===== панель групп слева + разделы группы сверху ===== */
+.grouprail{display:none}
+.hubgroup{display:none}
+@media(min-width:721px){
+  .app{padding-left:84px}
+  .grouprail{position:fixed;inset:0 auto 0 0;z-index:22;width:84px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0 16px;
+    background:color-mix(in srgb,var(--panel) 82%,transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border-right:1px solid var(--line)}
+  .grmark{width:48px;height:48px;padding:7px;border:0;border-radius:15px;background:var(--gold);margin-bottom:12px;box-shadow:0 10px 26px -10px rgba(246,189,58,.7)}
+  .grmark img{width:100%;height:100%;display:block}
+  .grbtn{position:relative;width:62px;min-height:60px;padding:8px 0 6px;border:0;border-radius:16px;background:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;transition:background .2s,color .2s}
+  .grbtn i{display:grid;place-items:center;width:36px;height:30px;border-radius:10px;transition:background .2s,color .2s}
+  .grbtn span{font-size:10.5px;font-weight:600;line-height:1.1;letter-spacing:.01em}
+  .grbtn:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 5%,transparent)}
+  .grbtn:hover i{color:var(--acc)}
+  .grbtn.active{color:var(--ink);background:color-mix(in srgb,var(--acc) 13%,transparent)}
+  .grbtn.active i{background:var(--acc);color:#141414;box-shadow:0 6px 18px -6px var(--acc)}
+  .grbtn.active::before{content:"";position:absolute;left:-11px;top:14px;bottom:14px;width:4px;border-radius:0 4px 4px 0;background:var(--acc)}
+  .grbtn .navbadge{position:absolute;top:4px;right:6px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:10.5px;line-height:18px;background:var(--gold);color:#141414;box-shadow:0 0 0 2px var(--panel)}
+  .grbtn .navbadge.late{background:#ef4444;color:#fff}
+  .grspace{flex:1}
+  .grouprail #menu{order:99;width:62px!important;height:auto!important;min-height:52px;margin:6px 0 0!important;padding:6px 0!important;flex-direction:column;gap:4px!important;justify-content:center;font-size:10.5px!important;font-weight:600!important;border-radius:16px!important}
+  .grouprail #menu span{display:block!important}
+  .grouprail #menu::after{display:none}
+  .hubmark{display:none!important}
+  .hubgroup{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px 0 8px;margin-right:6px;border-right:1px solid var(--line);font:600 14px var(--font-display);white-space:nowrap}
+  .hubgroup[hidden]{display:none}
+  .hubgroup i{width:10px;height:10px;border-radius:3px;background:var(--acc)}
+  html body .sidebar{left:max(108px,calc((100vw - 1720px) / 2 + 32px))}
+}
+
+/* ===== фон: тёплое и фиолетовое свечение вместо точек ===== */
+body{background-color:var(--bg);background-image:
+    radial-gradient(1100px 680px at 8% -12%, color-mix(in srgb,var(--gold) 15%,transparent), transparent 62%),
+    radial-gradient(900px 760px at 104% 108%, color-mix(in srgb,#8b5cf6 16%,transparent), transparent 62%),
+    radial-gradient(700px 520px at 70% 30%, color-mix(in srgb,#ff7a3c 6%,transparent), transparent 70%);
+  background-size:auto;background-attachment:fixed}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.app,.gate{position:relative;z-index:1}
+html:not([data-theme=dark]) body{background-image:
+    radial-gradient(1100px 680px at 8% -12%, color-mix(in srgb,var(--gold) 20%,transparent), transparent 62%),
+    radial-gradient(900px 760px at 104% 108%, color-mix(in srgb,#8b5cf6 12%,transparent), transparent 62%)}
+html:not([data-theme=dark]) body::before{opacity:.04;mix-blend-mode:multiply}

@@ -2989,6 +2989,32 @@ function weekHtml() {
 // Главная: одно дело крупно («Сейчас»), за ним короткая очередь; справа деньги
 // в работе и план на сегодня; ниже неделя и одна строка цифр маркетинга.
 // Всё остальное живёт в своих разделах: главная не должна быть кашей.
+// Ада на главной реагирует на главное дело: выбрали КП — радуется,
+// читают КП сейчас — насторожилась, ждут ответа — любопытство, поломка — «ой»,
+// срочного нет — дремлет ночью, днём просто рядом.
+function homeAdaMood(focus) {
+  if (!focus) { const h = new Date().getHours(); return h >= 22 || h < 7 ? 'sleep' : 'idle'; }
+  if (focus.ic === 'check') return 'love';
+  if (focus.ic === 'warn') return 'oops';
+  if (focus.live) return 'alert';
+  return 'curious';
+}
+// Ады на странице оживают после каждой отрисовки; новый выбор КП — праздник, один раз
+function mountAdas() {
+  document.querySelectorAll('#view [data-ada]').forEach(el => {
+    if (el.classList.contains('ada-host')) return;
+    const mood = el.dataset.ada, key = el.dataset.adaKey || '';
+    let seen = [];
+    try { seen = JSON.parse(localStorage.getItem('hub.ada.party') || '[]'); } catch (e) { /* без памяти */ }
+    const party = mood === 'love' && key && !seen.includes(key);
+    const ada = new Ada(el, { mood: party ? 'done' : mood, interactive: true });
+    if (party) {
+      try { localStorage.setItem('hub.ada.party', JSON.stringify([...seen, key].slice(-30))); } catch (e) { /* без памяти */ }
+      setTimeout(() => el.isConnected && ada.set('love'), 1800);
+    }
+  });
+}
+
 function renderHome() {
   ensureStock();
   const sig = homeSignals(), tl = todayList(), lateN = tl.filter(x => x.late).length;
@@ -3037,6 +3063,7 @@ function renderHome() {
     <div class="hmtop">
       <div class="hmmain">
       <section class="card hmnow tone-${focus?.tone || 'gold'}" aria-labelledby="hmnowh">
+        <div class="hmada" data-ada="${homeAdaMood(focus)}" data-ada-key="${E(focus?.key || '')}" aria-hidden="true"></div>
         ${focus ? `<span class="hmkind">${focus.live ? '<em class="livedot" aria-hidden="true"></em>Прямо сейчас' : focus.late ? 'Просрочено' : 'Сейчас главное'}</span>
           <h2 id="hmnowh">${E(focus.title)}</h2>
           <p class="hmfacts">${E(focus.detail)}${focus.at ? ` · ${E(ago(focus.at))}` : ''}</p>
@@ -7397,6 +7424,7 @@ function render() {
   const keep = page === 'dialogs' ? dialogSnapshot() : null;
   $('#view').innerHTML = s;
   countUp();
+  mountAdas();
   // цвет группы раздела — для подсветки карточек и цифр внутри
   $('#view').className = 'tone-' + toneOf(page);
   decorateSearch();
@@ -7882,6 +7910,19 @@ function updateNav() {
     el.hidden = !c || !c.n;
     if (c && c.n) { el.textContent = c.n; el.classList.toggle('late', c.late); }
   };
+  if (typeof drawHubTabs === 'function') {
+    drawHubTabs();
+    const g = groupOf(page);
+    groupLast[g] = page;
+    try { localStorage.setItem('hub.group.last', JSON.stringify(groupLast)); } catch (e) { /* без памяти */ }
+    document.querySelectorAll('#grouprail [data-group]').forEach(b => {
+      const on = b.dataset.group === g, ids = NAV.find(([n]) => n === b.dataset.group)[1];
+      b.classList.toggle('active', on);
+      if (on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+      const inside = ids.map(id => counts[id]).filter(c => c && c.n);
+      badge(b.querySelector('.navbadge'), { n: inside.reduce((n, c) => n + c.n, 0), late: inside.some(c => c.late) });
+    });
+  }
   requestAnimationFrame(() => typeof hubMark === 'function' && hubMark());
   document.querySelectorAll('#nav [data-page], #tabbar [data-page], #hubtabs [data-page]').forEach(b => {
     const on = b.dataset.page === page;
@@ -9417,10 +9458,35 @@ $('#nav').addEventListener('click', e => {
 // и «Все разделы» — панель со всеми группами. На телефоне — нижняя панель, как раньше.
 const HUB_TABS = ['home', 'leads', 'briefs', 'dialogs', 'content'];
 const HUB_TAB_LABEL = { home: 'Сегодня', briefs: 'Брифы и КП', content: 'Контент' };
-$('#hubtabs').innerHTML = `<i class="hubhover" aria-hidden="true"></i><i class="hubind" aria-hidden="true"></i>`
-  + HUB_TABS.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 17)}<span>${HUB_TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('');
+// Слева — панель групп (Сегодня, Продажи, Реклама…), сверху — разделы открытой группы.
+// На «Сегодня» сверху пять ежедневных разделов. Группа помнит, где вы были в ней в последний раз.
+const GROUP_ICON = { '': 'home', 'Продажи': 'deals', 'Реклама': 'ads', 'Контент': 'content', 'Аналитика': 'analytics', 'Компания': 'knowledge', 'Система': 'settings' };
+const GROUP_LABEL = { '': 'Сегодня' };
+let groupLast = {};
+try { groupLast = JSON.parse(localStorage.getItem('hub.group.last') || '{}'); } catch (e) { /* без памяти */ }
+let hubTabsGroup = null;
+function drawHubTabs() {
+  const g = groupOf(page);
+  if (g === hubTabsGroup) return;
+  hubTabsGroup = g;
+  const ids = g === '' ? HUB_TABS : NAV.find(([n]) => n === g)[1];
+  $('#hubtabs').innerHTML = `<i class="hubhover" aria-hidden="true"></i><i class="hubind" aria-hidden="true"></i>`
+    + ids.map(id => `<button class="hubtab tone-${toneOf(id)}" data-page="${id}">${icon(id, 17)}<span>${HUB_TAB_LABEL[id] || NAV_LABEL[id] || SECTION_TITLE[id]}</span><b class="navbadge" hidden></b></button>`).join('');
+  const hg = $('#hubgroup');
+  if (hg) { hg.className = `hubgroup tone-${GROUP_TONE[g] || 'gold'}`; hg.innerHTML = g ? `<i></i>${E(g)}` : ''; hg.hidden = !g; }
+}
+$('#grouprail').innerHTML = `<button class="grmark" data-page="home" data-tip="Hub ADERVIS: на главную"><img src="brand/hub/hub-u.svg" alt=""></button>`
+  + NAV.map(([g]) => `${g === 'Система' ? '<span class="grspace"></span>' : ''}<button class="grbtn tone-${GROUP_TONE[g] || 'gold'}" data-group="${E(g)}" data-tip="${E(GROUP_LABEL[g] ?? g)}"><i>${icon(GROUP_ICON[g] || 'menu', 22)}</i><b class="navbadge" hidden></b><span>${E(GROUP_LABEL[g] ?? g)}</span></button>`).join('');
+$('#grouprail').addEventListener('click', e => {
+  const b = e.target.closest('[data-group]');
+  if (!b) return;
+  const g = b.dataset.group, ids = NAV.find(([n]) => n === g)[1];
+  go(ids.includes(groupLast[g]) ? groupLast[g] : ids[0]);
+});
+// «Все разделы» на компьютере живёт внизу панели групп, на телефоне — в шапке
+if (matchMedia('(min-width: 721px)').matches) $('#grouprail').appendChild($('#menu'));
 // Подложка едет за курсором, золотая полоска — к открытому разделу: строка «живая», но без украшений.
-const hubPlace = (el, b) => { if (!b) { el.style.opacity = 0; return; } el.style.opacity = 1; el.style.transform = `translateX(${b.offsetLeft}px)`; el.style.width = b.offsetWidth + 'px'; };
+const hubPlace = (el, b) => { if (!el) return; if (!b) { el.style.opacity = 0; return; } el.style.opacity = 1; el.style.transform = `translateX(${b.offsetLeft}px)`; el.style.width = b.offsetWidth + 'px'; };
 $('#hubtabs').addEventListener('pointerover', e => { const b = e.target.closest('.hubtab'); if (b) hubPlace($('.hubhover'), b); });
 $('#hubtabs').addEventListener('pointerleave', () => hubPlace($('.hubhover'), null));
 const hubMark = () => hubPlace($('.hubind'), $('#hubtabs .hubtab.active'));
