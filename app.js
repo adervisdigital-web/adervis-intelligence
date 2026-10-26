@@ -5307,6 +5307,14 @@ function briefAudit(b) {
   const holders = slots.filter(([o, f]) => AUDIT_PLACEHOLDER.test(o[f]));
   if (holders.length) add('err', 'КП', `Черновые слова в текстах: ${holders.slice(0, 3).map(([o, f]) => `«${String(o[f]).slice(0, 40)}»`).join(', ')}`, 'kp');
   if (slots.some(([o, f]) => /действует до|предложение действительно/i.test(o[f]))) add('err', 'КП', 'В тексте есть срок действия предложения: владельцы просили его не показывать', 'kp');
+  // суммы в текстах КП: если их нет в смете, возможно, это цифры от прошлой цены
+  if (items.length && k.full > 0) {
+    const d0 = estimateDoc(b), known = [k.full, k.base, ...d0.groups.flatMap(g => [g.sum.base, g.sum.full, ...g.rows.flatMap(r => [r.base, r.full])]), ...d0.options.map(o => o.price)].filter(v => v > 0);
+    const txt = ['intro', 'style', 'concept', 'approach', 'terms'].map(f => kp[f] || '').join(' ');
+    const amounts = [...new Set([...txt.matchAll(/(\d{1,3}(?:[\s]\d{3})+|\d{4,})\s*(?:₽|руб)/g)].map(m => Number(m[1].replace(/[\s]/g, ''))))].filter(v => v >= 1000);
+    const odd = amounts.filter(v => !known.some(x => Math.abs(x - v) <= x * .01));
+    if (odd.length) add('warn', 'КП', `В текстах КП суммы не из сметы: ${odd.slice(0, 5).map(rub).join(', ')}. Если цену меняли, пересчитайте их`, 'kp');
+  }
   if (!String(k.intro || '').trim()) add('warn', 'КП', 'Нет вступления: клиент не увидит свою задачу нашими словами', 'kp');
   if (!String(kp.contact || '').trim()) add('err', 'КП', 'Не указано контактное лицо', 'kp');
   if (!String(k.phone || '').trim()) add('err', 'КП', 'Нет телефона в КП', 'kp');
