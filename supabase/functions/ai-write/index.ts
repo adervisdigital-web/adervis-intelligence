@@ -46,7 +46,7 @@ const BRIEF_BASE_URL = Deno.env.get('BRIEF_AI_BASE_URL') || '';
 // Голосовая сводка читается только Gemini TTS: свой ключ VOICE_AI_KEY или ключ Gemini проекта.
 const VOICE_KEY = Deno.env.get('VOICE_AI_KEY') || (PROVIDER === 'gemini' ? AI_KEY : Deno.env.get('GEMINI_API_KEY')) || '';
 const VOICE_MODEL = Deno.env.get('VOICE_TTS_MODEL') || '';
-const VOICE_NAME = Deno.env.get('VOICE_TTS_VOICE') || 'Puck';
+const VOICE_NAME = Deno.env.get('VOICE_TTS_VOICE') || 'Kore';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

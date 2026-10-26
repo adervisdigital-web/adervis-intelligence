@@ -791,7 +791,7 @@ export function voiceContext(b: any, lead: any) {
 
 export function buildVoicePrompt(ctx: ReturnType<typeof voiceContext>): string {
   return [
-    'Ты продюсер видеостудии ADERVIS. Коллега забыл, что это за клиент. Напиши текст короткого голосового сообщения, которое быстро и живо напомнит суть.',
+    'Ты продюсер видеостудии ADERVIS, девушка. Коллега забыл, что это за клиент. Напиши текст короткого голосового сообщения, которое быстро и живо напомнит суть. Говоришь от женского лица: «я посмотрела», «я отправила».',
     'Порядок: кто клиент и откуда пришёл; что ему нужно; главная мысль или идея; деньги (если есть); на каком мы этапе и чего ждём от клиента; следующий шаг.',
     'Правила:',
     '- 70–100 слов, это 30–45 секунд речи. Разговорно, тепло, с интересом, как живой человек в рабочем чате. Без канцелярита.',
@@ -814,8 +814,8 @@ export function parseVoice(text: string): string {
 
 // Структура «режиссёр → актёр»: модели TTS 3.x читают вслух всё, что похоже на
 // текст, поэтому звучит только блок ТРАНСКРИПТ.
-export const VOICE_DIRECTION = `# AUDIO PROFILE: Russian male, a friendly producer at a video studio, telling his colleague about a client
-## THE SCENE: A short voice message in a work chat. The colleague forgot who this client is; the producer quickly and vividly brings him up to speed.
+export const VOICE_DIRECTION = `# AUDIO PROFILE: Russian female, a friendly producer at a video studio, telling her colleague about a client
+## THE SCENE: A short voice message in a work chat. The colleague forgot who this client is; the producer quickly and vividly brings them up to speed.
 ### DIRECTOR'S NOTES
 Style: lively, warm and expressive, with a smile in the voice, genuinely interested in the project. Conversational, like a real person, never like a robot or a news anchor. Clear emphasis on names, numbers and the next step.
 Pacing: brisk but clear, short natural pauses between thoughts.
@@ -823,7 +823,7 @@ Pronunciation: native Russian. Read numbers as words.
 #### TRANSCRIPT
 `;
 
-export function ttsRequest(model: string, key: string, baseUrl: string, script: string, voice = 'Puck') {
+export function ttsRequest(model: string, key: string, baseUrl: string, script: string, voice = 'Kore') {
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   return {
     url: `${base}/models/${model}:generateContent`,
@@ -874,7 +874,7 @@ export function toWav(bytes: Uint8Array, mime: string): Uint8Array {
 // Утренняя сводка голосом: пересказ того же текста, что приходит в Telegram.
 export function buildDigestVoicePrompt(digest: string): string {
   return [
-    'Ты продюсер видеостудии ADERVIS. Перескажи утреннюю сводку коллегам коротким голосовым сообщением.',
+    'Ты продюсер видеостудии ADERVIS, девушка. Перескажи утреннюю сводку коллегам коротким голосовым сообщением. Говоришь от женского лица.',
     'Правила:',
     '- 60–110 слов, до 45 секунд речи. Живо и по-человечески, как бодрое утреннее голосовое в рабочем чате.',
     '- Начни с «Доброе утро!». Сначала самое срочное: кому ответить, что просрочено, кто открыл КП. Потом остальное одной-двумя фразами.',
@@ -883,6 +883,56 @@ export function buildDigestVoicePrompt(digest: string): string {
     'Верни строго JSON: {"text":"текст сообщения"}',
     '', 'СВОДКА:', digest.slice(0, 6000)
   ].join('\n');
+}
+
+
+// «Спросить»: вопрос владельца о делах студии. Отвечаем по данным Hub —
+// заявки, брифы и КП, план публикаций, кампании и проверенная база знаний.
+export function sanitizeAsk(input: any) {
+  const q = clip(input?.question, 1000);
+  if (q.length < 3) throw new Error('Напишите вопрос');
+  const history = (Array.isArray(input?.history) ? input.history : []).slice(-6)
+    .map((m: any) => ({ who: m?.who === 'ai' ? 'ai' : 'me', text: clip(m?.text, 1200) })).filter((m: any) => m.text);
+  return { question: q, history };
+}
+
+export function askContext(d: { leads?: any[]; briefs?: any[]; content?: any[]; campaigns?: any[]; facts?: any[]; today: string }) {
+  const money = (k: any) => Number(k?.price_full) || Number(k?.price_base) || 0;
+  return {
+    today: d.today,
+    leads: (d.leads || []).slice(0, 60).map(l => ({ name: clip(l.name, 120), status: clip(l.status, 30), came_on: clip(l.came_on, 10), source: clip(l.source, 40),
+      request: clip(l.request, 160), next_step: clip(l.next_step, 160), next_on: clip(l.next_on, 10), amount: Number(l.amount) || 0 })),
+    briefs: (d.briefs || []).slice(0, 40).map(b => ({ client: clip(b.client, 120), title: clip(b.title, 160), stage: clip(b.stage, 30),
+      price: money(b.kp), base_price: Number(b.kp?.price_base) || 0, kp_sent: clip(b.kp?.sent_on, 10), next_step: clip(b.next_step, 160), next_on: clip(b.next_on, 10),
+      open_questions: (Array.isArray(b.questions) ? b.questions : []).filter((q: any) => q?.status !== 'ответ').length })),
+    content: (d.content || []).slice(0, 40).map(c => ({ title: clip(c.title, 140), channel: clip(c.channel, 30), status: clip(c.status, 30), date: clip(c.publish_on || c.date, 10) })),
+    campaigns: (d.campaigns || []).slice(0, 20).map(c => ({ name: clip(c.name, 120), channel: clip(c.channel, 40), status: clip(c.status, 30), budget: Number(c.budget) || 0, spent: Number(c.spent) || 0 })),
+    facts: (d.facts || []).slice(0, 40).map(f => ({ title: clip(f.title, 140), body: clip(f.body, 400) }))
+  };
+}
+
+export function buildAskPrompt(task: ReturnType<typeof sanitizeAsk>, ctx: ReturnType<typeof askContext>): string {
+  return [
+    'Ты помощник владельцев видеостудии ADERVIS внутри их рабочей системы Hub. Отвечай на вопрос по данным ниже: заявки, брифы и КП, план публикаций, рекламные кампании, проверенные факты о студии.',
+    'Правила:',
+    '- Отвечай по-русски, коротко и по делу, как опытный коллега: сначала прямой ответ, потом 2–5 пунктов, если нужно.',
+    '- Только факты из данных. Если данных не хватает, так и скажи и подскажи, где в Hub это заполнить.',
+    '- Суммы с пробелами и знаком ₽. Даты по-русски («27 октября»).',
+    '- Если спрашивают, что делать, предложи конкретный следующий шаг и с кем.',
+    '- Без длинного тире «—»: используй двоеточие, запятую или точку. Без эмодзи и заголовков.',
+    'Верни строго JSON: {"text":"ответ"}',
+    '', 'ДАННЫЕ:', JSON.stringify(ctx),
+    ...(task.history.length ? ['', 'ПЕРЕПИСКА ДО ЭТОГО:', ...task.history.map(m => `${m.who === 'ai' ? 'Помощник' : 'Владелец'}: ${m.text}`)] : []),
+    '', 'ВОПРОС:', task.question
+  ].join('\n');
+}
+
+export function parseAsk(text: string): string {
+  let t = text.trim();
+  try { const j = JSON.parse(t.replace(/^```(?:json)?\s*|\s*```$/g, '')); if (typeof j?.text === 'string') t = j.text; } catch { /* просто текст */ }
+  t = t.replace(/\*\*/g, '').replace(/^#+\s*/gm, '').replace(/ — /g, ': ').trim();
+  if (!t) throw new Error('Модель не ответила. Попробуйте ещё раз.');
+  return t.slice(0, 4000);
 }
 
 // Серверная функция: пишет черновики текстов по проверенным фактам базы.
@@ -899,7 +949,8 @@ export function buildDigestVoicePrompt(digest: string): string {
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost,
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
   providerRequest, providerText, modelAttempts, DAILY_LIMIT, RETRY_STATUS, TRUSTED_STATUS, type Provider,
-  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav
+  sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav,
+  sanitizeAsk, askContext, buildAskPrompt, parseAsk
 
 // В новых проектах Supabase ключи называются иначе, чем в старых,
 // поэтому берём оба варианта.
@@ -929,7 +980,7 @@ const BRIEF_BASE_URL = Deno.env.get('BRIEF_AI_BASE_URL') || '';
 // Голосовая сводка читается только Gemini TTS: свой ключ VOICE_AI_KEY или ключ Gemini проекта.
 const VOICE_KEY = Deno.env.get('VOICE_AI_KEY') || (PROVIDER === 'gemini' ? AI_KEY : Deno.env.get('GEMINI_API_KEY')) || '';
 const VOICE_MODEL = Deno.env.get('VOICE_TTS_MODEL') || '';
-const VOICE_NAME = Deno.env.get('VOICE_TTS_VOICE') || 'Puck';
+const VOICE_NAME = Deno.env.get('VOICE_TTS_VOICE') || 'Kore';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -1053,6 +1104,34 @@ Deno.serve(async (req) => {
       for (let i = 0; i < audio.length; i += 0x8000) bin += String.fromCharCode(...audio.subarray(i, i + 0x8000));
       await admin.from('ai_usage').insert({ actor: user.email, model: `${provider}/${usedModel}+${ttsModel}`, drafts: 0, chars: script.length });
       return json({ text: script, audio: btoa(bin), mime: 'audio/wav', model: usedModel, voice: ttsModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
+    }
+
+    // «Спросить»: данные читаем от имени вошедшего — политики доступа действуют.
+    if (input?.mode === 'ask') {
+      const task = sanitizeAsk(input);
+      const today = new Date().toISOString().slice(0, 10);
+      const [leads, briefs, content, campaigns, facts] = await Promise.all([
+        supabase.from('leads').select('name,status,came_on,source,request,next_step,next_on,amount').order('came_on', { ascending: false }).limit(60),
+        supabase.from('briefs').select('client,title,stage,kp,next_step,next_on,questions').order('updated_at', { ascending: false }).limit(40),
+        supabase.from('content').select('title,channel,status,publish_on').order('publish_on', { ascending: false }).limit(40),
+        supabase.from('campaigns').select('name,channel,status,budget,spent').limit(20),
+        supabase.from('knowledge').select('title,body').eq('access', 'Публичное').in('status', TRUSTED_STATUS).limit(40)
+      ]);
+      const prompt = buildAskPrompt(task, askContext({ leads: leads.data ?? [], briefs: briefs.data ?? [], content: content.data ?? [], campaigns: campaigns.data ?? [], facts: facts.data ?? [], today }));
+      const claude = !!BRIEF_KEY, provider = claude ? BRIEF_PROVIDER : PROVIDER;
+      let answer = '', usedModel = '', lastStatus = 0;
+      for (const [i, model] of (claude ? modelAttempts(BRIEF_MODEL, '') : modelAttempts(MODEL, FALLBACK_MODEL)).entries()) {
+        const r = claude ? providerRequest(BRIEF_PROVIDER, model, BRIEF_KEY, BRIEF_BASE_URL, prompt) : providerRequest(PROVIDER, model, AI_KEY, AI_BASE_URL, prompt, YANDEX_FOLDER);
+        const resp = await fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(r.body) });
+        if (resp.ok) { answer = parseAsk(providerText(provider, await resp.json())); usedModel = model; break; }
+        lastStatus = resp.status;
+        console.error('ai-write ask:', model, resp.status, (await resp.text()).slice(0, 300));
+        if (!RETRY_STATUS.includes(resp.status)) break;
+        if (i === 0) await new Promise(res => setTimeout(res, 1500));
+      }
+      if (!answer) return json({ error: RETRY_STATUS.includes(lastStatus) ? 'Модель сейчас перегружена. Попробуйте через минуту.' : `Ответ не получился (ошибка ${lastStatus}).` }, 502);
+      await admin.from('ai_usage').insert({ actor: user.email, model: `${provider}/${usedModel}`, drafts: 0, chars: answer.length });
+      return json({ text: answer, model: usedModel, left: Math.max(0, DAILY_LIMIT - (used ?? 0) - 1) });
     }
 
     const mode = ['rewrite', 'pitch', 'keywords', 'ads', 'ideas', 'plan', 'post', 'brief', 'case'].includes(input?.mode) ? input.mode : 'write';

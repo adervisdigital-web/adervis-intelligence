@@ -785,7 +785,7 @@ export function voiceContext(b: any, lead: any) {
 
 export function buildVoicePrompt(ctx: ReturnType<typeof voiceContext>): string {
   return [
-    'Ты продюсер видеостудии ADERVIS. Коллега забыл, что это за клиент. Напиши текст короткого голосового сообщения, которое быстро и живо напомнит суть.',
+    'Ты продюсер видеостудии ADERVIS, девушка. Коллега забыл, что это за клиент. Напиши текст короткого голосового сообщения, которое быстро и живо напомнит суть. Говоришь от женского лица: «я посмотрела», «я отправила».',
     'Порядок: кто клиент и откуда пришёл; что ему нужно; главная мысль или идея; деньги (если есть); на каком мы этапе и чего ждём от клиента; следующий шаг.',
     'Правила:',
     '- 70–100 слов, это 30–45 секунд речи. Разговорно, тепло, с интересом, как живой человек в рабочем чате. Без канцелярита.',
@@ -808,8 +808,8 @@ export function parseVoice(text: string): string {
 
 // Структура «режиссёр → актёр»: модели TTS 3.x читают вслух всё, что похоже на
 // текст, поэтому звучит только блок ТРАНСКРИПТ.
-export const VOICE_DIRECTION = `# AUDIO PROFILE: Russian male, a friendly producer at a video studio, telling his colleague about a client
-## THE SCENE: A short voice message in a work chat. The colleague forgot who this client is; the producer quickly and vividly brings him up to speed.
+export const VOICE_DIRECTION = `# AUDIO PROFILE: Russian female, a friendly producer at a video studio, telling her colleague about a client
+## THE SCENE: A short voice message in a work chat. The colleague forgot who this client is; the producer quickly and vividly brings them up to speed.
 ### DIRECTOR'S NOTES
 Style: lively, warm and expressive, with a smile in the voice, genuinely interested in the project. Conversational, like a real person, never like a robot or a news anchor. Clear emphasis on names, numbers and the next step.
 Pacing: brisk but clear, short natural pauses between thoughts.
@@ -817,7 +817,7 @@ Pronunciation: native Russian. Read numbers as words.
 #### TRANSCRIPT
 `;
 
-export function ttsRequest(model: string, key: string, baseUrl: string, script: string, voice = 'Puck') {
+export function ttsRequest(model: string, key: string, baseUrl: string, script: string, voice = 'Kore') {
   const base = baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   return {
     url: `${base}/models/${model}:generateContent`,
@@ -868,7 +868,7 @@ export function toWav(bytes: Uint8Array, mime: string): Uint8Array {
 // Утренняя сводка голосом: пересказ того же текста, что приходит в Telegram.
 export function buildDigestVoicePrompt(digest: string): string {
   return [
-    'Ты продюсер видеостудии ADERVIS. Перескажи утреннюю сводку коллегам коротким голосовым сообщением.',
+    'Ты продюсер видеостудии ADERVIS, девушка. Перескажи утреннюю сводку коллегам коротким голосовым сообщением. Говоришь от женского лица.',
     'Правила:',
     '- 60–110 слов, до 45 секунд речи. Живо и по-человечески, как бодрое утреннее голосовое в рабочем чате.',
     '- Начни с «Доброе утро!». Сначала самое срочное: кому ответить, что просрочено, кто открыл КП. Потом остальное одной-двумя фразами.',
