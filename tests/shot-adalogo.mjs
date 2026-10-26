@@ -50,14 +50,15 @@ await page.click('#refresh'); await page.waitForTimeout(500);
 await page.setViewportSize({ width: 1600, height: 900 });
 await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.querySelector('#nav button[data-page=home]').click(); });
 await page.waitForTimeout(1200);
+await page.click('#adadock .ddava'); await page.click('#adadock .ddask button'); await page.waitForTimeout(500);
 for (let k = 0; k < 3; k++) {
-  await page.click('.hmada');
+  await page.click('#askada');
   for (const ms of [450, 900, 1500, 2600]) {
     await page.waitForTimeout(ms - (ms === 450 ? 0 : [450, 900, 1500, 2600][[450, 900, 1500, 2600].indexOf(ms) - 1]));
-    await page.locator('.hmnow').screenshot({ path: path.join(OUT, `adalogo-${k}-${ms}.png`) });
+    await page.locator('#modal .askhead').screenshot({ path: path.join(OUT, `adalogo-${k}-${ms}.png`) });
   }
   await page.waitForTimeout(2500);
-  await page.click('.hmada'); await page.waitForTimeout(2200);
+  await page.click('#askada'); await page.waitForTimeout(2200);
 }
 await browser.close();
 server.close();

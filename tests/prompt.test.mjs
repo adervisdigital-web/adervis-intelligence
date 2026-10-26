@@ -6,7 +6,7 @@ import {
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost, RUBRICS,
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
   sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav, pcmOf, buildDigestVoicePrompt,
-  sanitizeAsk, askContext, buildAskPrompt, parseAsk, warmVoice
+  sanitizeAsk, askContext, buildAskPrompt, parseAsk, parseAskFull, warmVoice
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -300,12 +300,16 @@ check('голос утром: пересказ сводки, «Доброе ут
 // «Спросить»: вопрос и короткая история; ответ — только по данным Hub
 check('спросить: пустой вопрос отклоняется', !!throws(() => sanitizeAsk({ question: ' ' })));
 const at = sanitizeAsk({ question: 'Что горит?', history: Array.from({ length: 9 }, (_, i) => ({ who: i % 2 ? 'ai' : 'me', text: 'т' + i })) });
-check('спросить: в историю идут последние шесть реплик', at.history.length === 6 && at.history[5].text === 'т8');
+check('спросить: в историю идут последние десять реплик', at.history.length === 9 && at.history[8].text === 'т8');
+const ai = sanitizeAsk({ question: '', images: [{ mime: 'image/png', data: 'iVBORw0KGgo=' }, { mime: 'text/html', data: 'x' }] });
+check('спросить: скриншоты — только картинки, вопрос по умолчанию', ai.images.length === 1 && ai.question.includes('скриншот'));
 const actx = askContext({ today: '2026-10-26', leads: [{ name: 'Банк', status: 'Новое', amount: '0' }], briefs: [{ client: 'ДСК', title: 'Ролики', stage: 'КП', kp: { price_full: 750000, price_base: 540000 }, questions: [{ status: 'задан' }, { status: 'ответ' }] }] });
-check('спросить: в данных цена КП и открытые вопросы', actx.briefs[0].price === 750000 && actx.briefs[0].base_price === 540000 && actx.briefs[0].open_questions === 1);
+check('спросить: в данных цена КП и открытые вопросы', actx.briefs[0].price === 750000 && actx.briefs[0].base_price === 540000 && actx.briefs[0].open_questions.length === 1 && actx.briefs[0].open_questions[0].i === 0);
 const askP = buildAskPrompt(at, actx);
 check('спросить: промпт с данными, вопросом и запретом выдумывать', askP.includes("ВОПРОС:") && askP.endsWith("Что горит?") && askP.includes("Только факты из данных") && askP.includes("\"ДСК\""));
 check('спросить: ответ без длинного тире и звёздочек', parseAsk('{"text":"**ДСК** — ждём ответ"}') === 'ДСК: ждём ответ');
+const full = parseAskFull('{"text":"Ответила Соня","answers":{"brief_id":"b1","items":[{"i":4,"answer":"3–4 млн"},{"i":"x","answer":"нет"}]},"reply":"Соня, спасибо — посчитаем"}');
+check('спросить: ответы со скриншота в бриф и черновик ответа клиенту', full.answers.items.length === 1 && full.answers.items[0].i === 4 && !full.reply.includes('—'));
 
 
 // «теплее и мягче»: длина та же, звук не пропал, пики не выше −1,5 дБ

@@ -3063,7 +3063,6 @@ function renderHome() {
     <div class="hmtop">
       <div class="hmmain">
       <section class="card hmnow tone-${focus?.tone || 'gold'}" aria-labelledby="hmnowh">
-        <div class="hmada" data-ada="${homeAdaMood(focus)}" data-ada-key="${E(focus?.key || '')}" aria-hidden="true"></div>
         ${focus ? `<span class="hmkind">${focus.live ? '<em class="livedot" aria-hidden="true"></em>Прямо сейчас' : focus.late ? 'Просрочено' : 'Сейчас главное'}</span>
           <h2 id="hmnowh">${E(focus.title)}</h2>
           <p class="hmfacts">${E(focus.detail)}${focus.at ? ` · ${E(ago(focus.at))}` : ''}</p>
@@ -7862,7 +7861,7 @@ function chirp(kind = 'tap') {
     actx ||= new (window.AudioContext || window.webkitAudioContext)();
     if (actx.state === 'suspended') actx.resume();
     const now = actx.currentTime + .01, out = actx.createGain(), k = 1 + (Math.random() - .5) * .06;
-    out.gain.value = .14; out.connect(actx.destination);
+    out.gain.value = .07; out.connect(actx.destination);
     for (const [type, t, f, d] of SOUNDS[kind] || SOUNDS.tap) {
       const o = actx.createOscillator(), g = actx.createGain(), at = now + t;
       if (type === 'pop') {
@@ -8142,7 +8141,7 @@ class Ada {
     const base = this.poking ? this.pokeBase : this.state;
     this.pokeBase = base;
     const n = this.pokes = (this.pokes || 0) + 1;
-    const pick = n % 2 === 1 ? 'logo' : ['shift', 'love', 'hello', 'shift', 'sly', 'done'][(Math.floor(n / 2) - 1) % 6];
+    const pick = n % 4 === 0 ? 'logo' : ['hello', 'shift', 'sly', 'love', 'shift'][(n - 1 - Math.floor(n / 4)) % 5];
     clearTimeout(this.pt);
     chirp(pick === 'sly' ? 'tap' : pick);
     if (pick === 'logo') { this.poking = false; this.logo(); return; }
@@ -8185,30 +8184,108 @@ return Ada;
 // «Спросить»: вопрос о делах студии, ответ — по данным Hub (заявки, брифы и КП,
 // план, кампании, проверенная база). Переписка живёт, пока открыта вкладка.
 const ASK_HINTS = ['Что горит сегодня?', 'Сколько денег в работе и у кого?', 'Кому пора напомнить о КП?', 'Что выходит в контенте на этой неделе?'];
-let askChat = [], askBusy = false, askFresh = false;
+// Переписка с Адой живёт на этом устройстве (последние 40 реплик, без картинок —
+// от скриншота остаётся маленькое превью). Скриншоты: вставить Ctrl+V, перетащить, скрепка.
+let askChat = [], askBusy = false, askFresh = false, askFiles = [];
+try { askChat = JSON.parse(localStorage.getItem('hub.ask.chat') || '[]').filter(m => m && typeof m.text === 'string').slice(-40); } catch (e) { askChat = []; }
+const askSave = () => { try { localStorage.setItem('hub.ask.chat', JSON.stringify(askChat.slice(-40))); } catch (e) { /* место кончилось — не страшно */ } };
+// картинка → JPEG до 1600 px по длинной стороне; превью 160 px для истории
+function askImage(file) {
+  return new Promise((res, rej) => {
+    if (!/^image\//.test(file.type)) { rej(new Error('Это не картинка')); return; }
+    const rd = new FileReader();
+    rd.onerror = () => rej(new Error('Не прочиталась картинка'));
+    rd.onload = () => {
+      const img = new Image();
+      img.onerror = () => rej(new Error('Не открылась картинка'));
+      img.onload = () => {
+        const fit = max => { const k = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height); return c; };
+        const full = fit(1600).toDataURL('image/jpeg', .86), thumb = fit(160).toDataURL('image/jpeg', .7);
+        res({ mime: 'image/jpeg', data: full.split(',')[1], thumb, name: file.name || 'скриншот' });
+      };
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+async function askAttach(files) {
+  const list = [...files].filter(f => /^image\//.test(f.type));
+  if (!list.length) { toast('Можно прикрепить только картинки: скриншоты, фото'); return; }
+  if (askFiles.length + list.length > 4) toast('За раз можно до 4 картинок');
+  for (const f of list.slice(0, Math.max(0, 4 - askFiles.length))) {
+    try { askFiles.push(await askImage(f)); } catch (e) { toast(e.message); }
+  }
+  askDraft = $('#askq')?.value || askDraft;
+  askOpen();
+}
+let askDraft = '';
+function askMsgHtml(m, i) {
+  const shots = (m.thumbs || []).map(t => `<img class="askshot" src="${E(t)}" alt="Скриншот">`).join('');
+  const br = m.answers ? db.briefs.find(x => x.id === m.answers.brief_id) : null;
+  const ans = br ? `<div class="askcard"><b>${icon('proposal', 14)} Ответы к брифу «${E(br.title)}»</b>
+      <ul>${m.answers.items.map(x => `<li><small>${E(br.questions?.[x.i]?.q || `Вопрос ${x.i + 1}`)}</small>${E(x.answer)}</li>`).join('')}</ul>
+      <div class="askacts">${m.applied ? `<span class="askdone">${icon('check', 14)} Записано в бриф</span>` : `<button type="button" class="primary" data-askapply="${i}">Записать в бриф</button>`}
+      <button type="button" data-askbrief="${E(br.id)}">Открыть бриф</button></div></div>` : '';
+  const reply = m.reply ? `<div class="askcard"><b>${icon('chat', 14)} Ответ клиенту</b><p class="askreply">${E(m.reply).replace(/\n/g, '<br>')}</p>
+      <button type="button" data-askcopy="${i}">${icon('copy', 14)} Скопировать</button></div>` : '';
+  return `<div class="askmsg ${m.who}">${m.who === 'ai' ? `<span class="askava" data-err="${m.err ? 1 : ''}"></span>` : ''}<div>
+    ${shots ? `<div class="askshots">${shots}</div>` : ''}${m.text ? `<p>${E(m.text).replace(/\n/g, '<br>')}</p>` : ''}${ans}${reply}
+    ${m.who === 'ai' && !m.err ? `<button type="button" class="asklisten${askSay.i === i ? ' on' : ''}" data-say="${i}">${askSay.i === i ? (askSay.busy ? `${icon('loading', 14)} Ада записывает…` : `${icon('close', 14)} Остановить`) : `${icon('sound', 14)} Послушать`}</button>` : ''}</div></div>`;
+}
 function askOpen() {
-  const msgs = askChat.map((m, i) => `<div class="askmsg ${m.who}">${m.who === 'ai' ? `<span class="askava" data-err="${m.err ? 1 : ''}"></span>` : ''}<div><p>${E(m.text).replace(/\n/g, '<br>')}</p>
-    ${m.who === 'ai' && !m.err ? `<button type="button" class="asklisten${askSay.i === i ? ' on' : ''}" data-say="${i}">${askSay.i === i ? (askSay.busy ? `${icon('loading', 14)} Ада записывает…` : `${icon('close', 14)} Остановить`) : `${icon('sound', 14)} Послушать`}</button>` : ''}</div></div>`).join('');
-  modal(`<div class="askhead"><span class="askmark" id="askada"></span><div><h2>Спросить Аду</h2>
-      <small class="muted">Отвечаю по данным Hub: заявки, брифы и КП, план, кампании, база знаний</small></div></div>
-    <div class="asklog" id="asklog" aria-live="polite">${msgs || `<div class="askhints">${ASK_HINTS.map(h => `<button type="button" class="chip" data-askhint="${E(h)}">${E(h)}</button>`).join('')}</div>`}
+  const msgs = askChat.map(askMsgHtml).join('');
+  modal(`<div class="askhead"><span class="askmark" id="askada"></span><div><h2>Ада</h2>
+      <small class="muted">Спросите о делах или пришлите скриншот переписки: разберу, запишу ответы в бриф, подскажу ответ клиенту</small></div>
+      ${askChat.length ? `<button type="button" class="linkbtn askclear" data-askclear="1">Новый разговор</button>` : ''}</div>
+    <div class="asklog" id="asklog" aria-live="polite">${msgs || `<div class="askhints">${ASK_HINTS.map(h => `<button type="button" class="chip" data-askhint="${E(h)}">${E(h)}</button>`).join('')}</div>
+        <p class="muted askdrop">${icon('photo', 16)} Перетащите сюда скриншот ответа клиента или вставьте его через Ctrl+V</p>`}
       ${askBusy ? `<div class="askmsg ai busy"><span class="askava"></span><p><span class="askdots"><b></b><b></b><b></b></span></p></div>` : ''}</div>
-    <form id="askf" class="askform"><textarea id="askq" rows="1" maxlength="1000" placeholder="Например: у кого из клиентов КП без ответа больше трёх дней?" ${askBusy ? 'disabled' : ''}></textarea>
-      <button class="primary" ${askBusy ? 'disabled' : ''} aria-label="Отправить вопрос">${icon('send', 17)}</button></form>
-    <p class="muted asknote">Вопрос и данные Hub, включая суммы, уходят в ИИ. Ответ может ошибаться: важное проверяйте в разделе.</p>`, 'askdlg');
+    ${askFiles.length ? `<div class="askfiles">${askFiles.map((f, i) => `<span><img src="${E(f.thumb)}" alt=""><button type="button" data-askrm="${i}" aria-label="Убрать картинку">${icon('close', 12)}</button></span>`).join('')}</div>` : ''}
+    <form id="askf" class="askform"><button type="button" class="askclip" id="askclip" aria-label="Прикрепить скриншот" title="Прикрепить скриншот">${icon('upload', 17)}</button>
+      <input type="file" id="askfile" accept="image/*" multiple hidden>
+      <textarea id="askq" rows="1" maxlength="2000" placeholder="${askFiles.length ? 'Что сделать со скриншотом? Можно оставить пустым' : 'Напишите Аде или вставьте скриншот (Ctrl+V)'}" ${askBusy ? 'disabled' : ''}>${E(askDraft)}</textarea>
+      <button class="primary" ${askBusy ? 'disabled' : ''} aria-label="Отправить">${icon('send', 17)}</button></form>
+    <p class="muted asknote">Вопрос, скриншоты и данные Hub, включая суммы, уходят в ИИ. Ответ может ошибаться: важное проверяйте.</p>`, 'askdlg');
   // Ада в шапке живёт вместе с разговором: думает, пока ждём ответ, говорит, когда он пришёл
   const last = askChat[askChat.length - 1];
   const ada = askAda = new Ada($('#askada'), { mood: askBusy ? 'think' : last?.err ? 'oops' : last?.who === 'ai' && askFresh ? 'idle' : last?.who === 'ai' ? 'talk' : 'hello' });
   if (last?.who === 'ai' && !last.err && askFresh) { askFresh = false; ada.formed('talk'); }
   if (!askBusy) setTimeout(() => ada.el.isConnected && ['talk', 'hello'].includes(ada.state) && ada.set('idle'), last?.who === 'ai' ? 3800 : 1600);
   document.querySelectorAll('#asklog .askava').forEach(el => new Ada(el, { mood: el.closest('.busy') ? 'think' : el.dataset.err ? 'oops' : 'idle', still: !el.closest('.busy'), follow: false, interactive: false }));
-  const log = $('#asklog'); log.scrollTop = log.scrollHeight;
-  const q = $('#askq'); if (!askBusy) q.focus();
+  const box = $('#modal'), log = $('#asklog'); log.scrollTop = log.scrollHeight;
+  const q = $('#askq'); if (!askBusy) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  q.oninput = () => { askDraft = q.value; };
   q.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#askf').requestSubmit(); } };
   $('#askf').onsubmit = e => { e.preventDefault(); askSend(q.value); };
+  $('#askclip').onclick = () => $('#askfile').click();
+  $('#askfile').onchange = e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) askAttach(f); };
+  box.onpaste = e => { const f = [...(e.clipboardData?.files || [])]; if (f.some(x => /^image\//.test(x.type))) { e.preventDefault(); askAttach(f); } };
+  box.ondragover = e => { if ([...(e.dataTransfer?.items || [])].some(x => x.kind === 'file')) { e.preventDefault(); box.classList.add('askdrag'); } };
+  box.ondragleave = e => { if (e.target === box) box.classList.remove('askdrag'); };
+  box.ondrop = e => { e.preventDefault(); box.classList.remove('askdrag'); const f = [...(e.dataTransfer?.files || [])]; if (f.length) askAttach(f); };
+  box.querySelectorAll('[data-askrm]').forEach(b => { b.onclick = () => { askFiles.splice(Number(b.dataset.askrm), 1); askDraft = q.value; askOpen(); }; });
+  box.querySelectorAll('[data-askclear]').forEach(b => { b.onclick = () => { askChat = []; askSave(); askVoices = {}; askOpen(); }; });
   log.querySelectorAll('[data-askhint]').forEach(b => { b.onclick = () => askSend(b.dataset.askhint); });
   log.querySelectorAll('[data-say]').forEach(b => { b.onclick = () => askListen(Number(b.dataset.say)); });
+  log.querySelectorAll('[data-askcopy]').forEach(b => { b.onclick = () => copyText(askChat[Number(b.dataset.askcopy)].reply, 'Ответ клиенту скопирован'); });
+  log.querySelectorAll('[data-askbrief]').forEach(b => { b.onclick = () => { $('#modal').close(); openBrief(b.dataset.askbrief); }; });
+  log.querySelectorAll('[data-askapply]').forEach(b => { b.onclick = () => askApply(Number(b.dataset.askapply)); });
   if (askSay.i >= 0 && !askSay.busy) ada.set('talk');
+}
+// ответы со скриншота — в вопросы брифа, только по кнопке
+async function askApply(i) {
+  const m = askChat[i], b = m?.answers && db.briefs.find(x => x.id === m.answers.brief_id);
+  if (!b) { toast('Бриф не найден'); return; }
+  for (const x of m.answers.items) {
+    const q = b.questions?.[x.i];
+    if (!q) continue;
+    q.answer = q.answer && !q.answer.includes(x.answer) ? `${q.answer}\n${x.answer}` : x.answer;
+    q.status = 'ответ';
+  }
+  try {
+    await saveBriefNow(b, `Ответы записаны в бриф «${b.title}»`);
+    m.applied = true; askSave(); askOpen();
+  } catch (err) { toast('Не записалось: ' + (err.message || 'ошибка')); }
 }
 // «Послушать»: ответ Ады её голосом. Пока звучит — Ада говорит в шапке окна.
 let askAda = null, askSay = { i: -1, busy: false, audio: null }, askVoices = {};
@@ -8242,16 +8319,17 @@ async function askListen(i) {
 }
 async function askSend(text) {
   text = String(text || '').trim();
-  if (!text || askBusy) return;
-  const history = askChat.slice(-6);
-  askChat.push({ who: 'me', text }); askBusy = true; askOpen();
+  const files = askFiles;
+  if ((!text && !files.length) || askBusy) return;
+  const history = askChat.slice(-10).map(m => ({ who: m.who, text: m.text + (m.reply ? `\n[черновик ответа клиенту: ${m.reply}]` : '') }));
+  askChat.push({ who: 'me', text, thumbs: files.map(f => f.thumb) }); askFiles = []; askDraft = ''; askBusy = true; askSave(); askOpen();
   try {
-    const r = await api.generate({ mode: 'ask', question: text, history });
-    askChat.push({ who: 'ai', text: r.text || 'Пустой ответ.' }); askFresh = true;
+    const r = await api.generate({ mode: 'ask', question: text, history, images: files.map(f => ({ mime: f.mime, data: f.data })) });
+    askChat.push({ who: 'ai', text: r.text || 'Пустой ответ.', answers: r.answers || null, reply: r.reply || '' }); askFresh = true;
   } catch (err) {
     askChat.push({ who: 'ai', err: true, text: 'Не получилось ответить: ' + (err.message || 'ошибка сервера') });
   } finally {
-    askBusy = false;
+    askBusy = false; askSave();
     if ($('#modal').open && $('#modal').classList.contains('askdlg')) askOpen();
   }
 }
@@ -10075,6 +10153,19 @@ function dockToggle(open) {
   if (dockOpen) { dockHint(false); Ada.chirp('hello'); dockAda?.set('hello'); setTimeout(() => dockOpen && drawDock(), 900); d.querySelector('.ddask input')?.focus({ preventScroll: true }); }
   else drawDock();
 }
+// «На сегодня»: навели на дело — Ада выглядывает именно у него, плашка справа уступает место
+let rowAda = null;
+document.addEventListener('pointerover', e => {
+  const li = e.target.closest?.('#view .todayli');
+  let host = $('#rowada');
+  if (!li) { if (host && !e.target.closest?.('#rowada')) { host.classList.remove('on'); document.body.classList.remove('rowada-on'); } return; }
+  if (!host) {
+    host = document.createElement('span'); host.id = 'rowada'; host.setAttribute('aria-hidden', 'true');
+    rowAda = new Ada(host, { mood: 'curious', interactive: false, follow: false });
+  }
+  if (host.parentNode !== li) { li.appendChild(host); rowAda?.set(li.querySelector('.todayrow.late') ? 'alert' : 'curious'); rowAda?.hop(18); }
+  host.classList.add('on'); document.body.classList.add('rowada-on');
+});
 function drawDock() {
   let d = $('#adadock');
   if (!d) {

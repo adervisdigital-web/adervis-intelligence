@@ -23,13 +23,17 @@ export function modelAttempts(model: string, fallback: string): string[] {
   return attempts;
 }
 
-export function providerRequest(provider: Provider, model: string, key: string, baseUrl: string, prompt: string, folder = '') {
+export type AskImage = { mime: string; data: string };
+export function providerRequest(provider: Provider, model: string, key: string, baseUrl: string, prompt: string, folder = '', images: AskImage[] = []) {
   if (provider === 'anthropic') {
     const base = baseUrl || 'https://api.anthropic.com';
+    const content = images.length
+      ? [...images.map(im => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } })), { type: 'text', text: prompt }]
+      : prompt;
     return {
       url: `${base.replace(/\/$/, '')}/v1/messages`,
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: { model, max_tokens: 16000, temperature: 0.3, messages: [{ role: 'user', content: prompt }] }
+      body: { model, max_tokens: 16000, temperature: 0.3, messages: [{ role: 'user', content }] }
     };
   }
   if (provider === 'yandex') {
@@ -52,7 +56,7 @@ export function providerRequest(provider: Provider, model: string, key: string, 
       url: `${base}/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
       headers: { 'Content-Type': 'application/json' },
       body: {
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        contents: [{ role: 'user', parts: [...images.map(im => ({ inline_data: { mime_type: im.mime, data: im.data } })), { text: prompt }] }],
         generationConfig: { temperature: 0.85, maxOutputTokens: 8192, responseMimeType: 'application/json' }
       }
     };
@@ -953,11 +957,14 @@ export function buildDigestVoicePrompt(digest: string): string {
 // «Спросить»: вопрос владельца о делах студии. Отвечаем по данным Hub —
 // заявки, брифы и КП, план публикаций, кампании и проверенная база знаний.
 export function sanitizeAsk(input: any) {
-  const q = clip(input?.question, 1000);
+  const images: AskImage[] = (Array.isArray(input?.images) ? input.images : []).slice(0, 4)
+    .filter((im: any) => /^image\/(png|jpe?g|webp|gif)$/.test(im?.mime) && typeof im?.data === 'string' && /^[A-Za-z0-9+/=]+$/.test(im.data) && im.data.length < 5_500_000)
+    .map((im: any) => ({ mime: im.mime === 'image/jpg' ? 'image/jpeg' : im.mime, data: im.data }));
+  const q = clip(input?.question, 2000) || (images.length ? 'Что на скриншоте и что с этим делать?' : '');
   if (q.length < 3) throw new Error('Напишите вопрос');
-  const history = (Array.isArray(input?.history) ? input.history : []).slice(-6)
-    .map((m: any) => ({ who: m?.who === 'ai' ? 'ai' : 'me', text: clip(m?.text, 1200) })).filter((m: any) => m.text);
-  return { question: q, history };
+  const history = (Array.isArray(input?.history) ? input.history : []).slice(-10)
+    .map((m: any) => ({ who: m?.who === 'ai' ? 'ai' : 'me', text: clip(m?.text, 1500) })).filter((m: any) => m.text);
+  return { question: q, history, images };
 }
 
 export function askContext(d: { leads?: any[]; briefs?: any[]; content?: any[]; campaigns?: any[]; facts?: any[]; today: string }) {
@@ -968,7 +975,8 @@ export function askContext(d: { leads?: any[]; briefs?: any[]; content?: any[]; 
       request: clip(l.request, 160), next_step: clip(l.next_step, 160), next_on: clip(l.next_on, 10), amount: Number(l.amount) || 0 })),
     briefs: (d.briefs || []).slice(0, 40).map(b => ({ client: clip(b.client, 120), title: clip(b.title, 160), stage: clip(b.stage, 30),
       price: money(b.kp), base_price: Number(b.kp?.price_base) || 0, kp_sent: clip(b.kp?.sent_on, 10), next_step: clip(b.next_step, 160), next_on: clip(b.next_on, 10),
-      open_questions: (Array.isArray(b.questions) ? b.questions : []).filter((q: any) => q?.status !== 'ответ').length })),
+      id: clip(b.id, 80),
+      open_questions: (Array.isArray(b.questions) ? b.questions : []).map((q: any, i: number) => ({ i, q: clip(q?.q, 200), status: clip(q?.status, 12) })).filter((q: any) => q.status !== 'ответ') })),
     content: (d.content || []).slice(0, 40).map(c => ({ title: clip(c.title, 140), channel: clip(c.channel, 30), status: clip(c.status, 30), date: clip(c.publish_on || c.date, 10) })),
     campaigns: (d.campaigns || []).slice(0, 20).map(c => ({ name: clip(c.name, 120), channel: clip(c.channel, 40), status: clip(c.status, 30), budget: Number(c.budget) || 0, spent: Number(c.spent) || 0 })),
     facts: (d.facts || []).slice(0, 40).map(f => ({ title: clip(f.title, 140), body: clip(f.body, 400) }))
@@ -976,6 +984,15 @@ export function askContext(d: { leads?: any[]; briefs?: any[]; content?: any[]; 
 }
 
 export function buildAskPrompt(task: ReturnType<typeof sanitizeAsk>, ctx: ReturnType<typeof askContext>): string {
+  const shots = task.images.length ? [
+    '',
+    `К сообщению приложено скриншотов: ${task.images.length}. Обычно это переписка с клиентом (Telegram, VK, почта) или ТЗ.`,
+    '- Прочитай их внимательно. Определи клиента и бриф по именам, компании и теме: сверь с брифами в ДАННЫХ.',
+    '- Коротко перескажи, что написал клиент, и что из этого важно для цены, сроков и следующего шага.',
+    '- Если клиент отвечает на открытые вопросы брифа, верни их в поле answers: {"brief_id":"id брифа из данных","items":[{"i":номер вопроса,"answer":"ответ своими словами, коротко"}]}. Только то, что прямо есть на скриншоте.',
+    '- Если уместно, предложи ответ клиенту в поле reply: по-человечески, коротко, на «вы», без длинного тире, как пишут владельцы студии.',
+    '- Если на скриншоте нечитаемо или не про работу, так и скажи.'
+  ] : [];
   return [
     'Ты помощник владельцев видеостудии ADERVIS внутри их рабочей системы Hub. Отвечай на вопрос по данным ниже: заявки, брифы и КП, план публикаций, рекламные кампании, проверенные факты о студии.',
     'Правила:',
@@ -984,7 +1001,8 @@ export function buildAskPrompt(task: ReturnType<typeof sanitizeAsk>, ctx: Return
     '- Суммы с пробелами и знаком ₽. Даты по-русски («27 октября»).',
     '- Если спрашивают, что делать, предложи конкретный следующий шаг и с кем.',
     '- Без длинного тире «—»: используй двоеточие, запятую или точку. Без эмодзи и заголовков.',
-    'Верни строго JSON: {"text":"ответ"}',
+    ...shots,
+    'Верни строго JSON: {"text":"ответ владельцу","answers":null или {"brief_id":"…","items":[{"i":0,"answer":"…"}]},"reply":"" или текст ответа клиенту}',
     '', 'ДАННЫЕ:', JSON.stringify(ctx),
     ...(task.history.length ? ['', 'ПЕРЕПИСКА ДО ЭТОГО:', ...task.history.map(m => `${m.who === 'ai' ? 'Помощник' : 'Владелец'}: ${m.text}`)] : []),
     '', 'ВОПРОС:', task.question
@@ -992,9 +1010,21 @@ export function buildAskPrompt(task: ReturnType<typeof sanitizeAsk>, ctx: Return
 }
 
 export function parseAsk(text: string): string {
-  let t = text.trim();
-  try { const j = JSON.parse(t.replace(/^```(?:json)?\s*|\s*```$/g, '')); if (typeof j?.text === 'string') t = j.text; } catch { /* просто текст */ }
+  return parseAskFull(text).text;
+}
+export function parseAskFull(text: string) {
+  let t = text.trim(), answers: any = null, reply = '';
+  try {
+    const j = JSON.parse(t.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    if (typeof j?.text === 'string') t = j.text;
+    if (j?.answers && typeof j.answers.brief_id === 'string' && Array.isArray(j.answers.items)) {
+      const items = j.answers.items.filter((x: any) => Number.isInteger(x?.i) && x.i >= 0 && x.i < 60 && typeof x?.answer === 'string' && x.answer.trim())
+        .slice(0, 20).map((x: any) => ({ i: x.i, answer: x.answer.replace(/ — /g, ': ').trim().slice(0, 1500) }));
+      if (items.length) answers = { brief_id: j.answers.brief_id.slice(0, 80), items };
+    }
+    if (typeof j?.reply === 'string') reply = j.reply.replace(/ — /g, ', ').replace(/—/g, ',').trim().slice(0, 3000);
+  } catch { /* просто текст */ }
   t = t.replace(/\*\*/g, '').replace(/^#+\s*/gm, '').replace(/ — /g, ': ').trim();
   if (!t) throw new Error('Модель не ответила. Попробуйте ещё раз.');
-  return t.slice(0, 4000);
+  return { text: t.slice(0, 4000), answers, reply };
 }
