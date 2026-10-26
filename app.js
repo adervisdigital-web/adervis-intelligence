@@ -7641,7 +7641,7 @@ const MARK_XF = 'translate(0,24) scale(.262) translate(-1080,-1046)';
 const TILE = 'M-94,-152 H94 A78,78 0 0 1 172,-74 V114 A78,78 0 0 1 94,192 H-94 A78,78 0 0 1 -172,114 V-74 A78,78 0 0 1 -94,-152 Z';
 const tween = (ms, f, ease = t => t) => new Promise(res => {
   const t0 = performance.now();
-  const step = now => { const t = Math.min(1, (now - t0) / ms); f(ease(t), t); if (t < 1) requestAnimationFrame(step); else res(); };
+  const step = now => { const t = Math.max(0, Math.min(1, (now - t0) / ms)); f(ease(t), t); if (t < 1) requestAnimationFrame(step); else res(); };
   requestAnimationFrame(step);
 });
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -7861,7 +7861,7 @@ class Ada {
     });
     q.sweep.setAttribute('x', f(-40 - sn * 260));
     q.dim.setAttribute('opacity', f((1 - Math.abs(c)) * .55));
-    q.shadow.setAttribute('rx', f(150 * k * (.75 + .25 * Math.abs(c))));
+    q.shadow.setAttribute('rx', f(Math.max(0, 150 * k * (.75 + .25 * Math.abs(c)))));
   }
   // Ада ненадолго становится логотипом Hub — каждый раз по-разному
   async logo(kind, mark) {
