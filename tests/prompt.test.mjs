@@ -6,7 +6,7 @@ import {
   sanitizeContentTask, sanitizePostTask, buildIdeasPrompt, buildPlanPrompt, buildPostPrompt, parseIdeas, parsePlan, parsePost, RUBRICS,
   sanitizeBriefTask, buildBriefPrompt, parseBrief, sanitizeAudio, audioRequest, sanitizeCaseTask, buildCasePrompt,
   sanitizeVoiceTask, voiceContext, buildVoicePrompt, parseVoice, ttsRequest, pickTtsModel, toWav, pcmOf, buildDigestVoicePrompt,
-  sanitizeAsk, askContext, buildAskPrompt, parseAsk
+  sanitizeAsk, askContext, buildAskPrompt, parseAsk, warmVoice
 } from '../supabase/functions/ai-write/compose.ts';
 
 let fails = 0;
@@ -306,6 +306,16 @@ check('спросить: в данных цена КП и открытые во�
 const askP = buildAskPrompt(at, actx);
 check('спросить: промпт с данными, вопросом и запретом выдумывать', askP.includes("ВОПРОС:") && askP.endsWith("Что горит?") && askP.includes("Только факты из данных") && askP.includes("\"ДСК\""));
 check('спросить: ответ без длинного тире и звёздочек', parseAsk('{"text":"**ДСК** — ждём ответ"}') === 'ДСК: ждём ответ');
+
+
+// «теплее и мягче»: длина та же, звук не пропал, пики не выше −1,5 дБ
+{
+  const rate = 24000, n = rate, raw = new Uint8Array(n * 2), dv = new DataView(raw.buffer);
+  for (let i = 0; i < n; i++) dv.setInt16(i * 2, Math.round(Math.sin(i / rate * 2 * Math.PI * 220) * (i % 4800 < 2400 ? 30000 : 3000)), true);
+  const out = warmVoice(raw, rate), ov = new DataView(out.buffer);
+  let peak = 0, sum = 0; for (let i = 0; i < n; i++) { const v = Math.abs(ov.getInt16(i * 2, true)) / 32768; peak = Math.max(peak, v); sum += v; }
+  check('голос: обработка сохраняет длину, звук есть, пики ограничены', out.length === raw.length && sum / n > .02 && peak <= .85, `peak ${peak.toFixed(3)}`);
+}
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

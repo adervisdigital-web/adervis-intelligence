@@ -5,7 +5,7 @@
 
 import { Mp3Encoder } from 'https://esm.sh/@breezystack/lamejs@1.2.7';
 import {
-  voiceContext, buildVoicePrompt, buildDigestVoicePrompt, parseVoice, ttsRequest, pickTtsModel, pcmOf
+  voiceContext, buildVoicePrompt, buildDigestVoicePrompt, parseVoice, ttsRequest, pickTtsModel, pcmOf, warmVoice
 } from '../ai-write/compose.ts';
 import { askModel } from './brief-ai.ts';
 import type { Sb } from './outreach.ts';
@@ -30,7 +30,8 @@ async function speak(script: string): Promise<{ pcm: Uint8Array; rate: number }>
     if (resp.ok) {
       const part = (await resp.json())?.candidates?.[0]?.content?.parts?.find((p: any) => p?.inlineData)?.inlineData;
       if (!part?.data) throw new Error('озвучка вернула пустой ответ');
-      return pcmOf(Uint8Array.from(atob(part.data), c => c.charCodeAt(0)), part.mimeType || '');
+      const { pcm, rate } = pcmOf(Uint8Array.from(atob(part.data), c => c.charCodeAt(0)), part.mimeType || '');
+      return { pcm: warmVoice(pcm, rate), rate };
     }
     if (![429, 500, 503].includes(resp.status)) throw new Error(`озвучка: ошибка ${resp.status}`);
     await new Promise(res => setTimeout(res, 4000 * (i + 1)));

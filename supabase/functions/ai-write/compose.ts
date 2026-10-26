@@ -852,9 +852,56 @@ export function pcmOf(bytes: Uint8Array, mime: string): { pcm: Uint8Array; rate:
   return { pcm: bytes, rate: Number((mime.match(/rate=(\d+)/) || [])[1] || 24000) };
 }
 
+// «Теплее и мягче» — та же обработка, что выбрали на слух: срез гула ниже 80 Гц,
+// +3 дБ тепла на 250 Гц, +1,5 дБ разборчивости на 3 кГц, −1,5 дБ резкости на 7,5 кГц,
+// мягкая компрессия и выравнивание громкости. PCM 16 бит моно на входе и выходе.
+type Biquad = { b0: number; b1: number; b2: number; a1: number; a2: number };
+const biquad = (kind: 'hp' | 'peak', f: number, rate: number, q: number, gainDb = 0): Biquad => {
+  const w = 2 * Math.PI * f / rate, cw = Math.cos(w), al = Math.sin(w) / (2 * q), A = 10 ** (gainDb / 40);
+  const k = kind === 'hp'
+    ? [(1 + cw) / 2, -(1 + cw), (1 + cw) / 2, 1 + al, -2 * cw, 1 - al]
+    : [1 + al * A, -2 * cw, 1 - al * A, 1 + al / A, -2 * cw, 1 - al / A];
+  return { b0: k[0] / k[3], b1: k[1] / k[3], b2: k[2] / k[3], a1: k[4] / k[3], a2: k[5] / k[3] };
+};
+const runBiquad = (x: Float32Array, c: Biquad) => {
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const y = c.b0 * x[i] + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+    x2 = x1; x1 = x[i]; y2 = y1; y1 = y; x[i] = y;
+  }
+};
+export function warmVoice(pcm: Uint8Array, rate: number): Uint8Array {
+  const n = pcm.length >> 1;
+  if (!n) return pcm;
+  const dv = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength), x = new Float32Array(n);
+  for (let i = 0; i < n; i++) x[i] = dv.getInt16(i * 2, true) / 32768;
+  for (const c of [biquad('hp', 80, rate, .707), biquad('peak', 250, rate, 1, 3), biquad('peak', 3000, rate, 1.2, 1.5), biquad('peak', 7500, rate, 2, -1.5)]) runBiquad(x, c);
+  // компрессор: порог −20 дБ, 2,5:1, атака 8 мс, восстановление 120 мс, +2 дБ
+  const th = 10 ** (-20 / 20), att = Math.exp(-1 / (rate * .008)), rel = Math.exp(-1 / (rate * .12)), mk = 10 ** (2 / 20);
+  let env = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Math.abs(x[i]);
+    env = a > env ? att * env + (1 - att) * a : rel * env + (1 - rel) * a;
+    const g = env > th ? (th * (env / th) ** (1 / 2.5)) / env : 1;
+    x[i] *= g * mk;
+  }
+  // громкость: средний уровень речи около −14,5 дБ (как у голосовых в мессенджерах), пики мягко ограничены на −1,5 дБ
+  let sum = 0, cnt = 0;
+  for (let i = 0; i < n; i++) { const a = Math.abs(x[i]); if (a > .01) { sum += x[i] * x[i]; cnt++; } }
+  const rms = cnt ? Math.sqrt(sum / cnt) : 0, gain = rms ? Math.min(8, 10 ** (-14.5 / 20) / rms) : 1, lim = 10 ** (-1.5 / 20);
+  const out = new Uint8Array(n * 2), ov = new DataView(out.buffer);
+  for (let i = 0; i < n; i++) {
+    let v = x[i] * gain;
+    const a = Math.abs(v);
+    if (a > lim * .8) v = Math.sign(v) * (lim * .8 + (lim * .2) * Math.tanh((a - lim * .8) / (lim * .2)));
+    ov.setInt16(i * 2, Math.max(-32768, Math.min(32767, Math.round(v * 32767))), true);
+  }
+  return out;
+}
+
 export function toWav(bytes: Uint8Array, mime: string): Uint8Array {
   if (bytes.length > 4 && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF') return bytes;
-  const { pcm, rate } = pcmOf(bytes, mime);
+  const { pcm: raw, rate } = pcmOf(bytes, mime), pcm = warmVoice(raw, rate);
   const head = new DataView(new ArrayBuffer(44));
   const str = (o: number, s: string) => { for (let i = 0; i < s.length; i++) head.setUint8(o + i, s.charCodeAt(i)); };
   str(0, 'RIFF'); head.setUint32(4, 36 + pcm.length, true); str(8, 'WAVE'); str(12, 'fmt ');
