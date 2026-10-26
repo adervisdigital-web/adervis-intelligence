@@ -2051,6 +2051,104 @@ function planTable(items) {
   </div>`;
 }
 
+// Перетаскивание в плане: публикацию берут за ручку слева и бросают на другую —
+// они меняются датой и временем. Строки «перелетают» на новые места (FLIP),
+// чтобы было видно, что куда ушло. С клавиатуры — стрелки на ручке.
+let planDrag = null;
+const rowRects = () => new Map([...document.querySelectorAll('.ptrow[data-p]')].map(r => [r.dataset.p, r.getBoundingClientRect()]));
+function flipRows(before) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('.ptrow[data-p]').forEach(r => {
+    const a = before.get(r.dataset.p), b = r.getBoundingClientRect();
+    if (!a || (Math.abs(a.top - b.top) < 1 && Math.abs(a.left - b.left) < 1)) return;
+    r.animate([{ transform: `translate(${a.left - b.left}px, ${a.top - b.top}px)`, zIndex: 3 }, { transform: 'none', zIndex: 3 }],
+      { duration: 460, easing: 'cubic-bezier(.22,1,.36,1)' });
+  });
+}
+async function swapPosts(aId, bId) {
+  const A = db.content.find(x => x.id === aId), B = db.content.find(x => x.id === bId);
+  if (!A || !B || A === B) return;
+  const ra = { ...A, date: B.date || '', post_time: B.post_time || '' }, rb = { ...B, date: A.date || '', post_time: A.post_time || '' };
+  const before = rowRects();
+  upsertLocal('content', ra); upsertLocal('content', rb);
+  render(); flipRows(before);
+  document.querySelectorAll(`.ptrow[data-p="${CSS.escape(aId)}"], .ptrow[data-p="${CSS.escape(bId)}"]`).forEach(r => r.classList.add('ptlanded'));
+  try {
+    const [sa, sb] = await Promise.all([api.update('content', ra), api.update('content', rb)]);
+    upsertLocal('content', sa); upsertLocal('content', sb);
+    const cut = t => t.length > 38 ? t.slice(0, 37).trim() + '…' : t;
+    toast(`Поменяли датами: ${cut(A.title)} → ${ra.date ? shortDate(ra.date) : 'без даты'}; ${cut(B.title)} → ${rb.date ? shortDate(rb.date) : 'без даты'}`);
+  } catch (e) {
+    upsertLocal('content', A); upsertLocal('content', B); render();
+    handleError(e);
+  }
+}
+document.addEventListener('pointerdown', e => {
+  const grip = e.target.closest('[data-grip]');
+  if (!grip || e.button !== 0) return;
+  const row = grip.closest('.ptrow[data-p]');
+  if (!row) return;
+  e.preventDefault();
+  const r = row.getBoundingClientRect();
+  const ghost = row.cloneNode(true);
+  ghost.classList.add('ptghost'); ghost.removeAttribute('data-p');
+  Object.assign(ghost.style, { width: r.width + 'px', left: r.left + 'px', top: r.top + 'px' });
+  ghost.insertAdjacentHTML('beforeend', '<span class="ptto" hidden></span>');
+  document.body.appendChild(ghost);
+  row.classList.add('ptsrc');
+  document.body.classList.add('ptdragging');
+  planDrag = { id: row.dataset.p, row, ghost, dy: e.clientY - r.top, x0: r.left, target: null, y: e.clientY, raf: 0 };
+  const scroll = () => {
+    if (!planDrag) return;
+    const y = planDrag.y, edge = 90;
+    if (y < edge) scrollBy(0, -Math.ceil((edge - y) / 6));
+    else if (y > innerHeight - edge) scrollBy(0, Math.ceil((y - innerHeight + edge) / 6));
+    planDrag.raf = requestAnimationFrame(scroll);
+  };
+  planDrag.raf = requestAnimationFrame(scroll);
+});
+document.addEventListener('pointermove', e => {
+  if (!planDrag) return;
+  const d = planDrag;
+  d.y = e.clientY;
+  d.ghost.style.top = (e.clientY - d.dy) + 'px';
+  const el = document.elementFromPoint(d.x0 + 40, e.clientY)?.closest('.ptrow[data-p]');
+  const t = el && el !== d.row ? el : null;
+  if (t !== d.target) {
+    d.target?.classList.remove('ptover');
+    t?.classList.add('ptover');
+    d.target = t;
+    const p = t && db.content.find(x => x.id === t.dataset.p), lab = d.ghost.querySelector('.ptto');
+    lab.hidden = !t;
+    if (t) lab.textContent = `Поменяются датами → ${p?.date ? shortDate(p.date) : 'без даты'}`;
+  }
+});
+const planDrop = e => {
+  if (!planDrag) return;
+  const d = planDrag;
+  planDrag = null;
+  cancelAnimationFrame(d.raf);
+  d.target?.classList.remove('ptover');
+  d.row.classList.remove('ptsrc');
+  document.body.classList.remove('ptdragging');
+  if (d.target && e.type === 'pointerup') { d.ghost.remove(); swapPosts(d.id, d.target.dataset.p); return; }
+  // отпустили мимо — карточка возвращается на место
+  const back = d.row.getBoundingClientRect();
+  d.ghost.animate([{ top: d.ghost.style.top }, { top: back.top + 'px', opacity: .4 }], { duration: 260, easing: 'cubic-bezier(.22,1,.36,1)' }).onfinish = () => d.ghost.remove();
+};
+document.addEventListener('pointerup', planDrop);
+document.addEventListener('pointercancel', planDrop);
+document.addEventListener('keydown', e => {
+  const grip = e.target.closest?.('[data-grip]');
+  if (!grip || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  e.preventDefault();
+  const rows = [...document.querySelectorAll('.ptrow[data-p]')], row = grip.closest('.ptrow[data-p]'), i = rows.indexOf(row);
+  const other = rows[i + (e.key === 'ArrowUp' ? -1 : 1)];
+  if (!other) return;
+  const id = row.dataset.p;
+  swapPosts(id, other.dataset.p).then(() => document.querySelector(`.ptrow[data-p="${CSS.escape(id)}"] [data-grip]`)?.focus());
+});
+
 function planRow(p) {
   const n = network(p.channel), r = rubricOf(p.rubric), i = P_STATUS.indexOf(p.status);
   const late = p.date && p.date < today() && p.status !== 'Опубликовано';
@@ -2059,6 +2157,7 @@ function planRow(p) {
   const views = lastViews(p.id);
   return `<article class="ptrow${p.date === today() ? ' istoday' : ''}${p.status === 'Опубликовано' ? ' isdone' : ''}" role="button" tabindex="0" data-p="${E(p.id)}"
       style="--rt:var(--tone-${r?.tone || 'gray'})">
+    ${p.status !== 'Опубликовано' ? `<button class="ptgrip" data-grip aria-label="Перетащить «${E(p.title)}»: бросьте на другую публикацию, и они поменяются датами. С клавиатуры: стрелки вверх и вниз" title="Перетащите на другую публикацию: поменяются датами"></button>` : ''}
     <div class="ptwhen" role="cell">${p.date ? `<span class="wd">${E(weekday(p.date))}</span><b>${Number(p.date.slice(8))}</b><small>${E(shortDate(p.date).replace(/^\d+\s/, ''))}${p.post_time ? ' · ' + E(p.post_time) : ''}</small>` : '<small class="muted">без даты</small>'}</div>
     <div class="ptnet" role="cell"><span class="neticon">${icon(n?.icon || 'social', 16)}</span><span><b>${E(p.channel)}</b><small>${E(p.format || 'формат не выбран')}</small></span></div>
     <div class="ptmain" role="cell">${r ? `<span class="rub">${E(r.id)}</span>` : ''}<h3>${E(p.title)}</h3>

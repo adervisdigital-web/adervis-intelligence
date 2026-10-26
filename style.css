@@ -2560,3 +2560,20 @@ dialog.askdlg > .close{position:absolute;top:18px;right:18px;float:none;z-index:
 .askform button{min-width:46px;min-height:46px;display:grid;place-items:center;padding:0}
 .asknote{margin:0;padding:0 22px 14px;font-size:12.5px}
 @media(prefers-reduced-motion:reduce){.askdots b{animation:none}}
+
+/* ===== контент-план: перетаскивание строк ===== */
+.ptgrip{position:absolute;left:1px;top:50%;width:18px;height:40px;margin-top:-20px;padding:0;border:0;border-radius:6px;cursor:grab;touch-action:none;z-index:2;
+  background:radial-gradient(circle,currentColor 1.4px,transparent 1.7px) 0 0/8px 8px;color:var(--muted);opacity:0;transition:opacity .15s,background-color .15s}
+.ptrow:hover .ptgrip,.ptgrip:focus-visible{opacity:.8}
+.ptgrip:hover{background-color:color-mix(in srgb,var(--ink) 8%,transparent);opacity:1}
+body.ptdragging,body.ptdragging *{cursor:grabbing!important;user-select:none}
+.ptghost{position:fixed;z-index:60;pointer-events:none;margin:0;border:1px solid var(--gold);border-radius:14px;background:var(--panel);
+  box-shadow:0 26px 60px -12px rgba(0,0,0,.55),0 0 0 4px color-mix(in srgb,var(--gold) 18%,transparent);transform:rotate(-.6deg) scale(1.015);opacity:.96}
+.ptghost .ptgrip{opacity:1}
+.ptto{position:absolute;right:14px;top:-14px;padding:4px 10px;border-radius:999px;background:var(--gold);color:#141414;font-size:12.5px;font-weight:700;white-space:nowrap}
+.ptsrc{opacity:.35;outline:2px dashed color-mix(in srgb,var(--ink) 25%,transparent);outline-offset:-4px}
+.ptover{background:color-mix(in srgb,var(--gold) 9%,var(--panel));box-shadow:inset 0 0 0 2px var(--gold);transition:background .15s,box-shadow .15s}
+.ptlanded{animation:ptland 1.2s ease-out}
+@keyframes ptland{0%,30%{box-shadow:inset 0 0 0 2px var(--gold);background:color-mix(in srgb,var(--gold) 10%,var(--panel))}100%{box-shadow:inset 0 0 0 2px transparent}}
+@media(hover:none){.ptgrip{opacity:.6}}
+@media(prefers-reduced-motion:reduce){.ptghost{transform:none}.ptlanded{animation:none}}
