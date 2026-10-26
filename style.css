@@ -2874,46 +2874,47 @@ html:not([data-theme=dark]) body::before{opacity:.04;mix-blend-mode:multiply}
 
 @media(max-width:720px){.estside{order:2}.estghead .estgtoggle{flex-basis:calc(100% - 50px)}.estghead .estgsum{order:3;flex-basis:100%;padding-left:0}.estgname{font-size:16px}}
 
-/* ===== Ада справа внизу: живая плашка ===== */
+/* ===== Ада справа внизу: одна Ада, реплика и маленький список ===== */
 .adadock{display:none}
 @media(min-width:721px){
   html body .topbar #ask,html body #ask{display:none!important}
-  .adadock{position:fixed;right:24px;bottom:24px;z-index:30;display:flex;align-items:flex-end;gap:0;width:380px;max-width:calc(100vw - 48px);
-    padding:14px 14px 14px 10px;border-radius:24px;background:color-mix(in srgb,var(--panel) 92%,transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);
-    border:1px solid color-mix(in srgb,var(--tone-violet) 28%,var(--line));box-shadow:0 24px 60px -18px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.02) inset;
-    transition:width .35s cubic-bezier(.22,1,.36,1),padding .35s cubic-bezier(.22,1,.36,1),border-radius .35s}
+  .adadock{position:fixed;right:22px;bottom:18px;z-index:30;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
   .adadock[hidden]{display:none}
-  .ddava{position:relative;flex:none;width:92px;height:92px;margin:-34px 0 -6px -18px;padding:0;border:0;background:none;cursor:pointer}
+  .adadock > *{pointer-events:auto}
+  .ddava{position:relative;width:96px;height:96px;padding:0;border:0;background:none;cursor:pointer;border-radius:50%;transition:transform .25s cubic-bezier(.22,1,.36,1)}
+  .ddava:hover{transform:translateY(-3px)}
+  .ddava:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
   .ddava .ddada{display:block;width:100%}
-  .ddava .navbadge{position:absolute;top:8px;right:6px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;font-size:11px;line-height:20px;background:var(--gold);color:#141414;font-weight:700;box-shadow:0 0 0 2px var(--panel)}
+  .ddava .navbadge{position:absolute;top:6px;right:4px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;font-size:11.5px;line-height:22px;background:var(--gold);color:#141414;font-weight:700;box-shadow:0 0 0 3px var(--bg)}
   .ddava .navbadge.late{background:#ef4444;color:#fff}
   .ddava .navbadge[hidden]{display:none}
-  .ddbody{flex:1;min-width:0;display:grid;gap:10px}
-  .ddhead{display:flex;align-items:center;gap:8px}
+  .ddhint{max-width:280px;margin-right:30px;opacity:0;transform:translateY(6px) scale(.97);transform-origin:bottom right;transition:opacity .25s,transform .3s cubic-bezier(.22,1,.36,1)}
+  .ddhint.on{opacity:1;transform:none}
+  .ddhint[hidden]{display:none}
+  .ddhint button{display:grid;gap:2px;text-align:left;padding:10px 14px;border-radius:16px 16px 4px 16px;border:1px solid color-mix(in srgb,var(--gold) 35%,var(--line));
+    background:var(--panel);color:var(--ink);box-shadow:0 14px 34px -14px rgba(0,0,0,.55);font-size:12.5px;line-height:1.35}
+  .ddhint b{font-size:13px}
+  .ddhint span{color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ddpop{width:320px;padding:12px;border-radius:20px;background:var(--panel);border:1px solid var(--line);box-shadow:0 28px 70px -20px rgba(0,0,0,.6);
+    margin-right:10px;transform-origin:bottom right;animation:ddPop .24s cubic-bezier(.22,1,.36,1)}
+  .ddpop[hidden]{display:none}
+  @keyframes ddPop{from{opacity:0;transform:translateY(8px) scale(.96)}}
+  .ddhead{display:flex;align-items:baseline;gap:8px;padding:2px 4px 8px}
   .ddhead b{font:600 15px var(--font-display)}
-  .ddhead small{flex:1;font-size:12px;color:var(--muted)}
-  .ddmin{width:28px;height:28px;padding:0;display:grid;place-items:center;border:0;border-radius:8px;background:none;color:var(--muted)}
-  .ddmin:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
-  .ddtip{display:grid;gap:10px;animation:ddIn .3s cubic-bezier(.22,1,.36,1)}
-  @keyframes ddIn{from{opacity:0;transform:translateY(4px)}}
-  .ddsay{margin:0;padding:10px 12px;border-radius:14px 14px 14px 4px;background:color-mix(in srgb,var(--tone-violet) 10%,var(--bg));display:grid;gap:3px;font-size:13px;line-height:1.4}
-  .ddsay b{font-size:13.5px}
-  .ddsay span{color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .ddacts{display:flex;gap:6px;flex-wrap:wrap}
-  .ddacts button{height:32px;padding:0 12px;border-radius:10px;font-size:12.5px;display:inline-flex;align-items:center;gap:5px}
+  .ddhead small{font-size:12px;color:var(--muted)}
+  .ddlist{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:2px}
+  .ddlist button{width:100%;display:flex;gap:10px;align-items:flex-start;text-align:left;padding:8px;border:0;border-radius:12px;background:none;color:var(--ink)}
+  .ddlist button:hover,.ddlist button:focus-visible{background:color-mix(in srgb,var(--ink) 6%,transparent);outline:none}
+  .ddlist i{flex:none;width:8px;height:8px;margin-top:6px;border-radius:50%;background:var(--gold)}
+  .ddlist button.late i{background:#ef4444}
+  .ddlist span{min-width:0;display:grid}
+  .ddlist b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ddlist small{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ddlist .ddall{justify-content:center;font-size:12.5px;color:var(--muted)}
+  .ddnone{padding:8px;font-size:13px;color:var(--muted)}
   .ddask{display:flex;gap:6px}
   .ddask .input{flex:1;min-width:0;height:38px;border-radius:12px;font-size:13px}
   .ddask .primary{width:38px;height:38px;padding:0;display:grid;place-items:center;border-radius:12px}
-  .adadock.min{width:104px;padding:0;border-radius:52px;background:none;border-color:transparent;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
-  .adadock.min .ddbody{display:none}
-  .adadock.min .ddava{margin:0;width:104px;height:104px}
-  html body .main{padding-bottom:220px}
+  html body .main{padding-bottom:140px}
 }
-@media(min-width:721px) and (max-height:700px){.adadock:not(.min) .ddask{display:none}}
-@media (prefers-reduced-motion:reduce){.adadock,.ddtip{transition:none;animation:none}}
-
-@media(min-width:721px){
-  .adadock:not(.min){padding:16px 16px 14px 16px}
-  .adadock:not(.min) .ddava{position:absolute;left:-26px;top:-62px;width:104px;height:104px;margin:0}
-  .adadock:not(.min) .ddhead{padding-left:70px;min-height:28px}
-}
+@media (prefers-reduced-motion:reduce){.ddhint,.ddpop,.ddava{transition:none;animation:none}}

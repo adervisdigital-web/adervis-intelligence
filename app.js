@@ -7636,8 +7636,7 @@ const SHAPES = {
 // буква U знака Hub (сетка 1000), ставится в плитку
 const LOGO_U = 'M220,265 L220,455 A280,280 0 0 0 500,735 A280,280 0 0 0 780,455 L780,265 L660,265 L660,455 A160,160 0 0 1 500,615 A160,160 0 0 1 340,455 L340,265 Z';
 const LOGO_DEPTH = 13;
-const MARK_A = 'M1580.87,1460.95c-2.86-28.37-37.65-89.84-65.61-144.16l-348.64-683.49s-16.06-36.74-39.16-57.23c-18.59-16.48-47.44-17.06-47.44-17.06,0,0-28.35-.15-46.95,16.34-23.13,20.5-39.21,57.25-39.21,57.25l-349.04,683.71c-27.99,54.33-62.82,115.83-65.68,144.21-4.06,40.31,13.99,84.78,76.91,73.39,58.44-10.57,220.37-74.81,220.18-74.86l203.79-82.04,204.09,82.48c-.19.05,161.56,64.28,219.93,74.84,62.85,11.38,80.88-33.07,76.83-73.37h0ZM1644.09,1652.56c-34.42,22.09-86.28,31.73-117.72,27.51-88.97-11.91-211.9-62.67-211.9-62.67l-234.45-93.41-234.23,92.8s-123,50.77-212.03,62.68c-31.46,4.21-83.35-5.42-117.8-27.51-132.9-85.25-70.29-244.9-65.96-256.84,4.51-12.45,442.71-865.15,453.9-885.17,11.19-20.02,40.7-52.42,81.67-73.39,43.38-22.19,94.45-24.57,94.45-24.57,6.52.47,54.47,4.74,94.75,25.36,40.94,20.95,70.44,53.35,81.62,73.37,11.18,20.02,449.11,872.59,453.62,885.04,4.33,11.94,66.89,171.57-65.93,256.8h.01Z';
-const MARK_XF = 'translate(0,24) scale(.262) translate(-1080,-1046)';
+const MARK_A = 'M131.2,132.7 C130.5,125.3 121.4,109.2 114.0,94.9 L22.7,-84.1 C22.7,-84.1 18.5,-93.8 12.4,-99.1 C7.6,-103.4 0.0,-103.6 0.0,-103.6 C0.0,-103.6 -7.4,-103.6 -12.3,-99.3 C-18.4,-93.9 -22.6,-84.3 -22.6,-84.3 L-114.0,94.8 C-121.4,109.1 -130.5,125.2 -131.2,132.6 C-132.3,143.2 -127.6,154.8 -111.1,151.8 C-95.8,149.1 -53.3,132.2 -53.4,132.2 L0.0,110.7 L53.5,132.3 C53.4,132.3 95.8,149.2 111.1,151.9 C127.6,154.9 132.3,143.3 131.2,132.7 L131.2,132.7 L131.2,132.7 Z M147.8,182.9 C138.8,188.7 125.2,191.2 116.9,190.1 C93.6,187.0 61.4,173.7 61.4,173.7 L0.0,149.2 L-61.4,173.5 C-61.4,173.5 -93.6,186.8 -116.9,190.0 C-125.2,191.1 -138.8,188.5 -147.8,182.8 C-182.6,160.4 -166.2,118.6 -165.1,115.5 C-163.9,112.2 -49.1,-111.2 -46.1,-116.4 C-43.2,-121.7 -35.5,-130.2 -24.7,-135.7 C-13.4,-141.5 0.0,-142.1 0.0,-142.1 C1.7,-142.0 14.3,-140.9 24.8,-135.5 C35.6,-130.0 43.3,-121.5 46.2,-116.2 C49.1,-111.0 163.9,112.4 165.1,115.6 C166.2,118.8 182.6,160.6 147.8,182.9 L147.8,182.9 L147.8,182.9 Z';
 const TILE = 'M-94,-152 H94 A78,78 0 0 1 172,-74 V114 A78,78 0 0 1 94,192 H-94 A78,78 0 0 1 -172,114 V-74 A78,78 0 0 1 -94,-152 Z';
 const tween = (ms, f, ease = t => t) => new Promise(res => {
   const t0 = performance.now();
@@ -7690,21 +7689,26 @@ const POSE = {
 };
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Объёмный логотип внутри Ады. metal — знак ADERVIS как на adervis.ru: хром, переходящий в золото.
-function logoLayer(g, name, d, xf, face, metal) {
+// Объёмный логотип внутри Ады — из её же медового стекла: тот же градиент, ореол,
+// розовый рефлекс снизу, мягкий ободок и блик. Толщина — стопка янтарных слоёв.
+function logoLayer(g, name, d, xf, face, bold) {
+  // bold — тонкий знак (кольцо «А») утолщаем обводкой той же заливки
+  const thick = (fill, w) => bold ? ` stroke="${fill}" stroke-width="${w}" stroke-linejoin="round" vector-effect="non-scaling-stroke"` : '';
   const path = (fill, extra = '') => `<path d="${d}"${xf ? ` transform="${xf}"` : ''} fill-rule="evenodd" fill="${fill}"${extra}/>`;
   const id = g + name;
   return `<g class="a-logo" data-logo="${name}" opacity="0" style="display:none">
     <defs><clipPath id="${id}c">${path('#000')}</clipPath></defs>
-    <g class="a-depth">${Array.from({ length: LOGO_DEPTH }, (_, i) => `<g data-i="${LOGO_DEPTH - i}">${path(`url(#${g}${metal ? 'cd' : 'ld'})`)}</g>`).join('')}</g>
+    <g class="a-depth">${Array.from({ length: LOGO_DEPTH }, (_, i) => `<g data-i="${LOGO_DEPTH - i}">${path(`url(#${g}ad)`, thick(`url(#${g}ad)`, 14))}</g>`).join('')}</g>
     <g class="a-front">
-      ${path(`url(#${g}${metal ? 'mg' : 'lg'})`)}
-      ${metal ? path(`url(#${g}ch)`, ' class="a-chrome"') : ''}
+      ${path(P.aura, ` opacity=".45" filter="url(#${g}aura)"`)}
+      ${path(`url(#${g}g)`, ' opacity=".96"' + thick(`url(#${g}g)`, 14))}
       <g clip-path="url(#${id}c)">
-        <ellipse cx="-70" cy="-110" rx="150" ry="90" fill="#fff" opacity="${metal ? '.12' : '.22'}"/>
+        ${bold ? '' : `<rect x="-270" y="-250" width="540" height="480" fill="url(#${g}b)"/>`}
+        ${path('none', ` stroke="${P.rim}" stroke-width="22" vector-effect="non-scaling-stroke" opacity=".45" filter="url(#${g}soft)"`)}
+        <ellipse cx="-66" cy="-92" rx="44" ry="80" transform="rotate(28 -66 -92)" fill="url(#${g}s)"/>
         <rect class="a-sweep" x="-40" y="-260" width="80" height="560" fill="url(#${g}sw)" transform="rotate(16)"/>
-        <rect class="a-dim" x="-200" y="-220" width="400" height="460" fill="#2a1a00" opacity="0"/>
+        <rect class="a-dim" x="-200" y="-220" width="400" height="460" fill="#5a1d06" opacity="0"/>
       </g>
-      ${path('none', ` stroke="#fff3c8" stroke-width="3" vector-effect="non-scaling-stroke" opacity="${metal ? '.45' : '.6'}"`)}
       ${face}
     </g>
   </g>`;
@@ -7744,12 +7748,8 @@ class Ada {
     <filter id="${g}aura" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="26"/></filter>
     <filter id="${g}soft"><feGaussianBlur stdDeviation="8"/></filter>
     <clipPath id="${g}c">${body('')}/></clipPath>
-    <linearGradient id="${g}lg" gradientUnits="userSpaceOnUse" x1="-172" y1="0" x2="172" y2="0"><stop offset="0" stop-color="#ffd264"/><stop offset=".55" stop-color="#f0b53a"/><stop offset="1" stop-color="#c8901f"/></linearGradient>
-    <linearGradient id="${g}ld" gradientUnits="userSpaceOnUse" x1="0" y1="-160" x2="0" y2="200"><stop offset="0" stop-color="#b9821c"/><stop offset="1" stop-color="#6e4309"/></linearGradient>
-    <linearGradient id="${g}sw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".75"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <linearGradient id="${g}mg" gradientUnits="userSpaceOnUse" x1="-170" y1="-150" x2="170" y2="190"><stop offset="0" stop-color="#fff3c4"/><stop offset=".22" stop-color="#f6bd3a"/><stop offset=".45" stop-color="#a8700f"/><stop offset=".62" stop-color="#ffe08a"/><stop offset=".82" stop-color="#d79a24"/><stop offset="1" stop-color="#7a4c08"/></linearGradient>
-    <linearGradient id="${g}ch" gradientUnits="userSpaceOnUse" x1="-170" y1="-150" x2="170" y2="190"><stop offset="0" stop-color="#ffffff"/><stop offset=".25" stop-color="#c9ccd2"/><stop offset=".46" stop-color="#5d6068"/><stop offset=".64" stop-color="#f4f5f7"/><stop offset=".84" stop-color="#9a9da5"/><stop offset="1" stop-color="#3a3c42"/></linearGradient>
-    <linearGradient id="${g}cd" gradientUnits="userSpaceOnUse" x1="0" y1="-160" x2="0" y2="200"><stop offset="0" stop-color="#8a6a2a"/><stop offset="1" stop-color="#3b2a0c"/></linearGradient>
+    <linearGradient id="${g}ad" gradientUnits="userSpaceOnUse" x1="0" y1="-160" x2="0" y2="200"><stop offset="0" stop-color="#e0702a"/><stop offset="1" stop-color="#7a260c"/></linearGradient>
+    <linearGradient id="${g}sw" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".6"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
   </defs>
   <style>[data-ada=${g}] .e{fill:url(#${g}led)}[data-ada=${g}] .eh{fill:#ff8fbf}[data-ada=${g}] .ls{fill:none;stroke:${P.eye};stroke-width:5;stroke-linecap:round}</style>
   <ellipse class="a-shadow" cx="0" cy="208" rx="150" ry="14" fill="#000" opacity=".25" filter="url(#${g}soft)"/>
@@ -7765,11 +7765,9 @@ class Ada {
     </g>
     <g class="a-look"><g class="a-face" filter="url(#${g}glow)"></g></g>
   </g>
-  ${logoLayer(g, 'hub', TILE, '', `<g transform="translate(0,20) scale(.335) translate(-500,-500)">
-        <path d="${LOGO_U}" fill="#fff0b8" opacity=".55" transform="translate(-9,-12)"/>
-        <path d="${LOGO_U}" fill="#5a3606" opacity=".5" transform="translate(7,10)"/>
-        <path d="${LOGO_U}" fill="#141414"/></g>`)}
-  ${logoLayer(g, 'adervis', MARK_A, MARK_XF, '', true)}
+  ${logoLayer(g, 'hub', TILE, '', `<g filter="url(#${g}glow)"><g transform="translate(0,20) scale(.335) translate(-500,-500)">
+        <path d="${LOGO_U}" fill="url(#${g}led)"/></g></g>`)}
+  ${logoLayer(g, 'adervis', MARK_A, '', '', true)}
   <g class="a-fx"></g>
 </svg>`;
   }
@@ -7873,8 +7871,7 @@ class Ada {
     this.lastMark = mark;
     this.cur = this.logos[mark];
     const q = { ...this.p, ...this.cur };
-    const metal = t => { if (q.chrome) q.chrome.setAttribute('opacity', (1 - Math.min(1, t)).toFixed(3)); };
-    metal(0);
+    const metal = () => {};
     this.stopLoops();
     const showLogo = () => { q.logo.style.display = ''; q.logo.setAttribute('opacity', '1'); };
     const hideLogo = () => { q.logo.style.display = 'none'; q.logo.setAttribute('opacity', '0'); };
@@ -9836,15 +9833,38 @@ function placeShell() {
   }
 }
 
-// Ада справа внизу: по одному делу на сегодня — «Открыть», «Завтра», «Ещё»,
-// и поле, чтобы сразу спросить её о делах. Сворачивается в одну Аду со счётчиком.
-let dockAda = null, dockI = 0, dockRef = '';
-let dockMin = false;
-try { dockMin = localStorage.getItem('hub.dock.min') === '1'; } catch (e) { /* без памяти */ }
-const DOCK_IDLE = ['Спросите меня, кому пора напомнить о КП', 'Могу посчитать, сколько денег в работе', 'Срочного нет. Хорошее время написать новым компаниям'];
+// Ада справа внизу — компактно: одна Ада со счётчиком дел. Иногда она коротко
+// говорит о самом важном деле (реплика сама прячется). Нажали — маленький список
+// дел и поле для вопроса; щелчок мимо или Esc закрывает.
+let dockAda = null, dockOpen = false, dockSaid = '', dockHintT = 0;
+try { dockSaid = sessionStorage.getItem('hub.dock.said') || ''; } catch (e) { /* без памяти */ }
 function dockTips() {
   const list = db && typeof todayList === 'function' ? todayList() : [];
-  return list.map(x => ({ ref: x.ref, title: x.title, what: x.what, late: x.late, when: x.when, snooze: /^(l|pr|br):/.test(x.ref) }));
+  return list.map(x => ({ ref: x.ref, title: x.title, what: x.what, late: x.late }));
+}
+function dockHint(show, t) {
+  const h = $('#adadock .ddhint');
+  if (!h) return;
+  clearTimeout(dockHintT);
+  if (show && t && !dockOpen) {
+    h.innerHTML = `<button data-action="todayopen" data-id="${E(t.ref)}"><b>${E(t.title)}</b><span>${E(t.what)}</span></button>`;
+    h.hidden = false;
+    requestAnimationFrame(() => h.classList.add('on'));
+    dockHintT = setTimeout(() => dockHint(false), 7000);
+  } else {
+    h.classList.remove('on');
+    dockHintT = setTimeout(() => { h.hidden = true; }, 250);
+  }
+}
+function dockToggle(open) {
+  dockOpen = open ?? !dockOpen;
+  const d = $('#adadock');
+  if (!d) return;
+  d.classList.toggle('open', dockOpen);
+  d.querySelector('.ddava').setAttribute('aria-expanded', String(dockOpen));
+  d.querySelector('.ddpop').hidden = !dockOpen;
+  if (dockOpen) { dockHint(false); dockAda?.set('hello'); setTimeout(() => dockOpen && drawDock(), 900); d.querySelector('.ddask input')?.focus({ preventScroll: true }); }
+  else drawDock();
 }
 function drawDock() {
   let d = $('#adadock');
@@ -9852,52 +9872,52 @@ function drawDock() {
     d = document.createElement('aside');
     d.id = 'adadock'; d.className = 'adadock';
     d.setAttribute('aria-label', 'Ада, помощник Hub');
-    d.innerHTML = `<button class="ddava" type="button" aria-label="Ада"><span class="ddada"></span><b class="navbadge" hidden></b></button>
-      <div class="ddbody"><header class="ddhead"><b>Ада</b><small class="ddcount" aria-live="polite"></small>
-        <button class="ddmin" type="button" aria-label="Свернуть Аду" title="Свернуть">${icon('expand', 15)}</button></header>
-        <div class="ddtip" aria-live="polite"></div>
+    d.innerHTML = `<div class="ddpop" hidden role="dialog" aria-label="Ада: дела и вопрос">
+        <header class="ddhead"><b>Ада</b><small class="ddcount"></small></header>
+        <ul class="ddlist"></ul>
         <form class="ddask"><input class="input" name="q" maxlength="1000" autocomplete="off" placeholder="Спросите Аду о делах…" aria-label="Вопрос Аде">
-          <button class="primary" aria-label="Спросить">${icon('send', 15)}</button></form></div>`;
+          <button class="primary" aria-label="Спросить">${icon('send', 15)}</button></form></div>
+      <div class="ddhint" hidden></div>
+      <button class="ddava" type="button" aria-label="Ада: дела на сегодня" aria-expanded="false"><span class="ddada"></span><b class="navbadge" hidden></b></button>`;
     document.body.appendChild(d);
-    dockAda = new Ada(d.querySelector('.ddada'), { mood: 'idle' });
-    d.querySelector('.ddava').addEventListener('click', () => { if (dockMin) { dockMin = false; saveDock(); drawDock(); } });
-    d.querySelector('.ddmin').onclick = () => { dockMin = true; saveDock(); drawDock(); };
+    dockAda = new Ada(d.querySelector('.ddada'), { mood: 'idle', interactive: false });
+    const ava = d.querySelector('.ddava');
+    ava.onclick = () => dockToggle();
+    ava.onmouseenter = () => { if (!dockOpen) { dockAda.set('curious'); dockHint(true, dockTips()[0]); } };
+    ava.onmouseleave = () => { if (!dockOpen) drawDock(); };
     d.querySelector('.ddask').onsubmit = e => {
       e.preventDefault();
       const q = e.target.elements.q.value.trim();
       e.target.elements.q.value = '';
+      dockToggle(false);
       askOpen();
       if (q) askSend(q);
     };
-    d.addEventListener('click', e => {
-      const b = e.target.closest('[data-dock]');
-      if (!b) return;
-      if (b.dataset.dock === 'next') { dockI++; dockRef = ''; drawDock(); dockAda?.hop(30); }
-    });
+    d.addEventListener('click', e => { if (e.target.closest('[data-action],[data-page]')) { dockToggle(false); dockHint(false); } });
+    document.addEventListener('pointerdown', e => { if (dockOpen && !e.target.closest('#adadock')) dockToggle(false); }, true);
+    document.addEventListener('keydown', e => { if (dockOpen && e.key === 'Escape') dockToggle(false); });
   }
   d.hidden = !me || !shellDesk.matches;
-  d.classList.toggle('min', dockMin);
-  const tips = dockTips();
-  if (dockRef) { const at = tips.findIndex(t => t.ref === dockRef); if (at >= 0 && at !== dockI % (tips.length || 1)) dockI = at; }
-  const t = tips.length ? tips[dockI % tips.length] : null;
-  dockRef = t?.ref || '';
-  const late = tips.filter(x => x.late).length;
+  const tips = dockTips(), late = tips.filter(x => x.late).length;
   const badge = d.querySelector('.ddava .navbadge');
-  badge.hidden = !dockMin || !tips.length;
-  badge.textContent = tips.length; badge.classList.toggle('late', !!late);
-  d.querySelector('.ddcount').textContent = tips.length ? `дело ${(dockI % tips.length) + 1} из ${tips.length}${late ? ` · просрочено ${late}` : ''}` : 'срочного нет';
-  d.querySelector('.ddtip').innerHTML = t
-    ? `<p class="ddsay"><b>${E(t.title)}</b><span>${E(t.what)}</span></p>
-      <div class="ddacts"><button class="primary" data-action="todayopen" data-id="${E(t.ref)}">Открыть</button>
-        ${t.snooze ? `<button data-action="snooze" data-id="${E(t.ref)}">${icon('time', 14)} Завтра</button>` : ''}
-        ${tips.length > 1 ? `<button data-dock="next">Ещё ${icon('next', 14)}</button>` : ''}</div>`
-    : `<p class="ddsay"><span>${E(DOCK_IDLE[dockI % DOCK_IDLE.length])}</span></p>`;
-  if (dockAda && !dockAda.logoOn) {
-    const mood = !t ? (new Date().getHours() >= 22 || new Date().getHours() < 7 ? 'sleep' : 'idle') : t.late ? 'alert' : 'curious';
-    if (dockAda.state !== 'talk') dockAda.set(mood);
+  badge.hidden = !tips.length; badge.textContent = tips.length; badge.classList.toggle('late', !!late);
+  d.querySelector('.ddcount').textContent = tips.length ? `${tips.length} ${plural(tips.length, 'дело', 'дела', 'дел')} на сегодня${late ? ` · просрочено ${late}` : ''}` : 'срочного нет';
+  d.querySelector('.ddlist').innerHTML = tips.length
+    ? tips.slice(0, 5).map(t => `<li><button data-action="todayopen" data-id="${E(t.ref)}" class="${t.late ? 'late' : ''}"><i></i><span><b>${E(t.title)}</b><small>${E(t.what)}</small></span></button></li>`).join('')
+      + (tips.length > 5 ? `<li><button class="ddall" data-page="home">Все дела: ${tips.length}</button></li>` : '')
+    : '<li class="ddnone">Срочного нет. Спросите меня, кому пора напомнить о КП.</li>';
+  if (dockAda && !dockAda.logoOn && !dockOpen) {
+    const h = new Date().getHours();
+    dockAda.set(!tips.length ? (h >= 22 || h < 7 ? 'sleep' : 'idle') : late ? 'alert' : 'curious');
+  }
+  // о новом главном деле Ада говорит сама, один раз за сессию
+  const top = tips[0];
+  if (top && top.ref !== dockSaid && !d.hidden) {
+    dockSaid = top.ref;
+    try { sessionStorage.setItem('hub.dock.said', dockSaid); } catch (e) { /* без памяти */ }
+    setTimeout(() => dockHint(true, top), 1200);
   }
 }
-const saveDock = () => { try { localStorage.setItem('hub.dock.min', dockMin ? '1' : '0'); } catch (e) { /* без памяти */ } };
 placeShell();
 shellDesk.addEventListener?.('change', () => { placeShell(); drawDock(); });
 $('#refresh').onclick = async () => {
