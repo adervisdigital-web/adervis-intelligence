@@ -3004,3 +3004,13 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
   #view .card.click:hover,#view .bfcard:hover,#view .hmnow:hover{transform:translateY(-3px);box-shadow:0 22px 50px -28px rgba(0,0,0,.6)}
 }
 @media (prefers-reduced-motion:reduce){#view .card{transition:none}#view .card.click:hover{transform:none}.ddava{transition:none}}
+
+/* ===== Ада в карточке: дуговой перелёт и реплика ===== */
+@media(min-width:721px){
+  .ddava{transition:none}
+  .ddbubble{position:absolute;right:calc(100% - 14px);top:6px;width:max-content;max-width:260px;padding:9px 12px;border-radius:14px 14px 4px 14px;
+    background:var(--panel);border:1px solid color-mix(in srgb,var(--gold) 40%,var(--line));color:var(--ink);font:500 12.5px/1.4 var(--font-body,inherit);text-align:left;
+    box-shadow:0 14px 34px -14px rgba(0,0,0,.55);opacity:0;transform:translateX(6px) scale(.96);transform-origin:right top;pointer-events:none;transition:opacity .2s,transform .3s cubic-bezier(.22,1,.36,1)}
+  .ddbubble.on{opacity:1;transform:none}
+  .adadock:not(.away) .ddbubble{display:none}
+}

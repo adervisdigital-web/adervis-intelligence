@@ -8400,6 +8400,7 @@ const ID_TIP = {
 };
 let tipEl = null, tipFor = null, tipTimer = 0;
 const tipText = el => {
+  if (el.closest('#adadock')) return '';
   if (el.title) { el.dataset.tip = el.title; el.removeAttribute('title'); }
   if (el.dataset.tip) return el.dataset.tip;
   if (ID_TIP[el.id]) return ID_TIP[el.id];
@@ -10197,29 +10198,67 @@ function dockToggle(open) {
 // Пока мышка над «Сейчас главное», Ада перелетает туда (в пустой правый верхний угол),
 // убрали мышку — летит обратно в угол экрана. Ада одна и та же, просто меняет место.
 let dockAway = null;
-function dockFly(card) {
+// Перелёт — по дуге: взлёт вверх, наклон по ходу, посадка с пружинкой. Обратно — тем же путём.
+let dockFlight = null, dockAt = [0, 0, 1];
+function dockFly(card, instant) {
   const d = $('#adadock'), ava = d?.querySelector('.ddava');
   if (!ava || dockOpen || !shellDesk.matches) return;
   dockAway = card;
-  if (!card) { ava.style.transform = ''; d.classList.remove('away'); dockAda?.set(dockTips().some(x => x.late) ? 'alert' : 'curious'); return; }
-  const place = () => {
-    if (dockAway !== card) return;
-    ava.style.transform = '';
-    const from = ava.getBoundingClientRect(), to = card.getBoundingClientRect();
-    const tx = (to.right - 96) - (from.left + from.width / 2), ty = (to.top + 18) - from.top;
-    ava.style.transform = `translate(${Math.round(tx)}px, ${Math.round(ty)}px) scale(1.15)`;
-  };
-  ava.style.transition = 'none'; place(); const t = ava.style.transform; ava.style.transform = ''; void ava.offsetWidth;
-  ava.style.transition = ''; ava.style.transform = t;
-  d.classList.add('away');
-  dockAda?.hop(30); setTimeout(() => dockAway === card && dockAda?.set('hello'), 300);
+  if (!instant) dockBubble(false);
+  // куда лететь: в пустой правый верхний угол карточки или домой
+  let to = [0, 0, 1];
+  if (card) {
+    const prev = ava.style.transform; ava.style.transform = 'none';
+    const home = ava.getBoundingClientRect(), r = card.getBoundingClientRect();
+    ava.style.transform = prev;
+    to = [Math.round(r.right - 96 - (home.left + home.width / 2)), Math.round(r.top + 18 - home.top), 1.15];
+  }
+  const from = dockAt.slice();
+  dockFlight?.cancel();
+  ava.style.transform = `translate(${from[0]}px, ${from[1]}px) scale(${from[2]})`;
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches, dist = Math.hypot(to[0] - from[0], to[1] - from[1]);
+  if (!calm && !instant && dist > 4) {
+    // дуга: контрольная точка выше и чуть в сторону, наклон по направлению полёта
+    const cx = (from[0] + to[0]) / 2 + (to[0] - from[0]) * .15, cy = Math.min(from[1], to[1]) - Math.min(110, dist * .16);
+    const dir = Math.sign(to[0] - from[0]) || 1, frames = [];
+    for (let i = 0; i <= 14; i++) {
+      const t = i / 14, u = 1 - t;
+      const x = u * u * from[0] + 2 * u * t * cx + t * t * to[0], y = u * u * from[1] + 2 * u * t * cy + t * t * to[1];
+      const k = from[2] + (to[2] - from[2]) * t + Math.sin(t * Math.PI) * .22;
+      const tilt = Math.sin(t * Math.PI) * 14 * dir;
+      const sq = i === 0 ? 'scale(1.08,.9)' : i === 14 ? 'scale(.94,1.06)' : 'scale(1)';
+      frames.push({ transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${tilt.toFixed(1)}deg) scale(${k.toFixed(3)}) ${sq}`, offset: t * .9 });
+    }
+    frames.push({ transform: `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`, offset: 1 });
+    dockFlight = ava.animate(frames, { duration: 820 + Math.min(300, dist * .25), easing: 'cubic-bezier(.45,.05,.25,1)', fill: 'forwards' });
+    dockFlight.onfinish = () => { ava.style.transform = `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`; dockFlight?.cancel(); dockFlight = null; };
+  } else ava.style.transform = `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`;
+  dockAt = to;
+  d.classList.toggle('away', !!card);
+  if (instant) return;
+  if (card) setTimeout(() => dockAway === card && dockAda?.set('hello'), 500);
+  else dockAda?.set(dockTips().some(x => x.late) ? 'alert' : 'curious');
+}
+// Ада в карточке: по нажатию — короткая реплика рядом, что сделать
+function dockBubble(show) {
+  const b = $('#adadock .ddbubble');
+  if (!b) return;
+  clearTimeout(dockBubble.t);
+  if (!show) { b.classList.remove('on'); return; }
+  const card = dockAway, h = card?.querySelector('h2')?.textContent.trim() || '', act = card?.querySelector('.primary')?.textContent.trim() || '';
+  const sub = (card?.querySelector('h2 + p, h2 + small, .hmfacts')?.textContent || '').replace(/\s+/g, ' ').trim();
+  const tip = dockTips()[0];
+  b.textContent = h && act ? `${h}${sub ? `: ${sub.charAt(0).toLowerCase() + sub.slice(1)}` : ''}. Нажмите «${act}»` : tip ? `${tip.title}: ${tip.what}` : 'Срочного нет. Хорошее время написать новым компаниям';
+  b.classList.add('on');
+  dockAda?.set('talk'); Ada.chirp('tap');
+  dockBubble.t = setTimeout(() => { b.classList.remove('on'); if (dockAway) dockAda?.set('hello'); }, 5000);
 }
 document.addEventListener('pointerover', e => {
   const card = e.target.closest?.('#view .hmnow');
   if (card && dockAway !== card) dockFly(card);
   else if (!card && dockAway && !e.target.closest?.('#adadock')) dockFly(null);
 });
-addEventListener('scroll', () => { if (dockAway) dockFly(dockAway); }, { passive: true });
+addEventListener('scroll', () => { if (dockAway && !dockFlight) dockFly(dockAway, true); }, { passive: true });
 // подсветка рамки блока идёт за курсором
 document.addEventListener('pointermove', e => {
   const c = e.target.closest?.('#view .card');
@@ -10239,13 +10278,13 @@ function drawDock() {
         <form class="ddask"><input class="input" name="q" maxlength="1000" autocomplete="off" placeholder="Спросите Аду о делах…" aria-label="Вопрос Аде">
           <button class="primary" aria-label="Спросить">${icon('send', 15)}</button></form></div>
       <div class="ddhint" hidden></div>
-      <button class="ddava" type="button" aria-label="Ада: дела на сегодня" aria-expanded="false"><span class="ddada"></span><b class="navbadge" hidden></b></button>`;
+      <button class="ddava" type="button" aria-label="Ада: дела на сегодня" aria-expanded="false"><span class="ddada"></span><b class="navbadge" hidden></b><span class="ddbubble" aria-live="polite"></span></button>`;
     document.body.appendChild(d);
     dockAda = new Ada(d.querySelector('.ddada'), { mood: 'idle', interactive: false });
     const ava = d.querySelector('.ddava');
-    ava.onclick = () => dockToggle();
-    ava.onmouseenter = () => { if (!dockOpen) { dockAda.set('curious'); dockHint(true, dockTips()[0]); } };
-    ava.onmouseleave = () => { if (!dockOpen) drawDock(); };
+    ava.onclick = () => { if (dockAway) dockBubble(!$('#adadock .ddbubble').classList.contains('on')); else dockToggle(); };
+    ava.onmouseenter = () => { if (!dockOpen && !dockAway) { dockAda.set('curious'); dockHint(true, dockTips()[0]); } };
+    ava.onmouseleave = () => { if (!dockOpen && !dockAway) drawDock(); };
     d.querySelector('.ddask').onsubmit = e => {
       e.preventDefault();
       const q = e.target.elements.q.value.trim();
