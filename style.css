@@ -3014,3 +3014,12 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
   .ddbubble.on{opacity:1;transform:none}
   .adadock:not(.away) .ddbubble{display:none}
 }
+
+/* ===== шлейф перелёта Ады ===== */
+.ddghost{display:none}
+@media(min-width:721px){
+  .ddghost{display:block;position:absolute;right:24px;bottom:22px;width:52px;height:52px;border-radius:50%;pointer-events:none;opacity:0;
+    background:radial-gradient(circle at 40% 38%,#fff3d2 0%,#ffbb45 35%,rgba(238,122,30,.55) 60%,transparent 72%);filter:blur(5px);mix-blend-mode:screen}
+  html:not([data-theme=dark]) .ddghost{mix-blend-mode:normal}
+  .ddava{will-change:transform,filter}
+}

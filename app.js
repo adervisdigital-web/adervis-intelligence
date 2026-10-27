@@ -10218,20 +10218,39 @@ function dockFly(card, instant) {
   ava.style.transform = `translate(${from[0]}px, ${from[1]}px) scale(${from[2]})`;
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches, dist = Math.hypot(to[0] - from[0], to[1] - from[1]);
   if (!calm && !instant && dist > 4) {
-    // дуга: контрольная точка выше и чуть в сторону, наклон по направлению полёта
-    const cx = (from[0] + to[0]) / 2 + (to[0] - from[0]) * .15, cy = Math.min(from[1], to[1]) - Math.min(110, dist * .16);
-    const dir = Math.sign(to[0] - from[0]) || 1, frames = [];
-    for (let i = 0; i <= 14; i++) {
-      const t = i / 14, u = 1 - t;
-      const x = u * u * from[0] + 2 * u * t * cx + t * t * to[0], y = u * u * from[1] + 2 * u * t * cy + t * t * to[1];
-      const k = from[2] + (to[2] - from[2]) * t + Math.sin(t * Math.PI) * .22;
-      const tilt = Math.sin(t * Math.PI) * 14 * dir;
-      const sq = i === 0 ? 'scale(1.08,.9)' : i === 14 ? 'scale(.94,1.06)' : 'scale(1)';
-      frames.push({ transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${tilt.toFixed(1)}deg) scale(${k.toFixed(3)}) ${sq}`, offset: t * .9 });
+    // Как у Маруси: присед, быстрый полёт по дуге — вытягивается по ходу движения и чуть
+    // размывается на скорости, за ней тянется медовый шлейф; посадка с приплюскиванием.
+    const cx = (from[0] + to[0]) / 2 + (to[0] - from[0]) * .1, cy = Math.min(from[1], to[1]) - Math.min(90, dist * .14);
+    const pt = t => { const u = 1 - t; return [u * u * from[0] + 2 * u * t * cx + t * t * to[0], u * u * from[1] + 2 * u * t * cy + t * t * to[1]]; };
+    const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const f = v => v.toFixed(2), frames = [], N = 18, A = .12, B = .82;
+    const T = (x, y, k, extra = '') => `translate(${f(x)}px, ${f(y)}px) ${extra} scale(${f(k)})`;
+    frames.push({ transform: T(from[0], from[1], from[2]), filter: 'blur(0px)', offset: 0 });
+    frames.push({ transform: T(from[0], from[1] + 6, from[2], 'scale(1.12,.86)'), filter: 'blur(0px)', offset: A });
+    for (let i = 1; i <= N; i++) {
+      const t = ease(i / N), [x, y] = pt(t), [x0, y0] = pt(Math.max(0, t - .04));
+      const ang = Math.atan2(y - y0, x - x0) * 180 / Math.PI, v = Math.sin(Math.PI * i / N);
+      const k = from[2] + (to[2] - from[2]) * t;
+      frames.push({ transform: T(x, y, k, `rotate(${f(ang)}deg) scale(${f(1 + v * .38)},${f(1 - v * .22)}) rotate(${f(-ang)}deg)`), filter: `blur(${f(v * 1.6)}px)`, offset: A + (B - A) * i / N });
     }
-    frames.push({ transform: `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`, offset: 1 });
-    dockFlight = ava.animate(frames, { duration: 820 + Math.min(300, dist * .25), easing: 'cubic-bezier(.45,.05,.25,1)', fill: 'forwards' });
+    frames.push({ transform: T(to[0], to[1] + 4, to[2], 'scale(1.14,.86)'), filter: 'blur(0px)', offset: .9 });
+    frames.push({ transform: T(to[0], to[1] - 2, to[2], 'scale(.96,1.05)'), filter: 'blur(0px)', offset: .96 });
+    frames.push({ transform: T(to[0], to[1], to[2]), filter: 'blur(0px)', offset: 1 });
+    const ms = 560 + Math.min(180, dist * .12);
+    dockFlight = ava.animate(frames, { duration: ms, easing: 'linear', fill: 'forwards' });
     dockFlight.onfinish = () => { ava.style.transform = `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`; dockFlight?.cancel(); dockFlight = null; };
+    // шлейф: медовые огоньки летят тем же путём с запаздыванием и гаснут
+    d.querySelectorAll('.ddghost').forEach((g, j) => {
+      const gf = [];
+      for (let i = 0; i <= N; i++) {
+        const t = ease(i / N), [x, y] = pt(t), v = Math.sin(Math.PI * i / N);
+        gf.push({ transform: `translate(${f(x)}px, ${f(y)}px) scale(${f(.9 - j * .16)})`, opacity: f(v * (.55 - j * .12)), offset: A + (B - A) * i / N });
+      }
+      gf.unshift({ transform: `translate(${from[0]}px, ${from[1]}px)`, opacity: 0, offset: 0 });
+      gf.push({ transform: `translate(${to[0]}px, ${to[1]}px)`, opacity: 0, offset: 1 });
+      g.animate(gf, { duration: ms, delay: 34 * (j + 1), easing: 'linear' });
+    });
+    dockAda?.set('alert');
   } else ava.style.transform = `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`;
   dockAt = to;
   d.classList.toggle('away', !!card);
@@ -10278,6 +10297,7 @@ function drawDock() {
         <form class="ddask"><input class="input" name="q" maxlength="1000" autocomplete="off" placeholder="Спросите Аду о делах…" aria-label="Вопрос Аде">
           <button class="primary" aria-label="Спросить">${icon('send', 15)}</button></form></div>
       <div class="ddhint" hidden></div>
+      <i class="ddghost"></i><i class="ddghost"></i><i class="ddghost"></i>
       <button class="ddava" type="button" aria-label="Ада: дела на сегодня" aria-expanded="false"><span class="ddada"></span><b class="navbadge" hidden></b><span class="ddbubble" aria-live="polite"></span></button>`;
     document.body.appendChild(d);
     dockAda = new Ada(d.querySelector('.ddada'), { mood: 'idle', interactive: false });
