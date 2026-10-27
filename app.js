@@ -7436,6 +7436,7 @@ const rivals = [
   ['Stock', 'Motion Array', 'Кандидат: материалы для видео', 'Косвенная альтернатива. Сравнить каталог и условия использования; тарифы не проверены.', 'https://motionarray.com/', 'К изучению']
 ];
 
+let lastShown = '';
 function render() {
   updateNav();
   let s = '';
@@ -7684,6 +7685,14 @@ function render() {
   $('#view').innerHTML = s;
   countUp();
   mountAdas();
+  // в новый раздел блоки въезжают по очереди; обычные перерисовки — без анимации
+  if (page !== lastShown) {
+    lastShown = page;
+    const cards = [...$('#view').querySelectorAll(':scope > *, .grid > .card, .hmgrid > *')].slice(0, 14);
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) cards.forEach((c, i) => c.animate(
+      [{ opacity: .001, transform: 'translateY(14px)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+      { duration: 520, delay: 40 + i * 45, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' }));
+  }
   // цвет группы раздела — для подсветки карточек и цифр внутри
   $('#view').className = 'tone-' + toneOf(page);
   decorateSearch();
@@ -10185,19 +10194,39 @@ function dockToggle(open) {
   if (dockOpen) { dockHint(false); Ada.chirp('hello'); dockAda?.set('hello'); setTimeout(() => dockOpen && drawDock(), 900); d.querySelector('.ddask input')?.focus({ preventScroll: true }); }
   else drawDock();
 }
-// «На сегодня»: навели на дело — Ада выглядывает именно у него, плашка справа уступает место
-let rowAda = null;
+// Пока мышка над «Сейчас главное», Ада перелетает туда (в пустой правый верхний угол),
+// убрали мышку — летит обратно в угол экрана. Ада одна и та же, просто меняет место.
+let dockAway = null;
+function dockFly(card) {
+  const d = $('#adadock'), ava = d?.querySelector('.ddava');
+  if (!ava || dockOpen || !shellDesk.matches) return;
+  dockAway = card;
+  if (!card) { ava.style.transform = ''; d.classList.remove('away'); dockAda?.set(dockTips().some(x => x.late) ? 'alert' : 'curious'); return; }
+  const place = () => {
+    if (dockAway !== card) return;
+    ava.style.transform = '';
+    const from = ava.getBoundingClientRect(), to = card.getBoundingClientRect();
+    const tx = (to.right - 96) - (from.left + from.width / 2), ty = (to.top + 18) - from.top;
+    ava.style.transform = `translate(${Math.round(tx)}px, ${Math.round(ty)}px) scale(1.15)`;
+  };
+  ava.style.transition = 'none'; place(); const t = ava.style.transform; ava.style.transform = ''; void ava.offsetWidth;
+  ava.style.transition = ''; ava.style.transform = t;
+  d.classList.add('away');
+  dockAda?.hop(30); setTimeout(() => dockAway === card && dockAda?.set('hello'), 300);
+}
 document.addEventListener('pointerover', e => {
-  const li = e.target.closest?.('#view .todayli');
-  let host = $('#rowada');
-  if (!li) { if (host && !e.target.closest?.('#rowada')) { host.classList.remove('on'); document.body.classList.remove('rowada-on'); } return; }
-  if (!host) {
-    host = document.createElement('span'); host.id = 'rowada'; host.setAttribute('aria-hidden', 'true');
-    rowAda = new Ada(host, { mood: 'curious', interactive: false, follow: false });
-  }
-  if (host.parentNode !== li) { li.appendChild(host); rowAda?.set(li.querySelector('.todayrow.late') ? 'alert' : 'curious'); rowAda?.hop(18); }
-  host.classList.add('on'); document.body.classList.add('rowada-on');
+  const card = e.target.closest?.('#view .hmnow');
+  if (card && dockAway !== card) dockFly(card);
+  else if (!card && dockAway && !e.target.closest?.('#adadock')) dockFly(null);
 });
+addEventListener('scroll', () => { if (dockAway) dockFly(dockAway); }, { passive: true });
+// подсветка рамки блока идёт за курсором
+document.addEventListener('pointermove', e => {
+  const c = e.target.closest?.('#view .card');
+  if (!c) return;
+  const r = c.getBoundingClientRect();
+  c.style.setProperty('--mx', `${e.clientX - r.left}px`); c.style.setProperty('--my', `${e.clientY - r.top}px`);
+}, { passive: true });
 function drawDock() {
   let d = $('#adadock');
   if (!d) {

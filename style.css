@@ -2983,3 +2983,24 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 
 .askacts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .askmsg .asklisten{justify-self:start;width:auto}
+
+/* ===== Ада перелетает в «Сейчас главное» ===== */
+@media(min-width:721px){
+  .ddava{transition:transform .7s cubic-bezier(.34,1.25,.5,1)}
+  .adadock.away .navbadge,.adadock.away .ddhint{opacity:0}
+  .adadock.away .ddava:hover{transform:inherit}
+  .hmnow{padding-right:150px}
+}
+
+/* ===== блоки: подсветка рамки за курсором, мягкий подъём ===== */
+@media(hover:hover) and (min-width:721px){
+  #view .card{--mx:50%;--my:0%;position:relative;transition:transform .35s cubic-bezier(.22,1,.36,1),box-shadow .35s,border-color .35s}
+  #view .card:not(.metric)::before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;pointer-events:none;opacity:0;transition:opacity .3s;
+    background:radial-gradient(420px circle at var(--mx) var(--my),color-mix(in srgb,var(--gold) 70%,transparent),transparent 45%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+  #view .card:not(.metric)::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .3s;
+    background:radial-gradient(600px circle at var(--mx) var(--my),color-mix(in srgb,var(--gold) 6%,transparent),transparent 40%)}
+  #view .card:not(.metric):hover::before,#view .card:not(.metric):hover::after{opacity:1}
+  #view .card.click:hover,#view .bfcard:hover,#view .hmnow:hover{transform:translateY(-3px);box-shadow:0 22px 50px -28px rgba(0,0,0,.6)}
+}
+@media (prefers-reduced-motion:reduce){#view .card{transition:none}#view .card.click:hover{transform:none}.ddava{transition:none}}
