@@ -1,5 +1,5 @@
 // Связь с ADERVIS CRM: шаблоны брифов студии и перенос брифа CRM в заявку и бриф.
-import { ADERVIS_TEMPLATES, withTemplates, fromSubmission, briefLink, maskEmail, CRM_TYPES, sanitizePush, withDeal, findDeal, backChanges, CRM_WON } from '../supabase/functions/_shared/crm.ts';
+import { ADERVIS_TEMPLATES, withTemplates, fromSubmission, briefLink, maskEmail, CRM_TYPES, sanitizePush, withDeal, findDeal, backChanges, CRM_WON, choiceDeal } from '../supabase/functions/_shared/crm.ts';
 
 let fails = 0;
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
@@ -84,6 +84,20 @@ check('«Отказ» в Hub не перетираем', !lost.briefPatch.stage 
 const early = backChanges({ id: 'brief-9', stage: 'КП', crm_deal_id: 'proj_9' }, { status: 'Новое', amount: 0 }, findDeal(crmSt, { id: 'brief-9' }), 'now');
 check('ранняя стадия CRM — бриф не двигаем, заявку не трогаем', !early.briefPatch.stage && !Object.keys(early.leadPatch).length && early.briefPatch.crm_status === 'Бриф'
   && CRM_WON.includes('Договор') && !CRM_WON.includes('Согласование'));
+
+// выбор клиента в КП → сделка «Согласование»
+const snap = { title: 'Ролик для выставки', client: 'Завод', estimate: { two: true, full: 300000, base: 200000,
+  groups: [{ name: 'Съёмка', rows: [{ name: 'Оператор', full: 120000, base: 100000 }, { name: 'Свет', full: 60000, base: null }] },
+    { name: 'Монтаж', rows: [{ name: 'Монтаж', full: 120000, base: 100000 }] }], options: [{ name: 'Субтитры: 2 языка', price: 15000 }] } };
+const chB = { variant: 'base', label: 'Базовый вариант', price: 200000, options: [{ name: 'Субтитры: 2 языка', price: 15000 }], total: 215000, comment: 'Старт в ноябре' };
+const pb = sanitizePush(choiceDeal(snap, chB, { id: 'brief-7', title: 'Ролик', client: 'Завод' }, 'Олег, oleg@zavod.example, +7 900 111-22-33'));
+check('выбор «базовый»: строки базового варианта + выбранная опция, итог как у клиента', pb.total === 215000 && pb.lines.length === 3
+  && !pb.lines.some(l => l.name === 'Свет') && pb.lines[2].note.startsWith('Дополнительно') && pb.status === 'Согласование');
+check('контакты из заявки и комментарий клиента — в сделку', pb.email === 'oleg@zavod.example' && /900/.test(pb.phone) && /Старт в ноябре/.test(pb.notes) && /Базовый вариант \+ Субтитры/.test(pb.notes));
+const pf = sanitizePush(choiceDeal(snap, { variant: 'full', label: 'Полный вариант', price: 300000, options: [], total: 300000 }, { id: 'b', title: 'Ролик' }));
+check('выбор «полный»: все строки полного', pf.total === 300000 && pf.lines.length === 3);
+const old = sanitizePush(choiceDeal({ title: 'Старое КП', estimate: { full: 90000 } }, { variant: 'full', label: 'Смета', price: 90000, options: [] }, { id: 'b' }));
+check('старый снимок без строк — одна строка на всю сумму', old.lines.length === 1 && old.total === 90000 && old.lines[0].name === 'Старое КП');
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

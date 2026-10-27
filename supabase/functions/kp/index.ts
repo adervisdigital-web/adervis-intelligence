@@ -5,7 +5,7 @@
 // считаем здесь по снимку, сохраняем выбор, пишем в Telegram и ставим дело
 // в заявке. Вход не нужен: доступ даёт только случайный токен из ссылки.
 
-import { admin, json, CORS } from '../_shared/outreach.ts';
+import { admin, json, CORS, secret, SUPABASE_URL } from '../_shared/outreach.ts';
 import { sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
 import { choiceOf, budgetOf, rub } from '../_shared/kp-choice.ts';
 import { clientVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
@@ -97,6 +97,16 @@ Deno.serve(async (req) => {
       await notify(`Клиент выбрал в КП: ${what}, ${rub(c.total)}. Связаться: договор и предоплата`,
         `✅ Клиент выбрал вариант в КП «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}:\n${what}: ${rub(c.total)}.` +
         `${c.comment ? `\nКомментарий: «${c.comment}»` : ''}\nСвяжитесь сегодня: договор и предоплата.`);
+      // сделка в ADERVIS CRM заводится сама, в фоне: клиент не ждёт ответа CRM
+      const job = (async () => {
+        try {
+          const key = await secret(sb, 'digest_secret');
+          if (!key) return;
+          await fetch(`${SUPABASE_URL}/functions/v1/crm`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-digest-secret': key },
+            body: JSON.stringify({ action: 'choice', token }) });
+        } catch (e) { console.error('kp → crm:', e); }
+      })();
+      (globalThis as any).EdgeRuntime?.waitUntil?.(job);
       return json({ ok: true, total: c.total });
     }
 

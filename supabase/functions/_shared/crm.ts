@@ -229,3 +229,27 @@ export function backChanges(brief: Row, lead: Row | null, deal: DealBack, now: s
     becameWon: won && !CRM_WON.includes(brief.crm_status || '')            // сделка только что состоялась
   };
 }
+
+// ------------------------------------------- выбор клиента на странице КП → сделка CRM
+// Строки — ровно тот вариант, который клиент выбрал (полный или базовый), и
+// отмеченные им дополнительные работы. Строки снимка КП в сумме дают цену
+// варианта; если старый снимок без строк — одна строка на всю сумму.
+export function choiceDeal(snap: Row, choice: Row, brief: Row, contactText = '') {
+  const e = snap?.estimate ?? {};
+  const v = e.two && choice?.variant === 'base' ? 'base' : 'full';
+  let lines: PushLine[] = (Array.isArray(e.groups) ? e.groups : []).flatMap((g: Row) => (Array.isArray(g?.rows) ? g.rows : [])
+    .filter((r: Row) => r?.[v] !== null && Number(r?.[v]) > 0).map((r: Row) => ({ name: str(r.name, 120), price: money(r[v]), note: str(g.name, 200) })));
+  const price = money(choice?.price);
+  if (!lines.length || lines.reduce((n, l) => n + l.price, 0) !== price) lines = price ? [{ name: str(snap?.title || choice?.label || 'Работы по КП', 120), price, note: str(choice?.label, 200) }] : [];
+  for (const o of Array.isArray(choice?.options) ? choice.options : []) {
+    if (money(o?.price) > 0) lines.push({ name: str(o.name, 120), price: money(o.price), note: 'Дополнительно, выбрал клиент' });
+  }
+  const email = (contactText.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/) || [''])[0];
+  const phone = (contactText.match(/(\+7|8)[\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}/) || [''])[0];
+  const what = [str(choice?.label, 60), ...(choice?.options ?? []).map((o: Row) => str(String(o?.name ?? '').split(':')[0], 60))].filter(Boolean).join(' + ');
+  return {
+    briefId: brief.id, name: str(brief.title || snap?.title, 120), client: str(brief.client || snap?.client, 120) || 'Новый клиент', contact: '', email, phone,
+    status: 'Согласование', lines,
+    notes: [`Из Hub ADERVIS: клиент выбрал в КП «${str(snap?.title, 100)}»: ${what}.`, choice?.comment ? `Комментарий клиента: «${str(choice.comment, 500)}»` : ''].filter(Boolean).join('\n')
+  };
+}

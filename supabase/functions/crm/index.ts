@@ -8,7 +8,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { admin, secret, settings, json, CORS, SUPABASE_URL, PUBLIC_KEY, sameSecret, permToday, type Sb } from '../_shared/outreach.ts';
-import { CRM_URL, CRM_KEY, CRM_TYPES, ADERVIS_TEMPLATES, briefLink, withTemplates, fromSubmission, maskEmail, sanitizePush, withDeal, findDeal, backChanges } from '../_shared/crm.ts';
+import { CRM_URL, CRM_KEY, CRM_TYPES, ADERVIS_TEMPLATES, briefLink, withTemplates, fromSubmission, maskEmail, sanitizePush, withDeal, findDeal, backChanges, choiceDeal } from '../_shared/crm.ts';
 import { sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
 
 Deno.serve(async (req) => {
@@ -21,6 +21,8 @@ Deno.serve(async (req) => {
     const cron = req.headers.get('x-digest-secret');
     if (cron !== null) {
       if (!sameSecret(cron, await secret(sb, 'digest_secret'))) return json({ error: 'forbidden' }, 401);
+      // клиент выбрал вариант на странице КП — функция kp просит завести сделку
+      if (body?.action === 'choice') return json(await pushChoice(sb, String(body.token ?? '')));
       return json(await sync(sb));
     }
     const auth = req.headers.get('Authorization');
@@ -209,4 +211,34 @@ async function push(sb: Sb, raw: unknown) {
   await sb.from('briefs').update({ crm_deal_id: r.dealId, crm_pushed_at: now, crm_total: p.total, crm_synced_at: now,
     ...(r.mode === 'created' ? { crm_status: p.status, crm_paid: 0 } : {}) }).eq('id', p.briefId);
   return { ok: true, dealId: r.dealId, mode: r.mode, clientCreated: r.clientCreated, lines: p.lines.length, total: p.total };
+}
+
+// Выбор клиента в КП → сделка «Согласование» в CRM, бриф — на «Переговоры».
+// Смету, уже развёрнутую в CRM руками, не трогаем — только пишем об этом.
+const EARLY = ['Разбор', 'Вопросы', 'Расчёт', 'КП'];
+async function pushChoice(sb: Sb, token: string) {
+  const cfg = await settings(sb);
+  if (!cfg.crm_agency_id) return { ok: true, skipped: 'CRM не подключена' };
+  const { data: row } = await sb.from('kp_shares').select('brief_id,data,choice').eq('token', token).maybeSingle();
+  if (!row?.choice || row.choice.type === 'budget') return { ok: true, skipped: 'нет выбора варианта' };
+  const { data: brief } = await sb.from('briefs').select('id,title,client,stage,lead_id,source_text,crm_deal_id').eq('id', row.brief_id).maybeSingle();
+  if (!brief) return { ok: true, skipped: 'бриф не найден' };
+  const { data: lead } = brief.lead_id ? await sb.from('leads').select('note').eq('id', brief.lead_id).maybeSingle() : { data: null };
+  const who = brief.client || brief.title;
+  try {
+    const p = sanitizePush(choiceDeal(row.data ?? {}, row.choice, brief, `${lead?.note ?? ''}
+${String(brief.source_text ?? '').slice(0, 4000)}`));
+    const now = new Date().toISOString();
+    const r = await changeCrm(sb, st => withDeal(st, p, { deal: uid('proj'), client: uid('client') }, now, brief.crm_deal_id || ''));
+    await sb.from('briefs').update({ crm_deal_id: r.dealId, crm_pushed_at: now, crm_total: p.total, crm_synced_at: now,
+      ...(r.mode === 'created' ? { crm_status: p.status, crm_paid: 0 } : {}), ...(EARLY.includes(brief.stage) ? { stage: 'Переговоры' } : {}) }).eq('id', brief.id);
+    await notify(sb, `📥 ${r.mode === 'created' ? 'Сделка заведена' : 'Сделка обновлена'} в CRM: ${who}, ${rubs(p.total)} (Согласование).
+Откройте её в CRM и нажмите «Развернуть смету».`);
+    return { ok: true, dealId: r.dealId, mode: r.mode, total: p.total };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'ошибка';
+    console.error('crm choice:', msg);
+    await notify(sb, `⚠️ Выбор клиента ${who} не попал в CRM: ${msg}. Отправьте вручную из брифа кнопкой «В ADERVIS CRM».`);
+    return { ok: false, error: msg };
+  }
 }
