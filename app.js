@@ -4649,7 +4649,8 @@ function briefCard(x) {
     <div class="bfsteps" aria-label="Шаг ${idx + 1} из ${BRIEF_STAGES.length}: ${E(x.stage)}">${BRIEF_STAGES.map((st, i) =>
       `<i class="${x.stage === 'Отказ' ? 'off' : i < idx ? 'done' : i === idx ? 'now' : ''}" title="${E(st)}"></i>`).join('')}</div>
     <p class="bfstage"><b>${E(x.stage)}</b>${x.stage === 'Отказ' ? '' : `<small class="muted">шаг ${idx + 1} из ${BRIEF_STAGES.length}</small>`}</p>
-    <div class="bfprice">${price ? `<b>${rub(price)}</b><small class="muted">в КП${x.kp?.sent_on ? ` · отправлено ${E(shortDate(x.kp.sent_on))}` : ''}</small>`
+    <div class="bfprice">${x.crm_status && Number(x.crm_total) > 0 ? `<b>${rub(Number(x.crm_total))}</b><small class="muted">сделка в CRM</small>`
+      : price ? `<b>${rub(price)}</b><small class="muted">в КП${x.kp?.sent_on ? ` · отправлено ${E(shortDate(x.kp.sent_on))}` : ''}</small>`
       : t.count ? `<b>${rub(roundUp(t.min, r))} – ${rub(roundUp(t.max, r))}</b><small class="muted">вилка по смете</small>` : '<small class="muted">смета ещё не посчитана</small>'}</div>
     ${kpBadge(x)}
     ${crmChip(x)}
