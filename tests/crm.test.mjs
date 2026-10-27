@@ -36,7 +36,7 @@ check('текст брифа: контакты, бюджет, срок и отв
   && brief.source_text.includes('Пакет графики для дайджеста'));
 check('без имени — понятная подпись', fromSubmission({ id: 'x', description: '' }, '2026-10-20').lead.name === 'Клиент из брифа');
 
-check('ссылка на бриф CRM', briefLink('ag-1', 'video') === 'https://app.adervis.ru/?brief=ag-1&type=video' && CRM_TYPES.length === 5);
+check('ссылка на бриф CRM', briefLink('ag-1', 'video') === 'https://crm.adervis.ru/?brief=ag-1&type=video' && CRM_TYPES.length === 5);
 check('почта в настройках — скрыта', maskEmail('adervis.digital@gmail.com') === 'ad***@gmail.com');
 
 // бриф со сметой → клиент и сделка в CRM

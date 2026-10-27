@@ -5,10 +5,10 @@
 // CRM читаем входом самой студии (логин и пароль владельца CRM, хранятся на
 // сервере Intelligence): политика доступа CRM отдаёт ровно данные этой студии.
 
-// Публичные адрес и ключ CRM — те же, что видит любой посетитель app.adervis.ru.
+// Публичные адрес и ключ CRM — те же, что видит любой посетитель crm.adervis.ru.
 export const CRM_URL = 'https://qzeylogyledmhjpzvgkk.supabase.co';
 export const CRM_KEY = 'sb_publishable_E9JgbQiA7namAFiZAAbZEQ_aBn11VgJ';
-export const CRM_APP = 'https://app.adervis.ru/';
+export const CRM_APP = 'https://crm.adervis.ru/';
 
 export const CRM_TYPES = [
   { id: 'video', label: 'Видео' }, { id: 'photo', label: 'Фото' }, { id: 'design', label: 'Дизайн' },

@@ -4090,7 +4090,7 @@ function fillScript(text, p) {
 }
 
 // Ссылка на бриф в ADERVIS CRM — клиент заполняет, CRM заводит карточку, Intelligence получает бриф.
-const crmBriefLink = (type = 'general') => db.outreach.crm_agency_id ? `https://app.adervis.ru/?brief=${encodeURIComponent(db.outreach.crm_agency_id)}&type=${type}` : '';
+const crmBriefLink = (type = 'general') => db.outreach.crm_agency_id ? `https://crm.adervis.ru/?brief=${encodeURIComponent(db.outreach.crm_agency_id)}&type=${type}` : '';
 
 const scriptsByStage = () => SCRIPT_STAGES.map((name, stage) => [name, stage,
   db.sales_scripts.filter(s => Number(s.stage) === stage).sort((a, b) => (a.sort ?? 100) - (b.sort ?? 100))]);
@@ -5529,7 +5529,7 @@ function crmPushPayload(b) {
 
 function crmPushModal(b) {
   if (!db.outreach.crm_agency_id) {
-    modal(`<h2>ADERVIS CRM не подключена</h2><p>Чтобы отправлять клиентов со сметами в CRM, один раз войдите в CRM — тем же входом, что на app.adervis.ru.</p>
+    modal(`<h2>ADERVIS CRM не подключена</h2><p>Чтобы отправлять клиентов со сметами в CRM, один раз войдите в CRM — тем же входом, что на crm.adervis.ru.</p>
       <div class="formactions"><button class="primary" data-action="crm">Подключить CRM</button></div>`);
     return;
   }
@@ -5883,7 +5883,7 @@ function paintCrm(note = '') {
   const c = crmInfo || {};
   if (!c.connected) {
     box.innerHTML = `<p>Клиент заполняет бриф по ссылке CRM — CRM заводит карточку клиента, а сюда приходит заявка и бриф на разбор.
-      Подключите вход в ADERVIS CRM — тот же, которым вы входите на app.adervis.ru.</p>
+      Подключите вход в ADERVIS CRM — тот же, которым вы входите на crm.adervis.ru.</p>
       ${c.error ? `<div class="notice error">${E(c.error)}</div>` : ''}
       <form id="crmf"><div class="formgrid">
         <div><label for="crmemail">Почта в CRM</label><input id="crmemail" type="email" autocomplete="off" required maxlength="120"></div>

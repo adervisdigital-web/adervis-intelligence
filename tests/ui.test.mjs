@@ -269,7 +269,7 @@ const fake = (seedData) => {
     },
     async crm(payload) {
       (window.__CRM__ ||= []).push(clone(payload));
-      const o = state.outreach, url = t => `https://app.adervis.ru/?brief=${o.crm_agency_id}&type=${t}`;
+      const o = state.outreach, url = t => `https://crm.adervis.ru/?brief=${o.crm_agency_id}&type=${t}`;
       const status = () => o.crm_agency_id ? { ok: true, connected: true, login: o.crm_login, agency: o.crm_agency_id, lastSync: o.crm_last_sync, error: '',
         counts: { total: 3, fresh: 1 }, links: ['video', 'general', ...(window.__CRMTPL__ ? ['own_adv_motion'] : [])].map(id => ({ id, label: { video: 'Видео', general: 'Общий', own_adv_motion: 'Моушн и графика' }[id], url: url(id) })),
         adervisTemplates: [{ id: 'own_adv_motion', label: 'Моушн и графика', installed: !!window.__CRMTPL__ }, { id: 'own_adv_site', label: 'Сайт', installed: !!window.__CRMTPL__ }] } : { ok: true, connected: false };
@@ -2500,7 +2500,7 @@ await page.waitForSelector('.crmlinks');
 check('CRM: подключена — вход скрыт, ссылки на брифы для клиентов', (await page.textContent('.crmstat')).includes('ad***@gmail.com')
   && (await page.$$('.crmlinks li')).length === 2 && !(await page.textContent('#crmbody')).includes('crm-secret'));
 await page.click('.crmlinks li:first-child [data-action=crmcopy]');
-check('CRM: ссылка на бриф копируется', (await page.evaluate(() => navigator.clipboard.readText())) === 'https://app.adervis.ru/?brief=ag-1&type=video');
+check('CRM: ссылка на бриф копируется', (await page.evaluate(() => navigator.clipboard.readText())) === 'https://crm.adervis.ru/?brief=ag-1&type=video');
 await page.screenshot({ path: path.join(OUT, 'intel-crm.png') });
 await page.evaluate(() => { window.__CRMSUB__ = true; });
 await page.click('[data-action=crmsync]');
