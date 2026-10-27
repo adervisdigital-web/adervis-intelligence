@@ -3027,3 +3027,18 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 @media(min-width:721px){
   .hubtabs{flex-wrap:wrap;height:42px;row-gap:24px;align-content:center}
 }
+
+/* ===== сделка из ADERVIS CRM: стадия и оплата в брифе ===== */
+.crmchip{display:inline-flex;align-items:center;gap:6px;margin:0 0 8px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:color-mix(in srgb,var(--tone-violet) 14%,transparent);color:color-mix(in srgb,var(--tone-violet) 72%,var(--ink))}
+.crmchip.part{background:color-mix(in srgb,var(--gold) 20%,transparent);color:color-mix(in srgb,var(--gold) 45%,var(--ink))}
+.crmchip.full{background:color-mix(in srgb,var(--tone-green) 18%,transparent);color:color-mix(in srgb,var(--tone-green) 65%,var(--ink))}
+.bfcrm{display:grid;gap:8px;margin:4px 0 14px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--tone-green) 5%,var(--panel,transparent))}
+.bfcrmrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px}
+.bfcrmst{display:inline-flex;align-items:center;gap:6px}
+.bfcrmst svg{color:var(--tone-green)}
+.bfcrmsum{color:var(--muted)}.bfcrmsum b{color:var(--ink)}
+.bfcrmrow .linkbtn{margin-left:auto}
+.bfcrmbar{height:6px;border-radius:99px;background:color-mix(in srgb,var(--ink) 9%,transparent);overflow:hidden}
+.bfcrmbar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--gold),var(--tone-green));transition:width .6s cubic-bezier(.22,1,.36,1)}
+@media (prefers-reduced-motion:reduce){.bfcrmbar i{transition:none}}

@@ -137,6 +137,8 @@ export const maskEmail = (e: string) => String(e || '').replace(/^(.{2}).*(@.*)$
 // смета — черновиком botEstimate. Строку сметы собирает сама CRM кнопкой
 // «Развернуть смету»: у неё своя математика, вторая копия разошлась бы молча.
 export const CRM_STATUSES = ['Лид', 'Бриф', 'КП отправлено', 'Согласование', 'Договор', 'Предоплата', 'В работе', 'Сдано', 'Оплата', 'Завершённые'];
+// С этих стадий CRM сделка состоялась: бриф и заявка в Hub переходят в «Сделку».
+export const CRM_WON = ['Договор', 'Предоплата', 'В работе', 'Сдано', 'Оплата', 'Завершённые'];
 export type PushLine = { name: string; price: number; note: string };
 export type PushDeal = { briefId: string; name: string; client: string; contact: string; phone: string; email: string; status: string; total: number; notes: string; lines: PushLine[] };
 
@@ -190,4 +192,40 @@ export function withDeal(state: Row, p: PushDeal, ids: { deal: string; client: s
   }
   s.clients = clients; s.savedProjects = projects;
   return { state: s, dealId, mode, clientCreated, clientId: client.id as string };
+}
+
+// ------------------------------------------------- сделка CRM → бриф и заявка Hub
+// Сделку ищем по номеру, который CRM вернула при отправке, иначе — по отметке брифа.
+export type DealBack = { dealId: string; status: string; total: number; paid: number };
+const money = (v: unknown) => Math.max(0, Math.round(Number(v) || 0));
+export function findDeal(state: Row, brief: { id: string; crm_deal_id?: string | null }): DealBack | null {
+  const projects: Row[] = Array.isArray(state?.savedProjects) ? state.savedProjects : [];
+  const d = (brief.crm_deal_id && projects.find(p => p.id === brief.crm_deal_id)) || projects.find(p => p.intelBriefId === brief.id);
+  if (!d) return null;
+  return { dealId: String(d.id), status: str(d.crmStatus || d.status, 40), total: money(d.total ?? d.snapshot?.total), paid: money(d.paid ?? d.snapshot?.paid) };
+}
+
+// Что поменять в Hub по сделке из CRM. Ничего не изменилось — патчи пустые.
+// Стадию брифа и статус заявки только продвигаем вперёд: «Отказ» и ручную
+// «Сделку» не трогаем; сумму заявки берём из CRM, когда сделка состоялась.
+export function backChanges(brief: Row, lead: Row | null, deal: DealBack, now: string) {
+  const briefPatch: Row = {};
+  if ((brief.crm_status || '') !== deal.status) briefPatch.crm_status = deal.status;
+  if (Number(brief.crm_total ?? -1) !== deal.total) briefPatch.crm_total = deal.total;
+  if (Number(brief.crm_paid ?? -1) !== deal.paid) briefPatch.crm_paid = deal.paid;
+  if (brief.crm_deal_id !== deal.dealId) briefPatch.crm_deal_id = deal.dealId;
+  const won = CRM_WON.includes(deal.status);
+  if (won && !['Сделка', 'Отказ'].includes(brief.stage)) briefPatch.stage = 'Сделка';
+  if (Object.keys(briefPatch).length) briefPatch.crm_synced_at = now;
+  const leadPatch: Row = {};
+  if (lead && won && lead.status !== 'Отказ') {
+    if (lead.status !== 'Сделка') leadPatch.status = 'Сделка';
+    if (deal.total > 0 && Number(lead.amount || 0) !== deal.total) leadPatch.amount = deal.total;
+  }
+  const paidBefore = Number(brief.crm_paid || 0);
+  return {
+    briefPatch, leadPatch,
+    paidNow: Math.max(0, deal.paid - paidBefore),                          // сколько пришло с прошлой проверки
+    becameWon: won && !CRM_WON.includes(brief.crm_status || '')            // сделка только что состоялась
+  };
 }

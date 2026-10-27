@@ -8,7 +8,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { admin, secret, settings, json, CORS, SUPABASE_URL, PUBLIC_KEY, sameSecret, permToday, type Sb } from '../_shared/outreach.ts';
-import { CRM_URL, CRM_KEY, CRM_TYPES, ADERVIS_TEMPLATES, briefLink, withTemplates, fromSubmission, maskEmail, sanitizePush, withDeal } from '../_shared/crm.ts';
+import { CRM_URL, CRM_KEY, CRM_TYPES, ADERVIS_TEMPLATES, briefLink, withTemplates, fromSubmission, maskEmail, sanitizePush, withDeal, findDeal, backChanges } from '../_shared/crm.ts';
 import { sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
 
 Deno.serve(async (req) => {
@@ -116,9 +116,46 @@ async function sync(sb: Sb) {
     imported++;
     await notify(sb, `📋 Новый бриф из CRM: ${brief.title}\n${lead.note}\nОткрыть: «Брифы и КП» в Hub ADERVIS`);
   }
+  const deals = await pullDeals(sb, crm, agency);
   await sb.from('outreach_settings').update({ crm_last_sync: new Date().toISOString() }).eq('id', 'main');
-  return { ok: true, imported, total: subs?.length ?? 0 };
+  return { ok: true, imported, total: subs?.length ?? 0, deals };
 }
+
+// Сделки, отправленные из брифов, → обратно в Hub: стадия, сумма, оплаты.
+// Состоялась сделка — бриф и заявка переходят в «Сделку», сумма заявки = сумма CRM.
+// deno-lint-ignore no-explicit-any
+async function pullDeals(sb: Sb, crm: any, agency: string) {
+  const { data: briefs } = await sb.from('briefs').select('id,title,client,stage,lead_id,crm_deal_id,crm_status,crm_total,crm_paid')
+    .not('crm_deal_id', 'is', null).neq('crm_deal_id', '');
+  if (!briefs?.length) return { checked: 0, updated: 0 };
+  const { data: row, error } = await crm.from('agency_state').select('state_json').eq('id', agency).maybeSingle();
+  if (error || !row) { console.error('crm deals: не прочитали состояние CRM', error?.message); return { checked: briefs.length, updated: 0 }; }
+  const leadIds = briefs.map(b => b.lead_id).filter(Boolean);
+  const { data: leads } = leadIds.length ? await sb.from('leads').select('id,status,amount').in('id', leadIds) : { data: [] };
+  const now = new Date().toISOString();
+  let updated = 0;
+  for (const b of briefs) {
+    const deal = findDeal(row.state_json || {}, b);
+    if (!deal) continue;                                                     // сделку удалили в CRM — бриф не трогаем
+    const lead = (leads ?? []).find(l => l.id === b.lead_id) ?? null;
+    const ch = backChanges(b, lead, deal, now);
+    if (Object.keys(ch.briefPatch).length) {
+      const { error: be } = await sb.from('briefs').update(ch.briefPatch).eq('id', b.id);
+      if (be) { console.error('crm deals brief:', be.message); continue; }
+      updated++;
+    }
+    if (lead && Object.keys(ch.leadPatch).length) {
+      const { error: le } = await sb.from('leads').update(ch.leadPatch).eq('id', lead.id);
+      if (le) console.error('crm deals lead:', le.message);
+    }
+    const who = b.client || b.title;
+    const paid = `оплачено ${rubs(deal.paid)} из ${rubs(deal.total)}`;
+    if (ch.becameWon) await notify(sb, `🤝 Сделка состоялась: ${who}\nВ CRM: ${deal.status}, ${paid}`);
+    else if (ch.paidNow > 0) await notify(sb, `💰 Оплата ${rubs(ch.paidNow)}: ${who}\nВсего ${paid}`);
+  }
+  return { checked: briefs.length, updated };
+}
+const rubs = (n: number) => `${Math.round(n).toLocaleString('ru-RU').replace(/ /g, ' ')} ₽`;
 
 async function notify(sb: Sb, text: string) {
   if (!INTEL_TOKEN) return;
@@ -169,6 +206,7 @@ async function push(sb: Sb, raw: unknown) {
   if (!brief) throw new Error('Бриф не найден');
   const now = new Date().toISOString();
   const r = await changeCrm(sb, st => withDeal(st, p, { deal: uid('proj'), client: uid('client') }, now, brief.crm_deal_id || ''));
-  await sb.from('briefs').update({ crm_deal_id: r.dealId, crm_pushed_at: now }).eq('id', p.briefId);
+  await sb.from('briefs').update({ crm_deal_id: r.dealId, crm_pushed_at: now, crm_total: p.total, crm_synced_at: now,
+    ...(r.mode === 'created' ? { crm_status: p.status, crm_paid: 0 } : {}) }).eq('id', p.briefId);
   return { ok: true, dealId: r.dealId, mode: r.mode, clientCreated: r.clientCreated, lines: p.lines.length, total: p.total };
 }

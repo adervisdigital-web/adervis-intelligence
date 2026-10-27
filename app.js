@@ -84,7 +84,7 @@ const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 // Эти поля ведёт сервер — бот и переписка. Приложение их показывает, но не
 // отправляет обратно: иначе сохранение карточки затёрло бы сообщение,
 // пришедшее, пока она была открыта.
-const SERVER_FIELDS = { briefs: ['crm_id', 'crm_deal_id', 'crm_pushed_at'], prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction', 'elsewhere'] };
+const SERVER_FIELDS = { briefs: ['crm_id', 'crm_deal_id', 'crm_pushed_at', 'crm_status', 'crm_total', 'crm_paid', 'crm_synced_at'], prospects: ['tg_chat_id', 'vk_peer_id', 'ig_user_id', 'bot_mode', 'unread', 'last_message_at', 'last_text', 'last_direction', 'elsewhere'] };
 
 function toRow(table, o) {
   const row = {};
@@ -4613,6 +4613,26 @@ function kpBadge(x) {
   return `<span class="kpbadge">${icon('link', 13)} КП-ссылку ещё не открывали</span>`;
 }
 
+// Сделка в CRM: стадия и сколько оплачено — приходит синхронизацией раз в 30 минут.
+const crmPaidPct = x => x.crm_total > 0 ? Math.min(100, Math.round((Number(x.crm_paid) || 0) / x.crm_total * 100)) : 0;
+function crmChip(x) {
+  if (!x.crm_deal_id || !x.crm_status) return '';
+  const pct = crmPaidPct(x);
+  return `<span class="crmchip ${pct >= 100 ? 'full' : pct ? 'part' : ''}" title="Сделка в ADERVIS CRM">${icon('income', 13)} CRM · ${E(x.crm_status)}${x.crm_total ? ` · оплачено ${pct}%` : ''}</span>`;
+}
+function crmNote(b) {
+  if (!b.crm_deal_id) return '';
+  if (!b.crm_status) return `<p class="muted bfcrmnote">${icon('check', 14)} Сделка в ADERVIS CRM${b.crm_pushed_at ? ` — отправлено ${E(ago(b.crm_pushed_at))}` : ''}. Откройте её в CRM и нажмите «Развернуть смету».</p>`;
+  const pct = crmPaidPct(b), paid = Number(b.crm_paid) || 0, total = Number(b.crm_total) || 0;
+  return `<div class="bfcrm" role="group" aria-label="Сделка в ADERVIS CRM">
+    <div class="bfcrmrow"><span class="bfcrmst">${icon('income', 15)} В CRM: <b>${E(b.crm_status)}</b></span>
+      <span class="bfcrmsum">${total ? `оплачено <b>${rub(paid)}</b> из ${rub(total)}` : 'сумма в CRM ещё не указана'}</span>
+      <a class="linkbtn" href="https://crm.adervis.ru/" target="_blank" rel="noopener">Открыть CRM</a></div>
+    ${total ? `<div class="bfcrmbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Оплачено ${pct}%"><i style="width:${pct}%"></i></div>` : ''}
+    <small class="muted">${b.crm_synced_at ? `Сверено с CRM ${E(ago(b.crm_synced_at))}` : 'Сверяется с CRM раз в 30 минут'}${total && paid < total ? ` · осталось ${rub(total - paid)}` : ''}</small>
+  </div>`;
+}
+
 // Карточка брифа: шаг цепочки полосой, сумма КП, срок шага и наполненность.
 const BRIEF_TONE = { 'Разбор': 'sky', 'Вопросы': 'sky', 'Расчёт': 'gold', 'КП': 'gold', 'Переговоры': 'violet', 'Сделка': 'green', 'Отказ': 'red' };
 function briefCard(x) {
@@ -4632,6 +4652,7 @@ function briefCard(x) {
     <div class="bfprice">${price ? `<b>${rub(price)}</b><small class="muted">в КП${x.kp?.sent_on ? ` · отправлено ${E(shortDate(x.kp.sent_on))}` : ''}</small>`
       : t.count ? `<b>${rub(roundUp(t.min, r))} – ${rub(roundUp(t.max, r))}</b><small class="muted">вилка по смете</small>` : '<small class="muted">смета ещё не посчитана</small>'}</div>
     ${kpBadge(x)}
+    ${crmChip(x)}
     ${x.next_step && !closed ? `<span class="lnext ${late ? 'late' : now ? 'now' : ''}">${icon('time', 12)} ${late ? 'просрочено' : now ? 'сегодня' : x.next_on ? E(shortDate(x.next_on)) : 'без даты'} · ${E(x.next_step.slice(0, 60))}</span>` : ''}
     <div class="bfmeta">${qs.length ? `<span title="Вопросы клиенту">${icon('chat', 14)} ${answered}/${qs.length}</span>` : ''}
       ${t.count ? `<span title="Работ в смете">${icon('estimate', 14)} ${t.count}</span>` : ''}
@@ -4653,7 +4674,7 @@ function renderBrief(b) {
         <button class="${b.crm_deal_id ? '' : 'primary'}" data-action="bfcrmpush">${icon('upload', 15)} ${b.crm_deal_id ? 'Обновить в CRM' : 'В ADERVIS CRM'}</button>
         <button data-action="bfedit">Изменить</button></div></div>
     ${briefVoice.id === b.id && (briefVoice.url || briefVoice.error) ? voiceCard() : ''}
-    ${b.crm_deal_id ? `<p class="muted bfcrmnote">${icon('check', 14)} Сделка в ADERVIS CRM${b.crm_pushed_at ? ` — отправлено ${E(ago(b.crm_pushed_at))}` : ''}. Откройте её в CRM и нажмите «Развернуть смету».</p>` : ''}
+    ${crmNote(b)}
     ${briefStepper(b)}
     ${briefNow(b)}
     <div class="subnav bftabs" role="tablist">${BRIEF_TABS.map(([k, t]) => `<button role="tab" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}" data-action="bftab" data-id="${k}">${t}${tabBadge(b, k)}</button>`).join('')}</div>

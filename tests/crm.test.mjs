@@ -1,5 +1,5 @@
 // Связь с ADERVIS CRM: шаблоны брифов студии и перенос брифа CRM в заявку и бриф.
-import { ADERVIS_TEMPLATES, withTemplates, fromSubmission, briefLink, maskEmail, CRM_TYPES, sanitizePush, withDeal } from '../supabase/functions/_shared/crm.ts';
+import { ADERVIS_TEMPLATES, withTemplates, fromSubmission, briefLink, maskEmail, CRM_TYPES, sanitizePush, withDeal, findDeal, backChanges, CRM_WON } from '../supabase/functions/_shared/crm.ts';
 
 let fails = 0;
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
@@ -63,6 +63,27 @@ const byPhone = withDeal({ clients: [{ id: 'cp', name: 'Олег', phone: '8 (90
 check('клиент находится по телефону в любом написании', !byPhone.clientCreated && byPhone.clientId === 'cp');
 const done = { savedProjects: [{ id: 'proj_1', intelBriefId: 'brief-1', snapshot: { selected: { custom_1: { qty: 1 } } } }] };
 check('развёрнутую в CRM смету не трогаем', /уже развёрнута/.test((() => { try { withDeal(done, p, { deal: 'x', client: 'y' }, 'now'); } catch (e) { return e.message; } })()));
+
+// сделка из CRM → бриф и заявка в Hub
+const crmSt = { savedProjects: [
+  { id: 'proj_1', intelBriefId: 'brief-1', crmStatus: 'Предоплата', total: 200000, paid: 100000 },
+  { id: 'proj_9', intelBriefId: 'brief-9', crmStatus: 'Бриф', total: 50000 } ] };
+const d1 = findDeal(crmSt, { id: 'brief-1', crm_deal_id: 'proj_1' });
+check('сделка CRM находится по номеру; стадия, сумма и оплата читаются', d1 && d1.status === 'Предоплата' && d1.total === 200000 && d1.paid === 100000);
+check('без номера — по отметке брифа; нет сделки — null', findDeal(crmSt, { id: 'brief-9' })?.dealId === 'proj_9' && findDeal(crmSt, { id: 'brief-x', crm_deal_id: 'nope' }) === null);
+const b1 = { id: 'brief-1', stage: 'Переговоры', crm_deal_id: 'proj_1', crm_status: 'Бриф', crm_total: 200000, crm_paid: 0 };
+const c1 = backChanges(b1, { id: 'l1', status: 'В работе', amount: 0 }, d1, 'now');
+check('состоялась в CRM — бриф и заявка в «Сделку», сумма заявки из CRM', c1.briefPatch.stage === 'Сделка' && c1.briefPatch.crm_status === 'Предоплата'
+  && c1.leadPatch.status === 'Сделка' && c1.leadPatch.amount === 200000 && c1.becameWon && c1.paidNow === 100000 && c1.briefPatch.crm_synced_at === 'now');
+const same = backChanges({ ...b1, stage: 'Сделка', crm_status: 'Предоплата', crm_paid: 100000 }, { status: 'Сделка', amount: 200000 }, d1, 'now');
+check('ничего не изменилось — ничего не пишем и не шлём', !Object.keys(same.briefPatch).length && !Object.keys(same.leadPatch).length && !same.becameWon && same.paidNow === 0);
+const more = backChanges({ ...b1, stage: 'Сделка', crm_status: 'Предоплата', crm_paid: 100000 }, null, { ...d1, status: 'В работе', paid: 150000 }, 'now');
+check('новая оплата — сколько пришло, без повторного «состоялась»', more.paidNow === 50000 && !more.becameWon && more.briefPatch.crm_paid === 150000 && !more.briefPatch.stage);
+const lost = backChanges({ ...b1, stage: 'Отказ' }, { status: 'Отказ', amount: 0 }, d1, 'now');
+check('«Отказ» в Hub не перетираем', !lost.briefPatch.stage && !lost.leadPatch.status);
+const early = backChanges({ id: 'brief-9', stage: 'КП', crm_deal_id: 'proj_9' }, { status: 'Новое', amount: 0 }, findDeal(crmSt, { id: 'brief-9' }), 'now');
+check('ранняя стадия CRM — бриф не двигаем, заявку не трогаем', !early.briefPatch.stage && !Object.keys(early.leadPatch).length && early.briefPatch.crm_status === 'Бриф'
+  && CRM_WON.includes('Договор') && !CRM_WON.includes('Согласование'));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);
