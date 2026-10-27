@@ -253,3 +253,31 @@ export function choiceDeal(snap: Row, choice: Row, brief: Row, contactText = '')
     notes: [`Из Hub ADERVIS: клиент выбрал в КП «${str(snap?.title, 100)}»: ${what}.`, choice?.comment ? `Комментарий клиента: «${str(choice.comment, 500)}»` : ''].filter(Boolean).join('\n')
   };
 }
+
+// ---------------------------------------------- новые студии в CRM → руководителям
+// Кому и что написать по списку регистраций CRM (admin_get_all_users).
+// watch: { seen: id[], day1: id[], trial: id[] } — кому уже писали.
+// Свои, амбассадоры и тестовые (любая метка admin_tag) — без сообщений.
+// Первый запуск (seen пуст) — запоминаем всех молча, иначе пришли бы все разом.
+export type CrmUser = { id: string; email?: string; agency_id?: string; admin_tag?: string | null; signup_source?: string | null;
+  subscription_status?: string | null; subscription_expires_at?: string | null; created_at?: string };
+export function signupAlerts(users: CrmUser[], watch: Row, nowMs: number) {
+  const seen = new Set<string>(Array.isArray(watch?.seen) ? watch.seen : []);
+  const day1 = new Set<string>(Array.isArray(watch?.day1) ? watch.day1 : []);
+  const trial = new Set<string>(Array.isArray(watch?.trial) ? watch.trial : []);
+  const first = seen.size === 0;
+  const ext = users.filter(u => u?.id && !String(u.admin_tag ?? '').trim());
+  const age = (u: CrmUser) => (nowMs - Date.parse(u.created_at || '')) / 36e5;          // часы с регистрации
+  const fresh = first ? [] : ext.filter(u => !seen.has(u.id) && age(u) < 72);
+  const firstDay = first ? [] : ext.filter(u => !day1.has(u.id) && age(u) >= 20 && age(u) < 72);
+  const ending = first ? [] : ext.filter(u => {
+    if (trial.has(u.id) || u.subscription_status !== 'trial' || !u.subscription_expires_at) return false;
+    const left = (Date.parse(u.subscription_expires_at) - nowMs) / 36e5;
+    return left > 0 && left <= 30;
+  });
+  for (const u of users) if (u?.id) seen.add(u.id);
+  if (first) for (const u of users) if (u?.id) { day1.add(u.id); trial.add(u.id); }
+  for (const u of firstDay) day1.add(u.id);
+  for (const u of ending) trial.add(u.id);
+  return { fresh, firstDay, ending, watch: { seen: [...seen], day1: [...day1], trial: [...trial] } };
+}

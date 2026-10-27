@@ -8,7 +8,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.110.0';
 import { admin, secret, settings, json, CORS, SUPABASE_URL, PUBLIC_KEY, sameSecret, permToday, type Sb } from '../_shared/outreach.ts';
-import { CRM_URL, CRM_KEY, CRM_TYPES, ADERVIS_TEMPLATES, briefLink, withTemplates, fromSubmission, maskEmail, sanitizePush, withDeal, findDeal, backChanges, choiceDeal } from '../_shared/crm.ts';
+import { CRM_URL, CRM_KEY, CRM_TYPES, ADERVIS_TEMPLATES, briefLink, withTemplates, fromSubmission, maskEmail, sanitizePush, withDeal, findDeal, backChanges, choiceDeal, signupAlerts } from '../_shared/crm.ts';
 import { sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
 
 Deno.serve(async (req) => {
@@ -119,8 +119,43 @@ async function sync(sb: Sb) {
     await notify(sb, `📋 Новый бриф из CRM: ${brief.title}\n${lead.note}\nОткрыть: «Брифы и КП» в Hub ADERVIS`);
   }
   const deals = await pullDeals(sb, crm, agency);
+  const signups = await watchSignups(sb, crm, cfg.crm_watch ?? {}).catch(e => { console.error('crm signups:', e); return { error: String(e?.message || e) }; });
   await sb.from('outreach_settings').update({ crm_last_sync: new Date().toISOString() }).eq('id', 'main');
-  return { ok: true, imported, total: subs?.length ?? 0, deals };
+  return { ok: true, imported, total: subs?.length ?? 0, deals, signups };
+}
+
+// Новые студии в CRM: сразу — «новая студия», через сутки — итог первого дня,
+// за сутки до конца пробного — напоминание. Список регистраций CRM отдаёт
+// только владельцу; если вход в CRM не владельца — молча пропускаем.
+// deno-lint-ignore no-explicit-any
+async function watchSignups(sb: Sb, crm: any, watch: any) {
+  const { data: users, error } = await crm.rpc('admin_get_all_users');
+  if (error || !Array.isArray(users)) return { skipped: 'нет доступа к списку регистраций CRM' };
+  const plan = signupAlerts(users, watch, Date.now());
+  const date = (iso?: string | null) => iso ? new Date(Date.parse(iso) + 5 * 36e5).toISOString().slice(0, 10).split('-').reverse().join('.') : '';
+  const src = (u: any) => u.signup_source ? `пришла: ${u.signup_source}` : 'откуда — неизвестно';
+  for (const u of plan.fresh) {
+    await notify(sb, `🆕 Новая студия в ADERVIS CRM: ${u.email}\n${src(u)}${u.subscription_expires_at ? `, пробный до ${date(u.subscription_expires_at)}` : ''}.\n` +
+      `Напишите сегодня: предложите помочь собрать первую смету. Так больше шансов, что начнут работать.`);
+  }
+  const act = async (u: any) => {
+    if (!u.agency_id) return null;
+    const { data } = await crm.rpc('admin_get_agency_activity', { p_agency_id: String(u.agency_id) });
+    return data ?? null;
+  };
+  const line = (a: any) => !a || a.exists === false ? 'ничего не сохранили'
+    : `сделок ${a.deals_total ?? 0} (со сметой ${a.deals_with_sum ?? 0}, вместе с примером), КП отправлено ${a.portals ?? 0}${a.portals_approved ? `, согласовано ${a.portals_approved}` : ''}`;
+  for (const u of plan.firstDay) {
+    const a = await act(u);
+    const quiet = !a || a.exists === false || !(a.portals > 0);
+    await notify(sb, `📊 Первый день студии ${u.email}: ${line(a)}.` + (quiet ? `\nДо КП клиенту не дошли. Хороший момент написать и предложить настроить CRM вместе.` : `\nДошли до КП клиенту, отлично.`));
+  }
+  for (const u of plan.ending) {
+    const a = await act(u);
+    await notify(sb, `⏳ Завтра у ${u.email} заканчивается пробный период ADERVIS CRM: ${line(a)}.\nПоследний шанс поговорить до того, как уйдут: что мешает, чем помочь.`);
+  }
+  await sb.from('outreach_settings').update({ crm_watch: plan.watch }).eq('id', 'main');
+  return { fresh: plan.fresh.length, firstDay: plan.firstDay.length, ending: plan.ending.length, known: plan.watch.seen.length };
 }
 
 // Сделки, отправленные из брифов, → обратно в Hub: стадия, сумма, оплаты.

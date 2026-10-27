@@ -1,5 +1,5 @@
 // Связь с ADERVIS CRM: шаблоны брифов студии и перенос брифа CRM в заявку и бриф.
-import { ADERVIS_TEMPLATES, withTemplates, fromSubmission, briefLink, maskEmail, CRM_TYPES, sanitizePush, withDeal, findDeal, backChanges, CRM_WON, choiceDeal } from '../supabase/functions/_shared/crm.ts';
+import { ADERVIS_TEMPLATES, withTemplates, fromSubmission, briefLink, maskEmail, CRM_TYPES, sanitizePush, withDeal, findDeal, backChanges, CRM_WON, choiceDeal, signupAlerts } from '../supabase/functions/_shared/crm.ts';
 
 let fails = 0;
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
@@ -98,6 +98,22 @@ const pf = sanitizePush(choiceDeal(snap, { variant: 'full', label: 'Полный
 check('выбор «полный»: все строки полного', pf.total === 300000 && pf.lines.length === 3);
 const old = sanitizePush(choiceDeal({ title: 'Старое КП', estimate: { full: 90000 } }, { variant: 'full', label: 'Смета', price: 90000, options: [] }, { id: 'b' }));
 check('старый снимок без строк — одна строка на всю сумму', old.lines.length === 1 && old.total === 90000 && old.lines[0].name === 'Старое КП');
+
+// новые студии в CRM → сообщения руководителям
+{
+  const H = 36e5, now = Date.parse('2026-10-28T12:00:00Z'), at = h => new Date(now - h * H).toISOString();
+  const old = [{ id: 'o1', created_at: at(500) }, { id: 'own', admin_tag: 'Свой аккаунт', created_at: at(2) }];
+  const r0 = signupAlerts(old, {}, now);
+  check('CRM-регистрации: первый запуск — всех запоминаем молча', !r0.fresh.length && !r0.firstDay.length && !r0.ending.length && r0.watch.seen.length === 2);
+  const users = [...old, { id: 'n1', email: 'a@b.ru', created_at: at(1), subscription_status: 'trial', subscription_expires_at: new Date(now + 160 * H).toISOString() },
+    { id: 'n2', created_at: at(26) }, { id: 'amb', admin_tag: 'Амбассадор', created_at: at(1) },
+    { id: 'n3', created_at: at(150), subscription_status: 'trial', subscription_expires_at: new Date(now + 20 * H).toISOString() }];
+  const r1 = signupAlerts(users, r0.watch, now);
+  check('новая студия — сразу; через сутки — итог дня; за сутки до конца пробного — напоминание; метки — без сообщений',
+    r1.fresh.map(u => u.id).join() === 'n1,n2' && r1.firstDay.map(u => u.id).join() === 'n2' && r1.ending.map(u => u.id).join() === 'n3', JSON.stringify([r1.fresh, r1.firstDay, r1.ending].map(l => l.map(u => u.id))));
+  const r2 = signupAlerts(users, r1.watch, now + H);
+  check('повторно не пишем', !r2.fresh.length && !r2.firstDay.length && !r2.ending.length);
+}
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);
