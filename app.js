@@ -10205,16 +10205,20 @@ function dockFly(card, instant) {
   if (!ava || dockOpen || !shellDesk.matches) return;
   dockAway = card;
   if (!instant) dockBubble(false);
-  // куда лететь: в пустой правый верхний угол карточки или домой
+  // куда лететь: в пустой правый верхний угол карточки (но не выше верхней панели) или домой
   let to = [0, 0, 1];
+  // откуда: где Ада сейчас на самом деле, даже если полёт прервали на полпути
+  const m = new DOMMatrixReadOnly(getComputedStyle(ava).transform === 'none' ? undefined : getComputedStyle(ava).transform);
+  const from = dockFlight ? [m.e, m.f, Math.hypot(m.a, m.b) || 1] : dockAt.slice();
+  dockFlight?.cancel(); dockFlight = null;
   if (card) {
-    const prev = ava.style.transform; ava.style.transform = 'none';
+    ava.style.transform = 'none';
     const home = ava.getBoundingClientRect(), r = card.getBoundingClientRect();
-    ava.style.transform = prev;
-    to = [Math.round(r.right - 96 - (home.left + home.width / 2)), Math.round(r.top + 18 - home.top), 1.15];
+    const top = ($('.topbar')?.getBoundingClientRect().bottom || 0) + 6;
+    const y = Math.min(Math.max(r.top + 18, top), r.bottom - 110);
+    if (y < top || r.top > innerHeight - 80) { card = null; dockAway = null; }   // карточка ушла за экран — домой
+    else to = [Math.round(r.right - 96 - (home.left + home.width / 2)), Math.round(y - home.top), 1.15];
   }
-  const from = dockAt.slice();
-  dockFlight?.cancel();
   ava.style.transform = `translate(${from[0]}px, ${from[1]}px) scale(${from[2]})`;
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches, dist = Math.hypot(to[0] - from[0], to[1] - from[1]);
   if (!calm && !instant && dist > 4) {
@@ -10238,7 +10242,12 @@ function dockFly(card, instant) {
     frames.push({ transform: T(to[0], to[1], to[2]), filter: 'blur(0px)', offset: 1 });
     const ms = 560 + Math.min(180, dist * .12);
     dockFlight = ava.animate(frames, { duration: ms, easing: 'linear', fill: 'forwards' });
-    dockFlight.onfinish = () => { ava.style.transform = `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`; dockFlight?.cancel(); dockFlight = null; };
+    const run = dockFlight;
+    run.onfinish = () => {
+      ava.style.transform = `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`;
+      run.cancel(); if (dockFlight === run) dockFlight = null;
+      if (dockAway) dockFly(dockAway, true);   // пока летела, страницу могли прокрутить
+    };
     // шлейф: медовые огоньки летят тем же путём с запаздыванием и гаснут
     d.querySelectorAll('.ddghost').forEach((g, j) => {
       const gf = [];
@@ -10254,7 +10263,7 @@ function dockFly(card, instant) {
   } else ava.style.transform = `translate(${to[0]}px, ${to[1]}px) scale(${to[2]})`;
   dockAt = to;
   d.classList.toggle('away', !!card);
-  if (instant) return;
+  if (instant) { if (!card && d.classList.contains('away') === false) dockBubble(false); return; }
   if (card) setTimeout(() => dockAway === card && dockAda?.set('hello'), 500);
   else dockAda?.set(dockTips().some(x => x.late) ? 'alert' : 'curious');
 }

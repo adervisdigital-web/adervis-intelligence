@@ -2988,7 +2988,6 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 @media(min-width:721px){
   .ddava{transition:transform .7s cubic-bezier(.34,1.25,.5,1)}
   .adadock.away .navbadge,.adadock.away .ddhint{opacity:0}
-  .adadock.away .ddava:hover{transform:inherit}
   .hmnow{padding-right:150px}
 }
 
