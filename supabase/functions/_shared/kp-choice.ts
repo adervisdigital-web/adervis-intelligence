@@ -27,3 +27,19 @@ export function budgetOf(data: Row, body: Row) {
   const ours = Number(e.two ? e.base : e.full) || 0;
   return { type: 'budget', amount, ours, from: !!e.two };
 }
+
+// «Запросить счёт»: на кого выставить, ИНН (10 или 12 цифр, можно пусто), почта.
+// Сумма — предоплата от выбранного клиентом итога, процент — из КП.
+export function invoiceOf(data: Row, choice: Row, body: Row) {
+  if (!choice || choice.type === 'budget' || !(Number(choice.total) > 0)) return { error: 'Сначала выберите вариант в КП' };
+  const clean = (v: unknown, n: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const payer = clean(body?.payer, 200);
+  const inn = String(body?.inn ?? '').replace(/\D/g, '');
+  const email = clean(body?.email, 120).toLowerCase();
+  if (payer.length < 2) return { error: 'Укажите компанию или ФИО, на кого выставить счёт' };
+  if (inn && inn.length !== 10 && inn.length !== 12) return { error: 'ИНН — 10 цифр у компании или 12 у ИП и физлица' };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'Укажите почту, на которую прислать счёт' };
+  const pct = Math.min(100, Math.max(1, Math.round(Number(data?.prepay) || 100)));
+  const amount = Math.round(Number(choice.total) * pct / 100);
+  return { payer, inn, email, pct, amount, total: Math.round(Number(choice.total)), comment: clean(body?.comment, 300) };
+}

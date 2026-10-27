@@ -7,7 +7,7 @@
 
 import { admin, json, CORS, secret, SUPABASE_URL } from '../_shared/outreach.ts';
 import { sendDigest, INTEL_TOKEN } from '../_shared/digest-run.ts';
-import { choiceOf, budgetOf, rub } from '../_shared/kp-choice.ts';
+import { choiceOf, budgetOf, invoiceOf, rub } from '../_shared/kp-choice.ts';
 import { clientVoice, sendAudio, voiceReady } from '../_shared/voice.ts';
 import { sanitizeTrack, mergeTrack, engageSummary, engageLine } from '../_shared/kp-engage.ts';
 
@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
         `🔄 Клиент просит обновить КП «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}: срок предложения истёк.\nПересчитайте и нажмите в брифе «Обновить страницу», ссылка останется та же. Хороший повод написать сегодня.`);
       return json({ ok: true });
     }
-    if (expired > 0 && (body?.action === 'choose' || body?.action === 'budget')) return json({ error: 'Предложение устарело. Нажмите «Обновить предложение», и мы пришлём актуальные цены.' }, 409);
+    if (expired > 0 && ['choose', 'budget', 'invoice'].includes(body?.action)) return json({ error: 'Предложение устарело. Нажмите «Обновить предложение», и мы пришлём актуальные цены.' }, 409);
 
     if (body?.action === 'budget') {
       const bgt = budgetOf(d, body);
@@ -85,6 +85,24 @@ Deno.serve(async (req) => {
         `Наша цена: ${bgt.from ? 'от ' : ''}${rub(bgt.ours)}.
 Свяжитесь сегодня: обсудите, что можно сделать в эту сумму.`);
       return json({ ok: true, amount: bgt.amount });
+    }
+
+    // Клиент выбрал вариант и просит счёт на предоплату. Сумму считаем здесь:
+    // процент из КП от того итога, который клиент выбрал.
+    if (body?.action === 'invoice') {
+      // вариант и опции — те, что клиент выбрал на странице; проверяются по снимку
+      const inv = invoiceOf(d, choiceOf(d, body), body);
+      if ('error' in inv) return json({ error: inv.error }, 400);
+      if (body?.preview === true) return json({ ok: true, preview: true, amount: inv.amount });
+      const now = new Date();
+      if (row.invoice_at && now.getTime() - Date.parse(row.invoice_at) < CHOICE_AGAIN && row.invoice?.email === inv.email) return json({ ok: true, amount: inv.amount });
+      await sb.from('kp_shares').update({ invoice: { ...inv, at: now.toISOString() }, invoice_at: now.toISOString() }).eq('token', token);
+      const payer = `${inv.payer}${inv.inn ? `, ИНН ${inv.inn}` : ''}`;
+      await notify(`Выставить счёт на предоплату ${rub(inv.amount)}: ${payer}, прислать на ${inv.email}`,
+        `🧾 Клиент просит счёт по КП «${d.title ?? ''}»${d.client ? ` (${d.client})` : ''}\n` +
+        `Предоплата ${inv.pct}%: ${rub(inv.amount)} из ${rub(inv.total)}\nПлательщик: ${payer}\nПочта для счёта: ${inv.email}` +
+        `${inv.comment ? `\nКомментарий: «${inv.comment}»` : ''}\nВыставьте счёт сегодня.`);
+      return json({ ok: true, amount: inv.amount });
     }
 
     if (body?.action === 'choose') {

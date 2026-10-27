@@ -1,6 +1,6 @@
 // Приём заявок через служебного бота: что пришло, как читается, во что складывается.
 import zlib from 'node:zlib';
-import { choiceOf, budgetOf } from '../supabase/functions/_shared/kp-choice.ts';
+import { choiceOf, budgetOf, invoiceOf } from '../supabase/functions/_shared/kp-choice.ts';
 import { sanitizeTrack, mergeTrack, engageLine } from '../supabase/functions/_shared/kp-engage.ts';
 import { siteLeadOf, fingerprint, pageCheck, sitemapUrls, caseSlug } from '../supabase/functions/_shared/site.ts';
 import { parseDirectTsv, directReportBody, parseVkStats, linkedSpent } from '../supabase/functions/_shared/ads.ts';
@@ -21,6 +21,12 @@ check('автор: скрытый профиль, канал, старый фо�
   check('КП, выбор: базовый + звук = 385 000, мусорные индексы отброшены', c.total === 385000 && c.options.length === 1 && c.label === 'Базовый вариант' && c.comment === 'созвон в понедельник');
   check('КП, бюджет: «300 000 ₽» → 300000, наша цена «от» базового; мусор и мелочь отклоняются', budgetOf(data, { amount: '300 000 ₽' })?.amount === 300000
     && budgetOf(data, { amount: '300 000' }).ours === 365000 && budgetOf(data, { amount: 'abc' }) === null && budgetOf(data, { amount: 500 }) === null);
+  const inv = invoiceOf({ ...data, prepay: 50 }, c, { payer: '  ООО «Завод» ', inn: '77 01 234 567', email: 'Buh@Zavod.example' });
+  check('КП, счёт: предоплата 50% от выбранного итога, ИНН цифрами, почта строчными', inv.amount === 192500 && inv.total === 385000 && inv.inn === '7701234567'
+    && inv.payer === 'ООО «Завод»' && inv.email === 'buh@zavod.example', JSON.stringify(inv));
+  check('КП, счёт: без выбора, без почты, с неверным ИНН — понятная ошибка', 'error' in invoiceOf(data, null, { payer: 'ООО', email: 'a@b.ru' })
+    && /почту/.test(invoiceOf(data, c, { payer: 'ООО', email: 'нет' }).error) && /ИНН/.test(invoiceOf(data, c, { payer: 'ООО', inn: '123', email: 'a@b.ru' }).error)
+    && invoiceOf(data, c, { payer: 'Иван Петров', email: 'a@b.ru' }).amount === 385000);
   check('КП, выбор: без второго варианта всегда полный', choiceOf({ estimate: { two: false, full: 100000 } }, { variant: 'base' }).total === 100000);
 
   // как клиент читал КП: сигналы страницы складываются по визитам

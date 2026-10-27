@@ -82,7 +82,7 @@
   function mountEstimate(e, d) {
     const box = document.getElementById('est');
     if (!box) return;
-    const st = { v: 'full', opts: new Set(), sent: null, budget: false, busy: null };
+    const st = { v: 'full', opts: new Set(), sent: null, budget: false, busy: null, inv: null };
     // «отправляем» держится хотя бы 0,9 с: иначе вспышка, которую не успеть прочитать
     const pause = () => new Promise(r => setTimeout(r, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 900));
     const pick = () => {
@@ -116,7 +116,7 @@
           <div><b>Отправляем ваш выбор…</b><p>${E(st.busy)}</p></div></div>`
         : st.sent === 'preview' ? '<p class="chosen">Просмотр команды: ничего не отправлено.</p>'
         : st.sent?.budget ? ok(`Бюджет ${rub(st.sent.budget)} отправлен`, `${who} с вами: подберём, что можно сделать в эту сумму.`)
-        : st.sent ? ok('Выбор отправлен', `${E(c.what.join(' + '))}, ${rub(c.total)}. ${who} с вами, дальше обсудим договор.`)
+        : st.sent ? ok('Выбор отправлен', `${E(c.what.join(' + '))}, ${rub(c.total)}. ${who} с вами, дальше обсудим договор.`) + invoiceBox(c)
         : `<button type="button" class="btn" data-choose>Выбрать: ${E(c.what.join(' + '))}, ${rub(c.total)}</button>
            <small>Нажмите, и мы получим ваш выбор. Обязательств это не создаёт: дальше обсудим договор.</small>
            ${st.budget ? `<div class="budget"><label for="budgetin">Ваш бюджет, ₽</label>
@@ -125,6 +125,45 @@
            : '<button type="button" class="linkbtn" data-budget>Предложить свой бюджет</button>'}
            <p class="chooseerr" role="alert"></p>`;
     };
+    // После выбора — счёт на предоплату: на кого выставить и куда прислать.
+    // Сумму пересчитывает сервер; здесь — та же формула, чтобы клиент её видел.
+    const prepay = Math.min(100, Math.max(1, Math.round(Number(d.prepay) || 100)));
+    const invoiceBox = c => {
+      if (st.inv === 'preview') return '<p class="chosen">Просмотр команды: запрос счёта не отправлен.</p>';
+      if (st.inv?.email) return `<div class="invoice sent" role="status"><b>Запрос счёта отправлен</b>
+        <p>Счёт на ${rub(st.inv.amount)} пришлём на <b>${E(st.inv.email)}</b>.</p></div>`;
+      const amount = Math.round(c.total * prepay / 100);
+      return `<form class="invoice" novalidate>
+        <h3>${prepay < 100 ? `Предоплата ${prepay}%: ${rub(amount)}` : `К оплате: ${rub(amount)}`}</h3>
+        <p>Оплата по счёту. Напишите, на кого выставить, и мы пришлём счёт на почту.</p>
+        <div class="invgrid">
+          <label class="wide"><span>Компания или ФИО</span><input name="payer" autocomplete="organization" maxlength="200" required></label>
+          <label><span>ИНН <small>если есть</small></span><input name="inn" inputmode="numeric" autocomplete="off" maxlength="12"></label>
+          <label><span>Почта для счёта</span><input name="email" type="email" autocomplete="email" maxlength="120" required></label>
+        </div>
+        <button type="submit" class="btn">Запросить счёт</button>
+        <p class="chooseerr" role="alert"></p>
+      </form>`;
+    };
+    chooseBox?.addEventListener('submit', async ev => {
+      const f = ev.target.closest('form.invoice');
+      if (!f) return;
+      ev.preventDefault();
+      const btn = f.querySelector('button[type=submit]'), err = f.querySelector('.chooseerr');
+      const payer = f.payer.value.trim(), inn = f.inn.value.replace(/\D/g, ''), email = f.email.value.trim();
+      const bad = (msg, el) => { err.textContent = msg; el.focus(); el.setAttribute('aria-invalid', 'true'); };
+      f.querySelectorAll('[aria-invalid]').forEach(x => x.removeAttribute('aria-invalid'));
+      if (payer.length < 2) return bad('Укажите компанию или ФИО, на кого выставить счёт', f.payer);
+      if (inn && inn.length !== 10 && inn.length !== 12) return bad('ИНН: 10 цифр у компании или 12 у ИП и физлица', f.inn);
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad('Укажите почту, на которую прислать счёт', f.email);
+      btn.disabled = true; btn.textContent = 'Отправляем…'; err.textContent = '';
+      try {
+        const c = pick();
+        const [j] = await Promise.all([post({ action: 'invoice', variant: c.v, options: c.opts, payer, inn, email }), pause()]);
+        st.inv = j.preview ? 'preview' : { amount: j.amount, email };
+        drawChoose();
+      } catch (e) { btn.disabled = false; btn.textContent = 'Запросить счёт'; err.textContent = e.message; }
+    });
     const post = async payload => {
       const r = await fetch(`${cfg.supabaseUrl}/functions/v1/kp`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.supabaseAnonKey }, body: JSON.stringify({ token, preview, ...payload })
@@ -200,7 +239,7 @@
           <ul class="opts">${e.options.map((o, i) => `<li><label><input type="checkbox" data-o="${i}"${st.opts.has(i) ? ' checked' : ''}>
             <span>${E(o.name)}${o.why ? `<small>${E(o.why)}</small>` : ''}</span><b class="num">+ ${rub(o.price)}</b></label></li>`).join('')}</ul>` : ''}`;
       if (focus) box.querySelector(focus)?.focus();
-      st.sent = null; st.budget = false; drawChoose();
+      st.sent = null; st.budget = false; st.inv = null; drawChoose();
     };
     box.addEventListener('click', ev => {
       const vb = ev.target.closest('[data-v]');

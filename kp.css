@@ -223,3 +223,20 @@ section li{margin:4px 0}
 .expired .read{padding-top:14px;padding-bottom:14px}
 .closedkp img{height:34px;margin-bottom:18px}
 .closedkp .btn{margin:16px 10px 0 0}
+
+/* ===== счёт на предоплату после выбора ===== */
+.invoice{margin:20px 0 0;padding:20px 0 0;border-top:1px dashed var(--line)}
+.invoice h3{margin:0;font:700 21px/1.25 var(--display)}
+.invoice>p{margin:6px 0 14px;color:var(--muted);font-size:15px}
+.invgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 14px}
+.invgrid .wide{grid-column:1/-1}
+.invgrid label{display:grid;gap:6px;font-size:14px;color:var(--muted)}
+.invgrid small{font-size:12px;opacity:.8}
+.invgrid input{font:inherit;font-size:16px;color:var(--ink);padding:11px 14px;border:1px solid var(--line);border-radius:12px;background:transparent}
+.invgrid input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.invgrid input[aria-invalid]{border-color:#c0392b}
+.invoice .btn{margin:0}
+.invoice.sent b{display:block;font:700 19px/1.3 var(--display);color:#1f7a3a}
+.invoice.sent p{margin:4px 0 0;color:var(--muted);font-size:15px}
+.invoice.sent p b{display:inline;font:inherit;color:var(--ink)}
+@media(max-width:560px){.invgrid{grid-template-columns:1fr}}

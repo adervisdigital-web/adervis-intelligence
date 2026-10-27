@@ -2278,7 +2278,7 @@ await page.click('#modal [data-action=close]');
 // сама страница КП у клиента: на компьютере и на телефоне
 const kpPage = await ctx.newPage();
 const kpPosts = [];
-const kpReply = b => JSON.stringify(b.action === 'choose' ? { ok: true, preview: b.preview === true, total: 1 } : b.action === 'budget' ? { ok: true, preview: b.preview === true, amount: b.amount } : { ok: true, data: share.data });
+const kpReply = b => JSON.stringify(b.action === 'choose' ? { ok: true, preview: b.preview === true, total: 1 } : b.action === 'invoice' ? { ok: true, preview: b.preview === true, amount: 57500 } : b.action === 'budget' ? { ok: true, preview: b.preview === true, amount: b.amount } : { ok: true, data: share.data });
 await kpPage.route('**/functions/v1/kp', r => { const b = JSON.parse(r.request().postData()); kpPosts.push(b); r.fulfill({ contentType: 'application/json', body: kpReply(b) }); });
 await kpPage.goto(BASE + 'kp.html?t=' + share.token);
 await kpPage.waitForSelector('.hero h1');
@@ -2311,6 +2311,19 @@ await kpPage.click('[data-v=full]').catch(() => {});
   const sent = posts.find(p => p.action === 'choose');
   check('страница КП: одно нажатие — выбор ушёл на сервер, клиент видит «Вы выбрали»', sent?.variant === 'base' && JSON.stringify(sent.options) === '[0]'
     && sent.preview === false && (await g.textContent('.chosenok')).includes('Выбор отправлен') && !(await g.$('textarea')), JSON.stringify(sent));
+  // счёт на предоплату: форма появляется после выбора, ошибки — понятные
+  check('страница КП: после выбора — форма счёта с суммой предоплаты', /Предоплата \d+%|К оплате/.test(await g.textContent('form.invoice h3')), await g.textContent('form.invoice h3'));
+  await g.fill('form.invoice [name=payer]', 'ООО «Завод»');
+  await g.fill('form.invoice [name=email]', 'не почта');
+  await g.click('form.invoice button[type=submit]');
+  check('страница КП: неверная почта — подсказка, на сервер не ушло', /почту/.test(await g.textContent('form.invoice .chooseerr')) && !posts.some(p => p.action === 'invoice'));
+  await g.fill('form.invoice [name=inn]', '7701234567');
+  await g.fill('form.invoice [name=email]', 'buh@zavod.example');
+  await g.click('form.invoice button[type=submit]');
+  await g.waitForSelector('.invoice.sent');
+  const invp = posts.find(p => p.action === 'invoice');
+  check('страница КП: запрос счёта ушёл с плательщиком, ИНН, почтой и выбранным вариантом', invp?.payer === 'ООО «Завод»' && invp.inn === '7701234567'
+    && invp.email === 'buh@zavod.example' && invp.variant === 'base' && JSON.stringify(invp.options) === '[0]' && /buh@zavod\.example/.test(await g.textContent('.invoice.sent')), JSON.stringify(invp));
   await g.click('[data-v=full]');
   check('страница КП: поменяли вариант — кнопка снова с новой суммой', /Полный вариант/.test(await g.textContent('[data-choose]')));
   // свой бюджет: ввод с пробелами, отправка, подтверждение
