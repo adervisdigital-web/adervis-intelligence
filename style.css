@@ -3022,3 +3022,8 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
   html:not([data-theme=dark]) .ddghost{mix-blend-mode:normal}
   .ddava{will-change:transform,filter}
 }
+
+/* ===== быстрые ссылки сверху: что не влезло — уходит целиком, а не режется под поиском ===== */
+@media(min-width:721px){
+  .hubtabs{flex-wrap:wrap;height:42px;row-gap:24px;align-content:center}
+}

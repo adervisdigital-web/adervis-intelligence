@@ -7688,10 +7688,11 @@ function render() {
   // в новый раздел блоки въезжают по очереди; обычные перерисовки — без анимации
   if (page !== lastShown) {
     lastShown = page;
-    const cards = [...$('#view').querySelectorAll(':scope > *, .grid > .card, .hmgrid > *')].slice(0, 14);
+    // быстро: весь раздел на месте за ~0,5 с, иначе ежедневные переходы ощущаются медленными
+    const cards = [...$('#view').querySelectorAll(':scope > *, .grid > .card, .hmgrid > *')].slice(0, 10);
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) cards.forEach((c, i) => c.animate(
-      [{ opacity: .001, transform: 'translateY(14px)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-      { duration: 520, delay: 40 + i * 45, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' }));
+      [{ opacity: .001, transform: 'translateY(10px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+      { duration: 340, delay: 15 + i * 24, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' }));
   }
   // цвет группы раздела — для подсветки карточек и цифр внутри
   $('#view').className = 'tone-' + toneOf(page);
@@ -10339,9 +10340,9 @@ function drawDock() {
     const h = new Date().getHours();
     dockAda.set(!tips.length ? (h >= 22 || h < 7 ? 'sleep' : 'idle') : late ? 'alert' : 'curious');
   }
-  // о новом главном деле Ада говорит сама, один раз за сессию
+  // о новом главном деле Ада говорит сама, один раз за сессию; на «Сегодня» оно и так крупно сверху
   const top = tips[0];
-  if (top && top.ref !== dockSaid && !d.hidden) {
+  if (top && top.ref !== dockSaid && !d.hidden && page !== 'home') {
     dockSaid = top.ref;
     try { sessionStorage.setItem('hub.dock.said', dockSaid); } catch (e) { /* без памяти */ }
     setTimeout(() => dockHint(true, top), 1200);
