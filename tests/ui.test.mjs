@@ -396,11 +396,16 @@ const fake = (seedData) => {
     },
     async stock() {
       window.__stockCalls = (window.__stockCalls || 0) + 1;
-      if (!(window.__SECRETS__ || {}).stock_hub_token) return { state: 'off' };
+      const cloudM = state.outreach?.stock_cloud;
+      const cloud = (window.__SECRETS__ || {}).regcloud_token ? { state: 'ok', balance: 900, hourly: 1.6, monthly: 1169, daysLeft: 23, hoursLeft: 562, runoutAt: Date.now() + 562 * 36e5, checkedAt: new Date().toISOString() }
+        : cloudM ? { state: 'manual', balance: cloudM.balance, hourly: cloudM.hourly, monthly: 1169, daysLeft: 4, hoursLeft: 114, runoutAt: Date.now() + 114 * 36e5, checkedAt: cloudM.at } : { state: 'off' };
+      if (!(window.__SECRETS__ || {}).stock_hub_token) return { state: 'off', cloud };
       const now = Date.now();
-      return { state: 'ok', data: { ok: true, at: now, startedAt: now - 3600e3, accounts: 12, newAccounts: { day: 1, week: 3 }, activePlans: 6, keysInStock: 0,
+      const payback = { months: [{ month: '2026-09', sales: 1, revenue: 490, expense: 4000, profit: -3510, total: -3510 }, { month: '2026-10', sales: 6, revenue: 2700, expense: 4000, profit: -1300, total: -4810 }], total: -4810, debt: 4810, fixed: 4000, check: 450, run: 2700, runSales: 6, gap: -1300, needSales: 9, monthsLeft: null };
+      return { state: 'ok', cloud, payback, data: { ok: true, at: now, startedAt: now - 3600e3, accounts: 12, newAccounts: { day: 1, week: 3 }, activePlans: 6, keysInStock: 0,
         sales: { day: 2, week: 9 }, downloads: { day: 14, total: 400 }, money: { currency: '₽', revenueToday: 299, revenueMonth: 4500, expenseMonth: 3000, profitMonth: 1500, avgCheck: 450 },
-        envato: { daysLeft: 12 }, engine: { ok: true, reason: '', checkedAt: now - 600e3 }, problems: [], bySource: [{ id: 'ggsel', label: 'GGSel', sold: 3, revenue: 897 }] } };
+        envato: { daysLeft: 12 }, engine: { ok: true, reason: '', checkedAt: now - 600e3 }, problems: [], bySource: [{ id: 'ggsel', label: 'GGSel', sold: 3, revenue: 897 }],
+        economy: { revenueAll: 3190, salesAll: 7, fixedMonthly: 4000, envatoMonthly: 2800, recurring: [{ name: 'Сервер', amount: 1200, period: 'month' }], byTariff: [{ label: 'Месяц', price: 490, sold: 4, revenue: 1960 }] } } };
     },
     async site(payload) {
       window.__lastSitePayload = payload;
@@ -1103,13 +1108,27 @@ check('сайт: просьба о правке стала задачей «Са
 // --- Adervis Stock: ключ из админки Stock → сводка с тревогами
 await nav('stock');
 await page.waitForSelector('#stockkey');
-check('Stock: без ключа — шаги подключения и поле для ключа', (await page.textContent('.pagehead ~ .card')).includes('Связь с Hub ADERVIS'));
+check('Stock: без ключа — шаги подключения и поле для ключа', (await page.textContent('.pagehead ~ .card:not(.stockcloud)')).includes('Связь с Hub ADERVIS'));
 await page.fill('#stockkey input[name=key]', 'test-key-0123456789abcdefghij');
 await page.click('#stockkey button');
 await page.waitForSelector('.sitestats');
 check('Stock: ключ ушёл на сервер, сводка показана, закончившиеся ключи — тревогой', (await page.evaluate(() => window.__SECRETS__.stock_hub_token)) === 'test-key-0123456789abcdefghij'
   && /4\s500\s₽/.test(await page.textContent('.sitestats')) && (await page.textContent('.notice.error')).includes('Ключи для продажи закончились'), await page.textContent('.pagehead ~ *'));
 check('Stock: продажи по площадкам — GGSel с числом продаж и суммой', /GGSel\s*3 продажи · 897\s₽/.test(await page.textContent('body')));
+check('Stock: окупаемость — вердикт, сколько нужно продаж, месяцы с накопленным итогом', (await page.textContent('.stockverdict')).includes('Не хватает 1\u00a0300 ₽ в месяц')
+  && (await page.textContent('.stockpay')).includes('Подписка Envato') && (await page.$$('.stockmonths tbody tr')).length === 2
+  && (await page.textContent('.stockmonths tbody tr')).includes('−4\u00a0810 ₽'));
+await page.fill('#cloudbalance input[name=balance]', '182.93');
+await page.fill('#cloudbalance input[name=hourly]', '1.60193');
+await page.click('#cloudbalance button');
+await page.waitForSelector('.stockcloud .sitestat.tone-red');
+check('Stock: баланс облака записан, осталось мало — красным, срок виден', (await page.evaluate(() => window.__STATE__.outreach.stock_cloud.balance)) === 182.93
+  && (await page.textContent('.stockcloud')).includes('4 дня'));
+await page.fill('#cloudkey input[name=key]', 'cloud-token-0123456789abcdef');
+await page.click('#cloudkey button');
+await page.waitForFunction(() => !document.querySelector('#cloudkey'));
+check('Stock: токен облака ушёл на сервер, формы ручного ввода больше нет', (await page.evaluate(() => window.__SECRETS__.regcloud_token)) === 'cloud-token-0123456789abcdef'
+  && (await page.textContent('.stockcloud')).includes('23 дня'));
 await page.evaluate(() => { window.__SECRETS__ = undefined; });
 
 // --- 5. публикация, замеры, каскад

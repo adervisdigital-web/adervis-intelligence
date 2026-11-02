@@ -2,7 +2,7 @@
 
 import { tgApi, type Sb } from './outreach.ts';
 import { digestText, permNow } from './digest.ts';
-import { stockSummary } from './stock.ts';
+import { stockSummary, cloudStatus } from './stock.ts';
 
 // Ключ служебного бота — секрет проекта; им же функция publish пишет в канал.
 export const INTEL_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
@@ -21,7 +21,7 @@ export async function buildDigest(sb: Sb): Promise<string> {
     sb.from('leads').select('*', { count: 'exact', head: true }).eq('came_on', yesterday),
     sb.from('messages').select('*', { count: 'exact', head: true }).eq('direction', 'in').gte('created_at', new Date(now - 864e5).toISOString()),
     sb.from('kp_shares').select('views,last_view_at,choice,chosen_at,created_at,engagement,title:data->>title,client:data->>client'),
-    stockSummary(sb)
+    stockSummary(sb).then(async st => ({ ...st, cloud: await cloudStatus(sb) }))
   ]);
   return digestText({
     today: date, now, leads: rows(leads), prospects: rows(prospects), briefs: rows(briefs), campaigns: rows(campaigns),

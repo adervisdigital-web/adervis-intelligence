@@ -3058,3 +3058,15 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 .clogdel{position:absolute;top:4px;right:4px;width:36px;height:36px;min-height:36px;padding:0;display:grid;place-items:center;border:0;background:none;color:var(--muted)}
 .clogdel:hover{color:var(--ink-bad)}
 @media (max-width:720px){.clogadd .clogline{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Stock: облако и окупаемость */
+.stockcloud .sitestats,.stockpay .sitestats{margin:10px 0 12px}
+.stockcloud .sitestats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.stockcloud .siteask{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px}
+.stockcloud .siteask input{flex:1 1 160px;min-width:0;width:auto}
+.stockverdict{font-size:16px;margin:6px 0 12px}
+.stockpay h3{margin:18px 0 6px;font-size:15px}
+.stockmonths td:not(:first-child),.stockmonths th:not(:first-child){text-align:right;white-space:nowrap}
+.stockmonths td:first-child{white-space:nowrap}
+.stockmonths .neg{color:var(--ink-bad)}.stockmonths .pos{color:var(--ink-good)}
+@media (max-width:900px){.stockcloud .sitestats{grid-template-columns:1fr}}

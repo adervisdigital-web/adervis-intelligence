@@ -1,6 +1,7 @@
 // Утренняя сводка «На сегодня» для Telegram — те же правила, что у списка
 // «На сегодня» в приложении. Без сети и базы: проверяется тестами.
 
+import { cloudLine } from './stock-watch.ts';
 import { engageLine } from './kp-engage.ts';
 
 // deno-lint-ignore no-explicit-any
@@ -17,7 +18,7 @@ export type DigestData = {
   newLeads: number;       // заявок за вчера
   inbound: number;        // сообщений клиентов за сутки
   kp?: Row[];             // КП-ссылки: title, client, views, last_view_at, choice, chosen_at, created_at
-  stock?: { state: string; data?: Row };   // сводка Adervis Stock (stockSummary)
+  stock?: { state: string; data?: Row; cloud?: Row };   // сводка Adervis Stock (stockSummary)
   appUrl: string;
 };
 
@@ -67,16 +68,18 @@ export function digestItems(d: DigestData): Item[] {
 
 // Adervis Stock: сначала тревоги (движок, поломки, ключи, подписка Envato),
 // потом продажи за сутки и деньги за месяц. Ключ не подключён — молчим.
-export function stockLines(st?: { state: string; data?: Row }): string[] {
-  if (!st || st.state === 'off') return [];
-  if (st.state === 'bad_token') return ['• ⚠️ Ключ Stock не подходит: выдайте новый в админке Stock и вставьте в Hub'];
-  if (st.state !== 'ok' || !st.data) return ['• ⚠️ stock.adervis.ru не отвечает: клиенты не могут скачивать'];
-  const s = st.data, out: string[] = [];
+export function stockLines(st?: { state: string; data?: Row; cloud?: Row }): string[] {
+  const cloud = cloudLine(st?.cloud);
+  if (!st || st.state === 'off') return cloud;
+  if (st.state === 'bad_token') return [...cloud, '• ⚠️ Ключ Stock не подходит: выдайте новый в админке Stock и вставьте в Hub'];
+  if (st.state !== 'ok' || !st.data) return [...cloud, '• ⚠️ stock.adervis.ru не отвечает: клиенты не могут скачивать'];
+  const s = st.data, out: string[] = [...cloud];
   const rub = (n: number) => `${Math.round(Number(n) || 0).toLocaleString('ru-RU')} ₽`;
   if (s.engine?.ok === false) out.push('• ⚠️ Движок Envato не работает: скачивания стоят, проверьте админку Stock');
   for (const p of (s.problems || []).slice(0, 3)) out.push(`• ⚠️ ${p.title}`);
   if (s.envato?.daysLeft != null && s.envato.daysLeft <= 3) out.push(`• ⚠️ Подписка Envato кончается через ${days(s.envato.daysLeft)}`);
   if (s.keysInStock === 0) out.push('• Ключи для продажи закончились: выпустите новые в админке');
+  if (s.sales?.week === 0) out.push('• За неделю ни одной продажи: посмотрите лоты на площадках');
   out.push(`• За сутки: ${s.sales?.day ?? 0} ${plural(s.sales?.day ?? 0, 'продажа', 'продажи', 'продаж')}, ${s.newAccounts?.day ?? 0} ${plural(s.newAccounts?.day ?? 0, 'новый клиент', 'новых клиента', 'новых клиентов')}, скачиваний ${s.downloads?.day ?? 0}`);
   out.push(`• За месяц: выручка ${rub(s.money?.revenueMonth)}, прибыль ${rub(s.money?.profitMonth)}, активных подписок ${s.activePlans ?? 0}`);
   return out;

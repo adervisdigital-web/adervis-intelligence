@@ -1,5 +1,6 @@
 // Утренняя сводка: те же правила, что «На сегодня» в приложении.
 import { digestItems, digestText, permNow, stockLines } from '../supabase/functions/_shared/digest.ts';
+import { cloudForecast, cloudFromApi, payback, watchAlerts } from '../supabase/functions/_shared/stock-watch.ts';
 
 let fails = 0;
 const check = (n, ok, extra = '') => { if (!ok) fails++; console.log((ok ? 'PASS ' : 'FAIL ') + n + (extra ? '  -> ' + extra : '')); };
@@ -63,6 +64,36 @@ const badStock = stockLines({ state: 'ok', data: { ...okStock.data, engine: { ok
 check('Stock: движок, поломка, подписка Envato и ключи — тревогами впереди', badStock[0].includes('Движок Envato не работает') && badStock[1] === '• ⚠️ Прокси не отвечает'
   && badStock[2].includes('через 2 дня') && badStock[3].includes('Ключи для продажи закончились'), badStock.join(' | '));
 check('Stock: сайт не отвечает и неверный ключ — понятными словами', stockLines({ state: 'down' })[0].includes('не отвечает') && stockLines({ state: 'bad_token' })[0].includes('Ключ Stock не подходит'));
+// облако рег.ру и окупаемость Stock
+const AT = '2026-11-02T12:00:00Z', atMs = Date.parse(AT);
+const cf = cloudForecast({ balance: 182.93, hourly: 1.60193, at: AT }, atMs + 24 * 36e5);
+check('облако: остаток считается на сейчас, срок по часам', cf.state === 'manual' && Math.abs(cf.balance - 144.48) < 0.02 && cf.daysLeft === 3 && cf.hoursLeft === 90, JSON.stringify(cf));
+check('облако: без записанного баланса прогноза нет', cloudForecast({}, atMs).state === 'off' && cloudForecast(undefined, atMs).state === 'off');
+const api = cloudFromApi({ balance_data: { balance: 500, bonus_balance: 10, days_left: 12, hours_left: 300, hourly_cost: 1.6, monthly_cost: 1169, detalization: [{ name: 'stock', state: 'active', price_month: '982.03' }] } }, atMs);
+check('облако: ответ API разбирается', api.state === 'ok' && api.daysLeft === 12 && api.resources[0].monthly === 982.03 && api.runoutAt === atMs + 300 * 36e5);
+check('облако: неожиданный ответ не ломает', cloudFromApi({}, atMs).state === 'error');
+const low = { daysLeft: 4, balance: 182.93, runoutAt: Date.parse('2026-11-07T06:00:00Z') };
+const noon = Date.parse('2026-11-02T07:00:00Z'), night = Date.parse('2026-11-02T20:00:00Z');
+const w1 = watchAlerts({ state: 'ok' }, low, {}, noon);
+check('тревога: денег мало — сообщение со сроком', w1.messages.length === 1 && w1.messages[0].includes('183 ₽') && w1.messages[0].includes('4 дня') && w1.messages[0].includes('7 ноября'), w1.messages[0]);
+check('тревога: второй раз за день не повторяем', watchAlerts({ state: 'ok' }, low, w1.watch, noon + 36e5).messages.length === 0);
+check('тревога: ночью не будим', watchAlerts({ state: 'ok' }, low, {}, night).messages.length === 0);
+check('тревога: денег хватает — молчим', watchAlerts({ state: 'ok' }, { ...low, daysLeft: 6 }, {}, noon).messages.length === 0);
+const d1 = watchAlerts({ state: 'down' }, undefined, {}, noon), d2 = watchAlerts({ state: 'down' }, undefined, d1.watch, noon), d3 = watchAlerts({ state: 'down' }, undefined, d2.watch, noon);
+check('сайт: один сбой не тревога, второй подряд тревога, дальше тишина', d1.messages.length === 0 && d2.messages.length === 1 && d3.messages.length === 0);
+const back = watchAlerts({ state: 'ok' }, undefined, d3.watch, noon);
+check('сайт: вернулся — сообщаем и обнуляем счёт', back.messages[0].includes('снова работает') && back.watch.miss === 0 && !back.watch.down);
+const bl = watchAlerts({ state: 'down' }, { balance: 0, daysLeft: 0, runoutAt: noon }, d1.watch, night);
+check('сайт: упал при пустом счёте — называем причину', bl.messages[0].includes('кончились деньги'));
+const econ = { revenueAll: 3190, salesAll: 7, fixedMonthly: 4000, last30: { sales: 6, revenue: 2700 }, months: [{ profit: -3510 }, { profit: -1300 }] };
+const pb = payback(econ);
+check('окупаемость: накопленный итог, продажи для нуля, темп ниже расходов — срока нет', pb.total === -4810 && pb.months[1].total === -4810 && pb.needSales === 9 && pb.check === 456 && pb.gap === -1300 && pb.monthsLeft === null, JSON.stringify(pb));
+check('окупаемость: темп выше расходов — считаем месяцы', payback({ ...econ, last30: { sales: 20, revenue: 6000 } }).monthsLeft === 3);
+check('окупаемость: уже в плюсе и старая сводка без данных', payback({ ...econ, months: [{ profit: 100 }] }).monthsLeft === 0 && payback(undefined) === null);
+check('сводка: облако первой строкой, предупреждение при малом остатке', stockLines({ ...okStock, cloud: low })[0].includes('⚠️ Облако рег.ру: денег на 4 дня')
+  && stockLines({ state: 'off', cloud: { daysLeft: 20, runoutAt: noon } })[0].startsWith('• Облако рег.ру'));
+check('сводка: неделя без продаж заметна', stockLines({ state: 'ok', data: { ...okStock.data, sales: { day: 0, week: 0 } } }).join('|').includes('ни одной продажи'));
+
 check('Stock: блок в тексте сводки', digestText({ ...base, stock: okStock }).includes('🧩 Adervis Stock'));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');

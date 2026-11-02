@@ -30,6 +30,18 @@ select cron.schedule('intel-crm-sync', '*/30 * * * *', $job$
   )
 $job$);
 
+-- Adervis Stock и облако рег.ру: каждые 15 минут функция stock проверяет сайт и
+-- баланс, тревоги уходят в Telegram.
+select cron.unschedule(jobid) from cron.job where jobname = 'intel-stock-watch';
+select cron.schedule('intel-stock-watch', '*/15 * * * *', $job$
+  select net.http_post(
+    url := 'https://mlsmybtspqqpsvbukbcj.supabase.co/functions/v1/stock',
+    headers := jsonb_build_object('Content-Type', 'application/json',
+      'x-digest-secret', (select value from public.channel_secrets where name = 'digest_secret')),
+    body := '{}'::jsonb
+  )
+$job$);
+
 -- Рекламные кабинеты (VK Реклама, Яндекс Директ): раз в сутки в 6:15 по Перми
 -- (01:15 UTC), до утренней сводки, функция ads-sync забирает расход за 30 дней.
 select cron.unschedule(jobid) from cron.job where jobname = 'intel-ads-sync';

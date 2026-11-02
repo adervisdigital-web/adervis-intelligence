@@ -3122,6 +3122,72 @@ async function stockSaveKey(key) {
   } catch (e) { handleError(e); }
 }
 
+// Облако рег.ру: сколько проживёт сервер Stock. Ключ API читает баланс сам,
+// без него работает прогноз по балансу, записанному вручную.
+function stockCloudHtml(c) {
+  const rub = n => `${Math.round(Number(n) || 0).toLocaleString('ru-RU')} ₽`;
+  const on = c?.daysLeft != null, left = Number(c?.daysLeft);
+  const tone = !on ? '' : left <= 5 ? 'tone-red' : left <= 10 ? 'tone-gold' : 'tone-green';
+  const until = on ? new Date(c.runoutAt).toLocaleDateString('ru', { day: 'numeric', month: 'long' }) : '';
+  const manualForm = `<form id="cloudbalance" class="siteask"><input class="input" name="balance" type="number" min="0" step="0.01" required placeholder="Баланс, ₽" aria-label="Баланс облака, рублей">
+    <input class="input" name="hourly" type="number" min="0.01" step="0.00001" required value="${E(String(c?.hourly || ''))}" placeholder="Расход, ₽ в час" aria-label="Расход, рублей в час"><button>Записать баланс</button></form>`;
+  const keyForm = `<form id="cloudkey" class="siteask"><input class="input secretfield" name="key" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" required minlength="20" maxlength="200" placeholder="Токен API облака" aria-label="Токен API облака"><button>Подключить</button></form>`;
+  const source = c?.state === 'ok' ? `баланс читается из облака, ${ago(c.checkedAt)}`
+    : c?.state === 'manual' ? `прогноз по балансу, записанному ${ago(c.checkedAt)}` : 'баланс ещё не записан';
+  return `<div class="card stockcloud"><div class="campaignhead"><h2>Облако рег.ру: сервер Stock</h2></div>
+    ${c?.keyBad ? '<div class="notice error">Токен облака не подходит: возможно, его сменили.</div>' : c?.keyFailed ? '<div class="notice error">Облако не ответило, показан прогноз по последнему балансу.</div>' : ''}
+    ${on ? `<div class="sitestats">
+      <div class="sitestat ${tone}"><small>Хватит</small><b>${left} ${plural(left, 'день', 'дня', 'дней')}</b><span class="muted">до ${E(until)}</span></div>
+      <div class="sitestat"><small>На счёте</small><b>${rub(c.balance)}</b><span class="muted">${c.bonus ? `бонусов ${rub(c.bonus)}` : 'остаток на сейчас'}</span></div>
+      <div class="sitestat"><small>Расход</small><b>${rub(c.monthly)}</b><span class="muted">в месяц, ${String(c.hourly).replace('.', ',').slice(0, 4)} ₽ в час</span></div>
+    </div>` : ''}
+    <p class="muted">${E(source)}.${c?.state === 'ok' ? '' : ' Подключите токен, и баланс будет читаться сам: в панели облака откройте «Настройки» и скопируйте токен API.'} Когда денег останется на 5 дней, предупрежу в Telegram.</p>
+    ${c?.state === 'ok' ? '' : manualForm + keyForm}
+  </div>`;
+}
+
+// Окупаемость: сколько стоит месяц работы, что принесли продажи, когда отобьёмся.
+function stockPaybackHtml(p, s) {
+  if (!p) return '';
+  const rub = n => `${n < 0 ? '−' : ''}${Math.abs(Math.round(Number(n) || 0)).toLocaleString('ru-RU')} ₽`;
+  const e = s.economy || {};
+  const month = m => new Date(m + '-01T00:00:00').toLocaleDateString('ru', { month: 'long', year: 'numeric' });
+  const verdict = p.debt === 0 ? (p.months.length ? 'Проект окупился: заработано больше, чем потрачено.' : 'Продаж пока не было.')
+    : p.monthsLeft ? `При нынешнем темпе вложения вернутся примерно через ${p.monthsLeft} ${plural(p.monthsLeft, 'месяц', 'месяца', 'месяцев')}.`
+    : `При нынешнем темпе проект не окупается: за 30 дней выручка ${rub(p.run)}, а месяц работы стоит ${rub(p.fixed)}. Не хватает ${rub(-p.gap)} в месяц.`;
+  return `<div class="card stockpay"><h2>Окупаемость</h2>
+    <p class="stockverdict">${E(verdict)}</p>
+    <div class="sitestats">
+      <div class="sitestat ${p.total < 0 ? 'tone-red' : 'tone-green'}"><small>Итог с запуска</small><b>${rub(p.total)}</b><span class="muted">выручка ${rub(e.revenueAll)}</span></div>
+      <div class="sitestat"><small>Месяц работы стоит</small><b>${rub(p.fixed)}</b><span class="muted">Envato ${rub(e.envatoMonthly)}, прочее ${rub(p.fixed - e.envatoMonthly)}</span></div>
+      <div class="sitestat"><small>Нужно продаж в месяц</small><b>${p.needSales ?? '—'}</b><span class="muted">при среднем чеке ${rub(p.check)}</span></div>
+      <div class="sitestat ${p.gap >= 0 ? 'tone-green' : 'tone-gold'}"><small>Продажи за 30 дней</small><b>${p.runSales}</b><span class="muted">на ${rub(p.run)}</span></div>
+    </div>
+    ${p.months.length ? `<div class="tablewrap"><table class="table stockmonths"><thead><tr><th>Месяц</th><th>Продажи</th><th>Выручка</th><th>Расходы</th><th>Прибыль</th><th>Итог с запуска</th></tr></thead><tbody>
+      ${p.months.slice().reverse().map(m => `<tr><td>${E(month(m.month))}</td><td>${m.sales}</td><td>${rub(m.revenue)}</td><td>${rub(m.expense)}</td><td class="${m.profit < 0 ? 'neg' : 'pos'}">${rub(m.profit)}</td><td class="${m.total < 0 ? 'neg' : 'pos'}">${rub(m.total)}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}
+    ${(e.byTariff || []).length ? `<h3>Что покупают</h3><ul class="sitelist">${e.byTariff.map(t => `<li><b>${E(t.label)}</b><span class="muted">${t.sold} ${plural(t.sold, 'продажа', 'продажи', 'продаж')} · ${rub(t.revenue)}</span></li>`).join('')}</ul>` : ''}
+    ${(e.recurring || []).length ? `<h3>Постоянные расходы</h3><ul class="sitelist"><li><b>Подписка Envato</b><span class="muted">${rub(e.envatoMonthly)} в месяц</span></li>${e.recurring.map(r => `<li><b>${E(r.name)}</b><span class="muted">${rub(r.amount)} ${r.period === 'year' ? 'в год' : 'в месяц'}</span></li>`).join('')}</ul>` : ''}
+    <p class="muted">Расходы прошлых месяцев считаются по нынешним ценам сервера и подписки, ручные расходы по своим датам. Комиссии площадок в выручке не вычтены.</p>
+  </div>`;
+}
+
+async function cloudSaveBalance(f) {
+  const stock_cloud = { balance: Number(f.elements.balance.value), hourly: Number(f.elements.hourly.value), at: new Date().toISOString() };
+  try {
+    db.outreach = { ...db.outreach, ...await api.saveOutreach({ stock_cloud }) };
+    toast('Баланс облака записан');
+    await stockLoad();
+  } catch (e) { handleError(e); }
+}
+async function cloudSaveKey(key) {
+  try {
+    await api.setChannelSecret('regcloud_token', key.trim());
+    toast('Токен облака сохранён на сервере');
+    await stockLoad();
+  } catch (e) { handleError(e); }
+}
+
 function renderStock() {
   ensureStock();
   const v = stockView, r = v.res, s = r?.data;
@@ -3131,11 +3197,11 @@ function renderStock() {
       <li>В блоке «Связь с Hub ADERVIS» нажмите «Выдать ключ для Hub» и скопируйте его.</li><li>Вставьте ключ сюда. Он даёт только чтение сводки: без почт и имён клиентов.</li></ol>
     <form id="stockkey" class="siteask"><input class="input secretfield" name="key" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" required minlength="20" maxlength="200" aria-label="Ключ из админки Stock" placeholder="Ключ из админки Stock"><button class="primary">Сохранить</button></form></div>`;
   const card = (label, value, hint, tone = '') => `<div class="card sitestat ${tone}"><small>${label}</small><b>${value}</b><span class="muted">${hint}</span></div>`;
-  let body = '';
+  let body = r ? stockCloudHtml(r.cloud) : '';
   if (!r) body = v.error ? `<div class="notice error">${E(v.error)}</div>` : '<p class="muted">Загружаю сводку Stock…</p>';
-  else if (r.state === 'off' || v.editKey) body = keyForm(r.state === 'off' ? 'Подключите Adervis Stock' : 'Новый ключ Stock');
-  else if (r.state === 'bad_token') body = `<div class="notice error">Ключ Stock не подходит: возможно, в админке выдали новый.</div>` + keyForm('Вставьте новый ключ');
-  else if (r.state === 'down') body = `<div class="notice error">${icon('warn', 15)} stock.adervis.ru не отвечает. Клиенты сейчас не могут войти и скачивать.</div>`;
+  else if (r.state === 'off' || v.editKey) body += keyForm(r.state === 'off' ? 'Подключите Adervis Stock' : 'Новый ключ Stock');
+  else if (r.state === 'bad_token') body += `<div class="notice error">Ключ Stock не подходит: возможно, в админке выдали новый.</div>` + keyForm('Вставьте новый ключ');
+  else if (r.state === 'down') body += `<div class="notice error">${icon('warn', 15)} stock.adervis.ru не отвечает. Клиенты сейчас не могут войти и скачивать.</div>`;
   else if (s) {
     const alerts = [
       ...(s.engine?.ok === false ? [`Движок Envato не работает${s.engine.reason ? ` (${s.engine.reason})` : ''}: скачивания стоят`] : []),
@@ -3143,7 +3209,7 @@ function renderStock() {
       ...(s.envato?.daysLeft != null && s.envato.daysLeft <= 3 ? [`Подписка Envato кончается через ${s.envato.daysLeft} ${plural(s.envato.daysLeft, 'день', 'дня', 'дней')}`] : []),
       ...(s.keysInStock === 0 ? ['Ключи для продажи закончились'] : [])
     ];
-    body = (alerts.length ? `<div class="notice error"><b>${icon('warn', 15)} Требует внимания</b><ul>${alerts.map(a => `<li>${E(a)}</li>`).join('')}</ul></div>` : '')
+    body += (alerts.length ? `<div class="notice error"><b>${icon('warn', 15)} Требует внимания</b><ul>${alerts.map(a => `<li>${E(a)}</li>`).join('')}</ul></div>` : '')
       + `<div class="sitestats">
         ${card('Продажи', `${s.sales?.day ?? 0}`, `за сутки, за неделю ${s.sales?.week ?? 0}`)}
         ${card('Выручка за месяц', rub(s.money?.revenueMonth), `сегодня ${rub(s.money?.revenueToday)}, средний чек ${rub(s.money?.avgCheck)}`)}
@@ -3154,6 +3220,7 @@ function renderStock() {
         ${card('Подписка Envato', s.envato?.daysLeft != null ? `${s.envato.daysLeft} ${plural(s.envato.daysLeft, 'день', 'дня', 'дней')}` : '—', 'до продления', s.envato?.daysLeft != null && s.envato.daysLeft <= 3 ? 'tone-red' : '')}
         ${card('Движок Envato', s.engine?.ok === false ? 'не работает' : s.engine?.ok ? 'работает' : 'не проверен', s.engine?.checkedAt ? `проверен ${ago(new Date(s.engine.checkedAt).toISOString())}` : 'откройте админку Stock', s.engine?.ok === false ? 'tone-red' : s.engine?.ok ? 'tone-green' : '')}
       </div>
+      ${stockPaybackHtml(r.payback, s)}
       ${(s.bySource || []).length ? `<div class="card"><h2>Продажи по площадкам</h2>
         <p class="muted">За всё время. Сумма — по цене, указанной при выпуске ключа, а если её не указали — по цене тарифа на сайте. Комиссию площадок Stock не вычитает.</p>
         <ul class="sitelist">${s.bySource.map(b => `<li><b>${E(b.label)}</b><span class="muted">${b.sold} ${plural(b.sold, 'продажа', 'продажи', 'продаж')} · ${rub(b.revenue)}</span></li>`).join('')}</ul></div>` : ''}
@@ -7826,6 +7893,10 @@ function render() {
   if (c) c.onchange = e => { category = e.target.value; render(); };
   const sk = $('#stockkey');
   if (sk) sk.onsubmit = e => { e.preventDefault(); const v = sk.elements.key.value.trim(); if (v) stockSaveKey(v); };
+  const cb = $('#cloudbalance');
+  if (cb) cb.onsubmit = e => { e.preventDefault(); cloudSaveBalance(cb); };
+  const ck = $('#cloudkey');
+  if (ck) ck.onsubmit = e => { e.preventDefault(); const v = ck.elements.key.value.trim(); if (v) cloudSaveKey(v); };
   const sa = $('#siteask');
   if (sa) sa.onsubmit = e => { e.preventDefault(); const v = sa.elements.ask.value.trim(); if (v) siteAsk(v); };
   const vslot = $('#bfvoiceslot');
