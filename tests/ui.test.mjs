@@ -3441,8 +3441,8 @@ for (const id of sections) {
       .filter(e => e.getBoundingClientRect().right > window.innerWidth + 1)
       .map(e => e.className || e.tagName).slice(0, 3);
     const tap = [...document.querySelectorAll('.main button, .main label.task')]
-      .filter(b => b.getBoundingClientRect().height > 0 && b.getBoundingClientRect().height < 36)
-      .map(b => `${b.className || b.tagName}|${b.textContent.trim().slice(0, 24)}@${Math.round(b.getBoundingClientRect().height)}`);
+      .filter(b => b.offsetHeight > 0 && b.offsetHeight < 36)
+      .map(b => `${b.className || b.tagName}|${b.textContent.trim().slice(0, 24)}@${b.offsetHeight}`);
     return { scroll: doc.scrollWidth > window.innerWidth + 1, over, tap };
   });
   // снимки разделов продаж на телефоне — для глаз, не для проверки

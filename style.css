@@ -3058,6 +3058,3 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 .clogdel{position:absolute;top:4px;right:4px;width:36px;height:36px;min-height:36px;padding:0;display:grid;place-items:center;border:0;background:none;color:var(--muted)}
 .clogdel:hover{color:var(--ink-bad)}
 @media (max-width:720px){.clogadd .clogline{grid-template-columns:repeat(2,minmax(0,1fr))}}
-
-/* чипы на телефоне: высота не зависит от метрик шрифта */
-@media (max-width:720px){.chip{min-height:36px;box-sizing:border-box}}
