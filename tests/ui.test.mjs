@@ -117,6 +117,7 @@ const fake = (seedData) => {
     messages: [],
     digest_subscribers: [],
     briefs: [],
+    client_log: [],
     studio_rates: [
       { id: 'art', name: 'Арт-директор, концепция', rate: 2000, note: 'Ориентир — проверьте', sort: 10 },
       { id: 'motion', name: 'Моушн-дизайнер', rate: 1700, note: 'Ориентир — проверьте', sort: 20 },
@@ -2159,7 +2160,7 @@ await page.waitForSelector('.bftabs');
 let stB = await state();
 const nb = stB.briefs[0], nlead = stB.leads.find(l => l.id === nb.lead_id);
 check('бриф создан и сразу завёл заявку в воронке', nb && nb.client === 'Химпром' && nlead && nlead.source === 'ВКонтакте' && nlead.status === 'В работе' && nlead.next_on === localDay());
-check('рабочая область: вкладки цепочки', (await page.$$('.bftabs button')).length === 8 && (await page.textContent('h1')) === 'Видеодайджест');
+check('рабочая область: вкладки цепочки', (await page.$$('.bftabs button')).length === 9 && (await page.textContent('h1')) === 'Видеодайджест');
 
 await page.click('[data-action=bfai]');
 await page.waitForSelector('.bftabs button.active:has-text("Разбор")');
@@ -2458,6 +2459,39 @@ await page.click(`[data-brief="${stB.briefs[0].id}"]`);
 await page.click('[data-action=bftab][data-id=talk]');
 check('диалог: восемь шагов, текущий подсвечен, цена из КП в тексте', (await page.$$('.bfstep')).length === 8 && (await page.$$('.bfstep.now')).length === 3
   && norm(await page.textContent('.bftalk')).includes('210 000 ₽'));
+await page.click('[data-action=bftab][data-id=log]');
+await page.fill('.clog [data-log=who]', 'Артём');
+await page.fill('.clog [data-log=contact]', 'Мария');
+await page.click('[data-action=logadd]');
+check('журнал: пустую запись не сохраняет', (await state()).client_log.length === 0);
+await page.fill('.clog [data-log=title]', 'Договорились созвониться в среду');
+await page.click('[data-action=logadd]');
+await page.waitForSelector('.cloglist li');
+const logRow = (await state()).client_log[0];
+check('журнал: запись привязана к заявке брифа, видно кто и с кем', logRow?.lead_id === (await state()).briefs[0].lead_id && logRow.title === 'Договорились созвониться в среду'
+  && (await page.textContent('.clogmeta')).includes('Артём → Мария'));
+await page.click('[data-action=bfback]');
+await page.click(`[data-brief="${stB.briefs[0].id}"]`);
+await page.click('[data-action=bftab][data-id=log]');
+await page.click('.bfpill[data-action=openlead]');
+await page.waitForSelector('#lf .cloglist li');
+check('журнал: те же записи в карточке заявки', (await page.textContent('#lf .clogtext')).includes('созвониться'));
+await page.fill('#lf [data-log=title]', 'Enter не закрывает карточку');
+await page.press('#lf [data-log=contact]', 'Enter');
+check('журнал: Enter в поле не сохраняет карточку заявки', await page.isVisible('#lf'));
+await page.click('#lf [data-action=logdel]');
+await page.click('#confirmdel');
+await page.waitForFunction(() => window.__STATE__.client_log.length === 0);
+await nav('briefs');
+await page.click(`[data-brief="${stB.briefs[0].id}"]`);
+await page.click('[data-action=bftab][data-id=kp]');
+await page.fill('#kpfull', '333000');
+await page.waitForFunction(id => window.__STATE__.leads.find(l => l.id === id)?.amount === 333000, stB.briefs[0].lead_id);
+check('цена в КП сменилась: сумма заявки пошла за ней', true);
+await page.fill('#kpfull', String(stB.briefs[0].kp?.price_full ?? 210000));
+await page.waitForFunction(() => window.__STATE__.briefs[0].kp.price_full !== 333000);
+await page.waitForTimeout(900);
+await page.click('[data-action=bftab][data-id=talk]');
 await page.fill('#bfnexton', localDay());
 await page.waitForFunction(d => window.__STATE__.briefs[0].next_on === d, localDay());
 await nav('home');

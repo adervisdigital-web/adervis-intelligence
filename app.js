@@ -78,7 +78,8 @@ const FIELDS = {
   lead_magnets: ['id', 'name', 'direction', 'format', 'status', 'audience', 'promise', 'exchange', 'next_step', 'channels', 'note', 'pitch'],
   sales_scripts: ['id', 'stage', 'title', 'body', 'note', 'sort'],
   briefs: ['id', 'lead_id', 'title', 'client', 'stage', 'source_text', 'analysis', 'questions', 'estimate', 'plan', 'kp', 'next_step', 'next_on'],
-  studio_rates: ['id', 'name', 'rate', 'note', 'sort']
+  studio_rates: ['id', 'name', 'rate', 'note', 'sort'],
+  client_log: ['id', 'lead_id', 'on_date', 'who', 'contact', 'channel', 'title']
 };
 const DATE_COLUMN = { content: 'publish_on', metrics: 'measured_on' };
 // Эти поля ведёт сервер — бот и переписка. Приложение их показывает, но не
@@ -150,7 +151,7 @@ function createApi(cfg) {
     async isMember() { return must(await sb.rpc('is_member')) === true; },
 
     async load() {
-      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats, survey, scripts, outreach, briefs, rates] = await Promise.all([
+      const [knowledge, content, tasks, metrics, files, brand, campaigns, decisions, leads, publications, ai, members, activity, accounts, prospects, kpiTargets, magnets, keywordSets, adTexts, channelStats, survey, scripts, outreach, briefs, rates, clientLog] = await Promise.all([
         selectAll('knowledge', 'created_at'),
         selectAll('content', 'created_at'),
         selectAll('tasks', 'created_at'),
@@ -175,7 +176,8 @@ function createApi(cfg) {
         selectAll('sales_scripts', 'sort'),
         sb.from('outreach_settings').select('*').eq('id', 'main').maybeSingle().then(must),
         selectAll('briefs', 'created_at'),
-        selectAll('studio_rates', 'sort')
+        selectAll('studio_rates', 'sort'),
+        selectAll('client_log', 'on_date')
       ]);
       return {
         knowledge: knowledge.map(r => fromRow('knowledge', r)),
@@ -198,6 +200,7 @@ function createApi(cfg) {
         outreach: outreach || {},
         briefs: briefs.map(r => fromRow('briefs', r)),
         studio_rates: rates.map(r => fromRow('studio_rates', r)),
+        client_log: clientLog.map(r => fromRow('client_log', r)),
         publications, ai, members, activity, accounts
       };
     },
@@ -308,7 +311,7 @@ const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
   prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: [], channel_stats: [], survey_answers: [],
-  sales_scripts: [], outreach: {}, briefs: [], studio_rates: []
+  sales_scripts: [], outreach: {}, briefs: [], studio_rates: [], client_log: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -493,7 +496,7 @@ function filters(categories) {
 
 const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук',
   leads: 'заявку', campaigns: 'кампанию', prospects: 'компанию', lead_magnets: 'лид-магнит', keyword_sets: 'набор фраз', ad_texts: 'объявление', channel_stats: 'статистику', decisions: 'решение',
-  sales_scripts: 'скрипт продаж', outreach_settings: 'тексты бота', briefs: 'бриф', studio_rates: 'ставки студии' };
+  sales_scripts: 'скрипт продаж', outreach_settings: 'тексты бота', briefs: 'бриф', studio_rates: 'ставки студии', client_log: 'запись журнала клиента' };
 const ACTION_NAME = { insert: 'Добавил', update: 'Изменил', delete: 'Удалил' };
 
 function feed(limit) {
@@ -4378,7 +4381,7 @@ async function tgLink() {
 // «На сегодня».
 
 const BRIEF_STAGES = ['Разбор', 'Вопросы', 'Расчёт', 'КП', 'Переговоры', 'Сделка'];
-const BRIEF_TABS = [['tz', 'ТЗ'], ['analysis', 'Разбор'], ['questions', 'Вопросы'], ['estimate', 'Смета'], ['plan', 'План'], ['kp', 'КП'], ['check', 'Проверка'], ['talk', 'Диалог']];
+const BRIEF_TABS = [['tz', 'ТЗ'], ['analysis', 'Разбор'], ['questions', 'Вопросы'], ['estimate', 'Смета'], ['plan', 'План'], ['kp', 'КП'], ['check', 'Проверка'], ['talk', 'Диалог'], ['log', 'Журнал']];
 const VARIANTS = [['both', 'В обоих'], ['full', 'Только полный'], ['base', 'Только базовый']];
 const Q_STATUS = ['новый', 'задан', 'ответ'];
 let briefView = { id: '', tab: 'tz', busy: false, error: '' };
@@ -4523,6 +4526,7 @@ async function flushBrief(id) {
     b._at = saved._at; b._by = saved._by;
     const st = $('#bfsaved');
     if (st) st.textContent = 'сохранено';
+    if (briefPriceMoved.delete(id)) await syncLeadAmount(b);
   } catch (err) {
     const st = $('#bfsaved');
     if (st) st.textContent = 'не сохранилось';
@@ -4552,6 +4556,16 @@ async function syncLead(b, patch) {
     const saved = await api.update('leads', { ...l, ...patch, reached: reachedOf(patch.status || l.status, l.reached) });
     upsertLocal('leads', saved);
   } catch (err) { handleError(err); }
+}
+
+// Цена в КП сменилась: сумма заявки идёт за ней, пока заявка в работе.
+// Сумму сделки ведёт CRM, поэтому закрытые заявки не трогаем; другие сохранения
+// брифа сумму тоже не трогают, чтобы не затереть её ручную правку.
+const briefPriceMoved = new Set();
+async function syncLeadAmount(b) {
+  const l = briefLead(b), price = Number(b.kp?.price_full) || Number(b.kp?.price_base) || 0;
+  if (!l || !price || Number(l.amount) === price || !['Новое', 'В работе', 'КП отправлено'].includes(l.status)) return;
+  await syncLead(b, { amount: price });
 }
 
 // ---- список
@@ -4680,7 +4694,7 @@ function renderBrief(b) {
     ${briefNow(b)}
     <div class="subnav bftabs" role="tablist">${BRIEF_TABS.map(([k, t]) => `<button role="tab" class="${k === tab ? 'active' : ''}" aria-selected="${k === tab}" data-action="bftab" data-id="${k}">${t}${tabBadge(b, k)}</button>`).join('')}</div>
   </div>`;
-  const body = { tz: bfTz, analysis: bfAnalysis, questions: bfQuestions, estimate: bfEstimate, plan: bfPlan, kp: bfKp, check: bfCheck, talk: bfTalk }[tab](b);
+  const body = { tz: bfTz, analysis: bfAnalysis, questions: bfQuestions, estimate: bfEstimate, plan: bfPlan, kp: bfKp, check: bfCheck, talk: bfTalk, log: bfLog }[tab](b);
   return head + `<div class="bfbody">${body}</div>`;
 }
 
@@ -4767,6 +4781,7 @@ function tabBadge(b, k) {
   if (k === 'estimate') { const n = (b.estimate?.items || []).length; return n ? ` <small>${n}</small>` : ''; }
   if (k === 'check') { const a = briefAudit(b), er = a.filter(x => x.lvl === 'err').length, w = a.filter(x => x.lvl === 'warn').length;
     return er ? ` <b class="navbadge late">${er}</b>` : w ? ` <b class="navbadge">${w}</b>` : ` <span class="bfok">${icon('check', 13)}</span>`; }
+  if (k === 'log') { const n = clientLog(b.lead_id).length; return n ? ` <small>${n}</small>` : ''; }
   return '';
 }
 
@@ -5640,6 +5655,7 @@ function onBriefInput(e) {
     toast(`Цены в КП: ${kp.price_base ? `базовый ${rub(kp.price_base)}, ` : ''}полный ${rub(kp.price_full)}`);
   }
   if (el.dataset.bf.startsWith('estimate.')) b.estimate.edited = true;
+  if (['kp.price_full', 'kp.price_base', 'estimate.rate_k'].includes(el.dataset.bf)) briefPriceMoved.add(b.id);
   // суммы, даты и цифры пересчитываются на месте
   const totals = $('#bftotals');
   if (totals) totals.innerHTML = totalsHtml(b);
@@ -9014,6 +9030,7 @@ function editLead(id) {
       ${reasonField(l.lost_reason || '', LOST.includes(l.status), 'Почему не вышло')}
     </section>
     <label>Заметка</label><textarea name="note" maxlength="1000">${E(l.note)}</textarea>
+    ${exists ? clientLogHtml(l.id) : ''}
     </div>
     <aside class="ldside">
     ${exists ? `<div class="ldlinks">${br ? `<button type="button" class="ldlink" data-action="openbrief" data-id="${E(br.id)}">${icon('proposal', 16)}<span><b>${E(br.title)}</b><small>Бриф и КП · ${E(br.stage)}</small></span></button>`
@@ -9051,6 +9068,66 @@ function editLead(id) {
     if (!lost) lf.elements.lost_reason.value = '';
   };
   submitForm(lf, 'leads', l, exists, 'Обращение записано');
+}
+
+// ---- журнал клиента: кто, что, когда и с кем договорился
+const LOG_CHANNELS = ['Telegram', 'ВКонтакте', 'Почта', 'Звонок', 'Встреча', 'Другое'];
+let logWho = '';
+const clientLog = leadId => db.client_log.filter(x => x.lead_id === leadId)
+  .sort((a, c) => String(c.on_date).localeCompare(String(a.on_date)) || String(c._at || '').localeCompare(String(a._at || '')));
+
+// Поля привязаны к несуществующей форме: журнал живёт и внутри карточки заявки,
+// Enter здесь не должен сохранять и закрывать саму карточку.
+function clientLogHtml(leadId) {
+  const rows = clientLog(leadId);
+  return `<section class="clog" data-lead="${E(leadId)}"><h3>${icon('chat', 15)} Журнал клиента${rows.length ? ` <small>${rows.length}</small>` : ''}</h3>
+    <div class="clogadd">
+      <div class="formgrid clogline">
+        <div><label for="clogdate">Когда</label><input id="clogdate" form="clognone" type="date" data-log="on_date" value="${today()}"></div>
+        <div><label for="clogchannel">Где</label><select id="clogchannel" form="clognone" data-log="channel">${opts(LOG_CHANNELS, 'Telegram')}</select></div>
+        <div><label for="clogwho">Кто из нас</label><input id="clogwho" form="clognone" data-log="who" maxlength="80" list="clogwhos" value="${E(logWho)}"><datalist id="clogwhos"><option value="Артём"></option><option value="Александр"></option></datalist></div>
+        <div><label for="clogcontact">С кем</label><input id="clogcontact" form="clognone" data-log="contact" maxlength="120" placeholder="Имя клиента"></div>
+      </div>
+      <label for="clogtext">Что было и о чём договорились</label>
+      <textarea id="clogtext" form="clognone" data-log="title" maxlength="2000" rows="2"></textarea>
+      <button type="button" data-action="logadd">Записать</button>
+    </div>
+    ${rows.length ? `<ol class="cloglist">${rows.map(x => `<li>
+      <p class="clogmeta"><b>${E(shortDate(x.on_date))}</b>${[x.channel, [x.who, x.contact].filter(Boolean).join(' → ')].filter(Boolean).map(s => ` · ${E(s)}`).join('')}</p>
+      <p class="clogtext">${E(x.title)}</p>
+      <button type="button" class="clogdel" data-action="logdel" data-id="${E(x.id)}" aria-label="Удалить запись" title="Удалить запись">${icon('close', 14)}</button></li>`).join('')}</ol>`
+      : '<p class="muted">Пока пусто. Записывайте сюда договорённости, чтобы они не терялись в мессенджерах.</p>'}
+  </section>`;
+}
+
+function bfLog(b) {
+  return briefLead(b) ? clientLogHtml(b.lead_id)
+    : '<div class="card empty"><h2>У брифа нет заявки</h2><p>Журнал ведётся по заявке. Создайте её в разделе «Заявки» и привяжите к брифу.</p></div>';
+}
+
+async function logAdd(btn) {
+  const box = btn.closest('.clog'), val = k => box.querySelector(`[data-log=${k}]`).value.trim();
+  const title = val('title');
+  if (!title) { toast('Напишите, что было и о чём договорились'); box.querySelector('[data-log=title]').focus(); return; }
+  logWho = val('who');
+  btn.disabled = true;
+  try {
+    const saved = await api.insert('client_log', { id: uid(), lead_id: box.dataset.lead, on_date: val('on_date') || today(), who: logWho, contact: val('contact'), channel: val('channel'), title });
+    upsertLocal('client_log', saved);
+    noteLocal('insert', 'client_log', saved);
+    box.outerHTML = clientLogHtml(saved.lead_id);
+    toast('Записано в журнал');
+  } catch (err) { btn.disabled = false; handleError(err); }
+}
+
+function logDel(id) {
+  const x = db.client_log.find(r => r.id === id);
+  if (!x) return;
+  askDelete('Удалить запись журнала?', `«${E(x.title.slice(0, 120))}» исчезнет из журнала клиента.`, async () => {
+    await api.remove('client_log', id);
+    db.client_log = db.client_log.filter(r => r.id !== id);
+    noteLocal('delete', 'client_log', x);
+  });
 }
 
 function delLead(id) {
@@ -9519,7 +9596,7 @@ function exportJson() {
     files: strip(db.files), publications: strip(db.publications),
     prospects: strip(db.prospects), lead_magnets: strip(db.lead_magnets), keyword_sets: strip(db.keyword_sets), ad_texts: strip(db.ad_texts), channel_stats: strip(db.channel_stats), survey_answers: strip(db.survey_answers), kpi_targets: strip(db.kpi_targets),
     // тексты бота и скрипты; ключей ботов в браузере нет, поэтому и в копии их нет
-    sales_scripts: strip(db.sales_scripts), outreach_settings: db.outreach, briefs: strip(db.briefs), studio_rates: strip(db.studio_rates)
+    sales_scripts: strip(db.sales_scripts), outreach_settings: db.outreach, briefs: strip(db.briefs), studio_rates: strip(db.studio_rates), client_log: strip(db.client_log)
   }, null, 2), 'adervis-backup-' + today() + '.json');
 }
 
@@ -9780,6 +9857,8 @@ document.addEventListener('click', async e => {
     case 'leadstatus': leadFilter.status = b.dataset.id; render(); break;
     case 'newlead': editLead(); break;
     case 'dellead': delLead(b.dataset.id); break;
+    case 'logadd': logAdd(b); break;
+    case 'logdel': logDel(b.dataset.id); break;
     case 'graphfull': graph.open = !graph.open; render(); break;
     case 'icondir': iconSheet.dir = b.dataset.id; render(); break;
     case 'iconpick': iconSheet.pick = iconSheet.pick === b.dataset.id ? '' : b.dataset.id; render(); break;

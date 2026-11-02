@@ -3042,3 +3042,19 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 .bfcrmbar{height:6px;border-radius:99px;background:color-mix(in srgb,var(--ink) 9%,transparent);overflow:hidden}
 .bfcrmbar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--gold),var(--tone-green));transition:width .6s cubic-bezier(.22,1,.36,1)}
 @media (prefers-reduced-motion:reduce){.bfcrmbar i{transition:none}}
+
+/* журнал клиента: в карточке заявки и на вкладке брифа */
+.clog{margin-top:18px}
+.clog h3{display:flex;align-items:center;gap:6px;margin:0 0 10px;font-size:15px}
+.clog h3 small{color:var(--muted);font-weight:500}
+.clogadd{display:grid;gap:8px;padding:14px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--ink) 2.5%,transparent)}
+.clogadd .clogline{grid-template-columns:repeat(4,minmax(0,1fr))}
+.clogadd button{justify-self:start}
+.cloglist{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
+.cloglist li{position:relative;padding:10px 40px 10px 14px;border-left:3px solid var(--gold);border-radius:0 12px 12px 0;background:color-mix(in srgb,var(--gold) 6%,transparent)}
+.clogmeta{margin:0;font-size:13px;color:var(--muted)}
+.clogmeta b{color:var(--ink)}
+.clogtext{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.clogdel{position:absolute;top:4px;right:4px;width:36px;height:36px;min-height:36px;padding:0;display:grid;place-items:center;border:0;background:none;color:var(--muted)}
+.clogdel:hover{color:var(--ink-bad)}
+@media (max-width:720px){.clogadd .clogline{grid-template-columns:repeat(2,minmax(0,1fr))}}

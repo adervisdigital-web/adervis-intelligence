@@ -259,5 +259,16 @@ await as('authenticated', 'artem@adervis.ru', `update public.prospects set city 
 check('правка поля карточки двигает время правки',
   (await as('authenticated', 'artem@adervis.ru', `select updated_at::text t from public.prospects where id='pt1'`)).rows[0].t !== ptAt);
 
+await as('authenticated', 'artem@adervis.ru', `insert into public.leads (id, name) values ('log-lead', 'Журнал')`);
+await as('authenticated', 'artem@adervis.ru', `insert into public.client_log (lead_id, title, who) values ('log-lead', 'Созвонились', 'Артём')`);
+check('журнал клиента: участник пишет, действие попадает в журнал изменений',
+  (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.activity where entity='client_log'`)).rows[0].c === 1);
+check('журнал клиента: посторонний не видит и не пишет',
+  (await as('authenticated', 'stranger@gmail.com', 'select count(*)::int c from public.client_log')).rows[0].c === 0
+  && (await fail('authenticated', 'stranger@gmail.com', `insert into public.client_log (lead_id, title) values ('log-lead', 'чужой')`)) !== null);
+await as('authenticated', 'artem@adervis.ru', `delete from public.leads where id = 'log-lead'`);
+check('журнал клиента: уходит вместе с заявкой',
+  (await as('authenticated', 'artem@adervis.ru', `select count(*)::int c from public.client_log where lead_id='log-lead'`)).rows[0].c === 0);
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);
