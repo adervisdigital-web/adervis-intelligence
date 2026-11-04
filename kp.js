@@ -66,7 +66,8 @@
       <div class="gallery">${g.items.map((m, i) => `<figure class="${m.kind === 'video' || (g.items.length % 2 && i === 0) ? 'wide' : ''}">
         ${m.kind === 'video'
           ? `<video src="${E(m.url)}"${safeUrl(m.poster) ? ` poster="${E(m.poster)}"` : ''} controls controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture disableremoteplayback playsinline muted loop preload="metadata"></video>`
-          : `<div class="shot"><img src="${E(m.url)}" alt="${E(m.caption || '')}" loading="lazy" draggable="false"><span class="shield" aria-hidden="true"></span></div>`}
+          : `<div class="shot" role="button" tabindex="0" aria-label="Открыть крупно"><img src="${E(m.url)}" alt="${E(m.caption || '')}" loading="lazy" draggable="false"><span class="shield" aria-hidden="true"></span>
+              <span class="zoomhint" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Крупно</span></div>`}
         ${m.caption ? `<figcaption>${E(m.caption)}</figcaption>` : ''}</figure>`).join('')}</div>`).join('')}</div></section>`;
   }
 
@@ -378,7 +379,67 @@
       el.addEventListener('contextmenu', ev => ev.preventDefault());
       el.addEventListener('dragstart', ev => ev.preventDefault());
     });
+    lightbox(root);
     watch();
+  }
+
+  // Пример крупно: клик открывает кадр целиком на весь экран (в галерее он обрезан под 16:9),
+  // клик по кадру — 100 % с прокруткой за мышью, чтобы читать мелкий текст буклета. Стрелки листают, Esc закрывает.
+  function lightbox(root) {
+    const shots = [...root.querySelectorAll('.gallery .shot')];
+    if (!shots.length) return;
+    const box = document.createElement('div');
+    box.className = 'lb'; box.hidden = true;
+    box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Пример крупно');
+    box.innerHTML = `<div class="lb-stage"><img alt="" draggable="false"></div>
+      <p class="lb-cap"></p><p class="lb-tip">Нажмите на кадр, чтобы приблизить</p>
+      <button class="lb-x" type="button" aria-label="Закрыть">×</button>
+      ${shots.length > 1 ? '<button class="lb-nav prev" type="button" aria-label="Предыдущий">‹</button><button class="lb-nav next" type="button" aria-label="Следующий">›</button>' : ''}`;
+    document.body.append(box);
+    const stage = box.querySelector('.lb-stage'), img = box.querySelector('img'), cap = box.querySelector('.lb-cap');
+    let cur = 0, zoom = false, back = null;
+    img.addEventListener('contextmenu', ev => ev.preventDefault());
+    const setZoom = (z, ev) => {
+      zoom = z && img.naturalWidth > stage.clientWidth * 1.05;
+      box.classList.toggle('zoom', zoom);
+      if (zoom && ev) {                                   // приблизить в точку, куда нажали
+        const r = img.getBoundingClientRect(), fx = (ev.clientX - r.left) / r.width, fy = (ev.clientY - r.top) / r.height;
+        requestAnimationFrame(() => { stage.scrollLeft = fx * stage.scrollWidth - stage.clientWidth / 2; stage.scrollTop = fy * stage.scrollHeight - stage.clientHeight / 2; });
+      }
+    };
+    const show = i => {
+      cur = (i + shots.length) % shots.length;
+      const s = shots[cur].querySelector('img');
+      img.src = s.currentSrc || s.src; cap.textContent = s.alt; setZoom(false);
+    };
+    const open = i => {
+      back = document.activeElement; show(i); box.hidden = false;
+      document.documentElement.classList.add('lb-open'); box.querySelector('.lb-x').focus();
+    };
+    const close = () => { box.hidden = true; document.documentElement.classList.remove('lb-open'); back?.focus?.(); };
+    shots.forEach((s, i) => {
+      s.addEventListener('click', () => open(i));
+      s.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(i); } });
+    });
+    box.addEventListener('click', ev => {
+      const t = ev.target;
+      if (t.closest('.lb-x')) close();
+      else if (t.closest('.lb-nav')) show(cur + (t.closest('.next') ? 1 : -1));
+      else if (t === img) setZoom(!zoom, ev);
+      else if (!zoom) close();                            // клик мимо кадра закрывает
+    });
+    stage.addEventListener('mousemove', ev => {           // при 100 % кадр едет за мышью
+      if (!zoom) return;
+      const r = stage.getBoundingClientRect();
+      stage.scrollLeft = (ev.clientX - r.left) / r.width * (stage.scrollWidth - stage.clientWidth);
+      stage.scrollTop = (ev.clientY - r.top) / r.height * (stage.scrollHeight - stage.clientHeight);
+    });
+    document.addEventListener('keydown', ev => {
+      if (box.hidden) return;
+      if (ev.key === 'Escape') close();
+      else if (ev.key === 'ArrowRight') show(cur + 1);
+      else if (ev.key === 'ArrowLeft') show(cur - 1);
+    });
   }
 
   // Как клиент читает КП: время (только пока вкладка на экране), разделы,

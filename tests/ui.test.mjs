@@ -2310,6 +2310,10 @@ check('страница КП: открыл сотрудник (входили в
 await kpPage.click('[data-v=base]').catch(() => {});
 check('страница КП: просмотр команды не шлёт сигналов «как читали»', !kpPosts.some(p => p.action === 'track'));
 await kpPage.click('[data-v=full]').catch(() => {});
+await kpPage.click('.gallery .shot');
+const lbOpen = await kpPage.isVisible('.lb'), lbSame = (await kpPage.$eval('.lb img', i => i.src)) === (await kpPage.$eval('.gallery img', i => i.src));
+await kpPage.keyboard.press('Escape');
+check('страница КП: пример открывается крупно целиком, Esc закрывает', lbOpen && lbSame && !(await kpPage.isVisible('.lb')));
 {
   // клиент: чужой браузер без входа в Hub — просмотр считается, плашки нет
   const guest = await browser.newContext();
