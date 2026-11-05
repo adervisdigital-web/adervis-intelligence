@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.supabase.co; media-src https://*.supabase.co; font-src 'self'; connect-src https://*.supabase.co; base-uri 'none'; form-action 'none'">
+<title>Прототип брони</title>
+<link rel="stylesheet" href="booking.css">
+<script src="booking.js" defer></script>
+</head>
+<body>
+  <header class="intro" id="intro">
+    <b>Прототип</b> <span class="pc">Попробуйте: слева выберите свободные часы и отправьте заявку как гость, справа подтвердите её как администратор.</span><span class="mob">Попробуйте: во вкладке «Гость» выберите свободные часы и отправьте заявку, во вкладке «Администратор» подтвердите её.</span>
+  </header>
+  <nav class="tabs" id="tabs">
+    <button type="button" data-tab="g" class="on">Гость</button>
+    <button type="button" data-tab="a">Администратор <i id="tabBadge"></i></button>
+  </nav>
+  <main class="stage">
+    <section class="guest" id="guest">
+      <div class="scr" id="scr">
+        <div class="toast" id="gToast"><div class="ic" id="gIc">✓</div><div><b id="gT"></b><span id="gS"></span></div></div>
+        <div class="gtop"><div class="brand" id="gName"></div><div class="sub" id="gSub"></div><div class="tags" id="gTags"></div></div>
+        <div class="days" id="gDays"></div>
+        <div class="mine" id="gMine"></div>
+        <div class="hint"><em>свободно</em><em class="b">занято</em><em class="s">ваш выбор</em></div>
+        <div class="halls" id="gHalls"></div>
+        <div class="pad"></div>
+        <div class="bar" id="gBar"><div class="w"><b id="gBarT"></b><span id="gBarS"></span></div>
+          <div class="row"><button type="button" class="btn" id="gReq">Оставить заявку</button><button type="button" class="btn g" id="gWrite">Написать</button></div></div>
+        <div class="dim" id="gDim"></div>
+        <form class="sheet" id="gSheet" autocomplete="off">
+          <div class="sh"><h4>Заявка на бронь</h4><button type="button" class="x" id="gClose" aria-label="Закрыть">×</button></div>
+          <div class="sum" id="gSum"></div>
+          <label class="fld"><i>Имя</i><input id="fName" placeholder="Как к вам обращаться"></label>
+          <div class="two"><label class="fld"><i>Телефон</i><input id="fTel" inputmode="tel" placeholder="+7"></label><label class="fld sm"><i>Гостей</i><input id="fGu" inputmode="numeric" value="4"></label></div>
+          <label class="fld"><i>Пожелания</i><input id="fCom" placeholder="День рождения, торт, караоке…"></label>
+          <button type="submit" class="btn wide">Отправить заявку</button>
+          <div class="note">Это прототип: заявка уйдёт только в кабинет справа.</div>
+        </form>
+      </div>
+    </section>
+    <section class="admin" id="admin">
+      <div class="am">
+        <div class="ah"><div class="brand sm" id="aName"></div><span class="role">кабинет администратора</span>
+          <div class="dsel"><button type="button" id="aPrev" aria-label="Предыдущий день">‹</button><b id="aDay"></b><button type="button" id="aNext" aria-label="Следующий день">›</button></div></div>
+        <div class="kpi"><div class="r"><i>Новые заявки</i><b id="kReq">0</b></div><div><i>Броней на день</i><b id="kB">0</b></div><div><i>Загрузка вечером</i><b id="kL">0%</b></div></div>
+        <div class="gridwrap"><div class="grid" id="aGrid"></div></div>
+        <div class="legend"><em class="l1">подтверждено</em><em class="l2">заявка гостя</em><em class="l3">бронь по телефону</em><span>Нажмите на пустую клетку, чтобы записать бронь по телефону</span></div>
+      </div>
+      <aside class="side"><h3>Заявки <span id="sReq">0</span></h3><div id="aReqs"><p class="empty">Пока заявок нет. Отправьте заявку со страницы гостя.</p></div></aside>
+      <div class="tg" id="aTg"><div class="ic">✈</div><div><b>Telegram · бронь</b><span id="aTgS"></span></div></div>
+      <div class="pop" id="aPop"><b id="aPopT"></b><div class="pr"><button type="button" data-n="1">1 ч</button><button type="button" data-n="2">2 ч</button><button type="button" data-n="3">3 ч</button></div><button type="button" class="pc" id="aPopX">Отмена</button></div>
+    </section>
+  </main>
+</body>
+</html>
