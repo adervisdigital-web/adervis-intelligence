@@ -13,6 +13,8 @@
   let svc = D.legacy[P.get('t')] || P.get('t');
   if (!D.services.some(s => s.id === svc)) svc = '';
   const root = document.getElementById('brief');
+  const CLIENTS = [['sibur', 'Сибур'], ['himprom', 'Химпром'], ['promobot', 'Промобот'], ['ujin', 'UJIN'], ['bitva-robotov', 'Битва роботов'], ['shabani', 'Shabani Energy'],
+    ['rokstar', 'Рок-Стар'], ['psp', 'PSP Sport Nutrition'], ['express-import', 'Экспресс-Импорт'], ['aratta', 'Аратта'], ['stikbot', 'Stickbot'], ['feliks', 'Феликс']];
   // цвета услуг и прогресс ставим из скрипта: строгая политика страницы не пускает style="" в разметке
   const paint = () => { root.querySelectorAll('[data-c]').forEach(el => el.style.setProperty('--c', el.dataset.c)); root.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }); };
   new MutationObserver(paint).observe(root, { childList: true, subtree: true });
@@ -39,7 +41,7 @@
   const voiceBtn = () => `<button class="vbtn${voiceOn ? ' on' : ''}" data-act="voice" aria-pressed="${voiceOn}" title="${voiceOn ? 'Выключить голос' : 'Включить голос'}">
     <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="vt">${voiceOn ? 'Голос включён' : 'Голос выключен'}</span></button>`;
   const top = (pct, back) => `<header class="qtop" data-c="${service()?.c || '#F6BD3A'}">
-    ${back ? `<button class="back" data-act="back" aria-label="Назад">${icon('back', 22)}</button>` : '<a class="logo" href="https://adervis.ru"><img src="brand/logo-2026.svg" alt="ADERVIS"></a>'}
+    ${back ? `<button class="back" data-act="back" aria-label="Назад">${icon('back', 22)}</button>` : '<span class="qlabel">Бриф</span>'}
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i data-w="${pct}"></i></div>${voiceBtn()}</header>`;
 
   // ---- справа на компьютере: бриф собирается по ходу ответов
@@ -63,7 +65,11 @@
       <div class="svc">${D.services.map((s, i) => `<button class="tile" data-act="svc" data-id="${s.id}" data-c="${s.c}" data-i="${i}">
         <img src="brief-img/${s.id}.webp" alt="" loading="${i < 4 ? 'eager' : 'lazy'}"><span class="ti">${icon(s.icon, 28)}</span>
         <span class="tt"><b>${E(s.t)}</b><small>${E(s.sub)}</small></span><span class="go">${icon('next', 18)}</span></button>`).join('')}</div>
-      <p class="trust">${icon('star', 16)} С 2018 года: реклама, мероприятия, дизайн и ИИ для бизнеса</p></main></div>`;
+      <ol class="how" aria-label="Как это работает">
+        <li><span>1</span><b>Выберите направление</b><small>Видео, фото, дизайн, ИИ или сайт</small></li>
+        <li><span>2</span><b>Ответьте на вопросы</b><small>Кнопками, пара слов там, где нужно</small></li>
+        <li><span>3</span><b>Получите план и стоимость</b><small>Напишем вам с готовым предложением</small></li></ol>
+      <section class="clients" aria-label="Нам доверяют"><p>Нам доверяют</p><div>${CLIENTS.map(([f, n]) => `<img src="brief-img/clients/${f}.webp" alt="${E(n)}" width="240" height="120">`).join('')}</div></section></main></div>`;
   }
 
   // ---- вопрос
@@ -99,7 +105,7 @@
         <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true"></div>
       <p class="err" id="err" role="alert"></p>
       <button class="next send" data-act="send">Отправить бриф ${icon('send', 18)}</button>
-      <p class="fine">Ответы получит команда ADERVIS и напишет вам по этому контакту.</p>`);
+      <p class="fine">Нажимая «Отправить бриф», вы соглашаетесь с <a href="https://adervis.ru/docs/#docs-privacy" target="_blank" rel="noopener noreferrer">политикой конфиденциальности</a>. Ответы получит только команда ADERVIS.</p>`);
     say('contact');
   }
 
