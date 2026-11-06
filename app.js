@@ -10517,7 +10517,11 @@ function dockBubble(show) {
   dockAda?.set('talk'); Ada.chirp('tap');
   dockBubble.t = setTimeout(() => { b.classList.remove('on'); if (dockAway) dockAda?.set('hello'); }, 5000);
 }
+// 07.11.2026 Артём: «убрать Аду отсюда наверху» — в «Сейчас главное» Ада больше не перелетает,
+// остаётся в своём углу. Перелёт (dockFly) оставлен на случай, если решим вернуть.
+const DOCK_FLY_TO_CARD = false;
 document.addEventListener('pointerover', e => {
+  if (!DOCK_FLY_TO_CARD) return;
   const card = e.target.closest?.('#view .hmnow');
   if (card && dockAway !== card) dockFly(card);
   else if (!card && dockAway && !e.target.closest?.('#adadock')) dockFly(null);
