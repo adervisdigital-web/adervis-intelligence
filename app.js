@@ -3948,7 +3948,9 @@ function chatHtml(p) {
 function dialogsEmpty() {
   const u = db.outreach.tg_bot_username;
   return `<div class="card empty dlgempty"><h2>Переписок пока нет</h2>
-    ${u ? `<p>Бот <a href="https://t.me/${E(u)}" target="_blank" rel="noopener noreferrer">@${E(u)}</a> подключён. Как только клиент ему напишет, диалог появится здесь, а заполненная анкета станет заявкой в воронке.</p>
+    <div class="dlgmgr">${icon('send', 20)}<p>Сообщения из личного аккаунта <b>ADERVIS Manager</b> Hub не видит: Telegram не даёт сервисам читать личные чаты. Отправляйте клиенту ссылку на бриф: ответы придут сюда заявкой и брифом.</p>
+      <button class="primary" data-action="bflinks">Бриф клиенту</button></div>
+    ${u ?`<p>Бот <a href="https://t.me/${E(u)}" target="_blank" rel="noopener noreferrer">@${E(u)}</a> подключён. Как только клиент ему напишет, диалог появится здесь, а заполненная анкета станет заявкой в воронке.</p>
       <p class="muted">Ссылку на бота стоит поставить в шапку группы ВКонтакте, на сайт, в подпись и на визитку.</p>`
     : `<p>Подключите Telegram-бота для клиентов: он ответит на вопросы по базе знаний, покажет работы и соберёт заявку за минуту. Всё, что ему пишут, будет здесь.</p>
       <div class="formactions"><button class="primary" data-action="dlgchannels">Подключить Telegram</button></div>`}
@@ -4643,6 +4645,7 @@ function renderBriefs() {
   const head = heading('Брифы и КП', 'Заявка с ТЗ — от разбора до подписанного КП: вопросы клиенту, смета, план, коммерческое предложение и что писать на каждом шаге.',
     `<div class="headactions"><button data-action="crm">${icon('link', 15)} ADERVIS CRM${db.outreach.crm_agency_id ? ' <b class="okdot" aria-label="подключена"></b>' : ''}</button>
       <button data-action="bfrates">${icon('estimate', 15)} Ставки студии</button>
+      <button data-action="bflinks">${icon('send', 15)} Бриф клиенту</button>
       <button class="primary" data-action="bfnew">+ Бриф</button></div>`);
   const chain = `<ol class="bfchain">${BRIEF_STAGES.map((s, i) => `<li><b>${i + 1}</b>${s}</li>`).join('')}</ol>`;
   const list = [...db.briefs].sort((a, c) => (a.stage === 'Сделка' || a.stage === 'Отказ') - (c.stage === 'Сделка' || c.stage === 'Отказ')
@@ -5878,6 +5881,28 @@ async function kpSent(b) {
 async function copyText(text, ok = 'Скопировано') {
   try { await navigator.clipboard.writeText(text); toast(ok); }
   catch (err) { toast('Не удалось скопировать — выделите текст вручную'); }
+}
+
+// ---- Бриф клиенту: ссылки на страницу brief.html. Клиент сам отвечает на
+// вопросы, ответы приходят в Hub заявкой и брифом (функция brief-intake), в CRM
+// клиент уходит позже, когда готов платить. Метка ?src — откуда пришёл человек.
+const BRIEF_FORMS = [['ai', 'Рекламный ролик с нейросетями'], ['3d', '3D-ролик о продукте'], ['motion', 'Моушн и графика'], ['site', 'Сайт или приложение'],
+  ['shoot', 'Съёмка и мероприятия'], ['content', 'Контент на месяц'], ['other', 'Другая задача']];
+const BRIEF_SRC = [['tg', 'Telegram'], ['vk', 'ВКонтакте'], ['mail', 'Почта'], ['site', 'Сайт']];
+const briefUrl = (t, src) => `https://hub.adervis.ru/brief.html?${t ? `t=${t}&` : ''}src=${src}`;
+let briefSrc = 'tg';
+const briefGreeting = src => `Здравствуйте! Да, поможем. Чтобы сразу назвать сроки и примерную стоимость, ответьте, пожалуйста, на несколько вопросов, это 2–3 минуты: ${briefUrl('', src)}. Если удобнее, можно просто написать здесь или голосовым.`;
+function briefLinksModal() {
+  const row = (t, title) => `<li class="bflrow"><span><b>${E(title)}</b><small>${E(briefUrl(t, briefSrc).replace('https://', ''))}</small></span>
+    <a class="iconbtn" href="${E(briefUrl(t, briefSrc))}" target="_blank" rel="noopener noreferrer" aria-label="Открыть «${E(title)}»" title="Открыть">${icon('link', 16)}</a>
+    <button class="bflcopy" data-action="bflcopy" data-t="${t}">${icon('copy', 15)} Скопировать</button></li>`;
+  modal(`<h2>Бриф клиенту</h2>
+    <p class="muted">Клиент сам ответит на вопросы, от которых зависят цена и срок, за 2–3 минуты. Ответы придут сюда заявкой и брифом, а вам — уведомление в Telegram. В CRM ничего не попадает.</p>
+    <div class="bflsrc" role="radiogroup" aria-label="Откуда клиент">${BRIEF_SRC.map(([k, n]) =>
+      `<button role="radio" aria-checked="${k === briefSrc}" class="chipbtn${k === briefSrc ? ' on' : ''}" data-action="bflsrc" data-src="${k}">${E(n)}</button>`).join('')}</div>
+    <div class="bflgreet"><p>${E(briefGreeting(briefSrc))}</p>
+      <button class="primary" data-action="bflgreet">${icon('copy', 15)} Скопировать приветствие</button></div>
+    <ul class="bfllist">${row('', 'Клиент выбирает задачу сам')}${BRIEF_FORMS.map(([t, n]) => row(t, n)).join('')}</ul>`, 'wide');
 }
 
 // Текст — в поле ответа нужной переписки: отправит человек, прочитав.
@@ -9875,6 +9900,10 @@ document.addEventListener('click', async e => {
     case 'dlgscriptdel': delScript(b.dataset.id); break;
     case 'dlgbot': botTexts(); break;
     case 'dlgchannels': channelsModal(); break;
+    case 'bflinks': createClose(); briefLinksModal(); break;
+    case 'bflsrc': briefSrc = b.dataset.src; briefLinksModal(); break;
+    case 'bflcopy': copyText(briefUrl(b.dataset.t, briefSrc), 'Ссылка на бриф скопирована'); break;
+    case 'bflgreet': copyText(briefGreeting(briefSrc), 'Приветствие со ссылкой скопировано'); break;
     case 'tgconnect':
       b.disabled = true;
       try { await tgConnect(); } catch (err) { $('#tgerr').textContent = 'Не подключилось: ' + (err.message || 'ошибка сервера'); b.disabled = false; }
@@ -10259,6 +10288,7 @@ $('#search').onclick = search;
 const CREATE_ITEMS = [
   ['newlead', 'Заявку', 'кто обратился и откуда узнал', 'leads'],
   ['bfnew', 'Бриф и КП', 'ТЗ клиента: вопросы, смета, план, КП', 'briefs'],
+  ['bflinks', 'Ссылку на бриф', 'клиент сам ответит на вопросы за 2–3 минуты', 'briefs'],
   ['newtask', 'Задачу', 'общий список для обоих руководителей', 'tasks'],
   ['newp', 'Публикацию', 'пост в контент-план', 'content'],
   ['newcampaign', 'Кампанию', 'канал, цель, бюджет и ссылка с метками', 'ads'],

@@ -1989,6 +1989,14 @@ await page.screenshot({ path: path.join(OUT, 'intel-survey.png') });
 await nav('dialogs');
 check('«Диалоги» — в группе «Продажи»', await page.$eval('#nav .navsection[data-group="Продажи"]', s => !!s.querySelector('[data-page=dialogs]')));
 check('без бота — предложение подключить Telegram', await page.isVisible('.dlgempty [data-action=dlgchannels]'));
+// «Бриф клиенту»: ссылки на брифы с меткой источника и готовое приветствие
+await page.click('.dlgempty [data-action=bflinks]');
+await page.waitForSelector('.bfllist');
+check('бриф клиенту: 8 ссылок, по умолчанию с меткой Telegram', (await page.$$('.bflrow')).length === 8 && (await page.textContent('.bfllist')).includes('brief.html?t=ai&src=tg'));
+await page.click('[data-action=bflsrc][data-src=vk]');
+check('бриф клиенту: источник ВКонтакте меняет ссылки и приветствие', (await page.textContent('.bfllist')).includes('t=ai&src=vk') && (await page.textContent('.bflgreet')).includes('brief.html?src=vk'));
+await page.click('[data-action=bflsrc][data-src=tg]');
+await page.keyboard.press('Escape');
 await page.click('.dlgempty [data-action=dlgchannels]');
 await page.waitForSelector('#tgkeyf');
 check('каналы: Telegram не подключён', (await page.textContent('#chbody')).includes('Не подключён'));
