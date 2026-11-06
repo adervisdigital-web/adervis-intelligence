@@ -3125,3 +3125,13 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 }
 /* кнопка действия в уведомлении («Вернуть») */
 .toastact{background:none;border:0;padding:4px 8px;margin-left:6px;font-weight:700;color:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+
+/* Шапка раздела без дублей: на компьютере группа уже видна в верхней строке
+   («Продажи / Брифы и КП»), метку над заголовком прячем; описание — одной строкой,
+   полностью по наведению или фокусу. На телефоне верхней строки нет — метка остаётся. */
+@media(min-width:721px){
+  .pagehead .pagegroup{display:none}
+  .pagehead h1{margin-top:4px}
+  .pagehead > div > p.muted{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;max-width:80ch;cursor:default}
+  .pagehead > div > p.muted:hover,.pagehead > div > p.muted:focus{-webkit-line-clamp:unset}
+}
