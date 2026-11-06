@@ -12,9 +12,10 @@ const E = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 let toastTimer;
-function toast(text, ms = 3500) {
+// action — кнопка в уведомлении, например «Вернуть»: { label, act }
+function toast(text, ms = 3500, action = null) {
   const box = $('#alerts');
-  box.innerHTML = `<span>${E(text)}</span><button class="toastx" aria-label="Закрыть уведомление">${icon('close', 14)}</button>`;
+  box.innerHTML = `<span>${E(text)}</span>${action ? `<button class="toastact" data-action="${E(action.act)}">${E(action.label)}</button>` : ''}<button class="toastx" aria-label="Закрыть уведомление">${icon('close', 14)}</button>`;
   box.querySelector('.toastx').onclick = () => { box.innerHTML = ''; };
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (box.innerHTML = ''), ms);
@@ -2784,7 +2785,7 @@ function todayPanel(skip = '') {
         <span class="todayicon">${icon(x.ic, 16)}</span>
         <span class="todaytext"><b>${E(x.title)}</b><small>${E(x.what)}</small></span>
         <span class="todaywhen">${x.late ? 'просрочено' : x.when === today() ? 'сегодня' : x.when === dayShift(1) ? 'завтра' : E(shortDate(x.when))}</span></button>
-        ${/^(l|pr|br):/.test(x.ref) ? `<button class="todaysnooze" data-action="snooze" data-id="${E(x.ref)}" title="Перенести на завтра" aria-label="Перенести «${E(x.title)}» на завтра">${icon('time', 16)}</button>` : ''}</li>`).join('')}</ul>
+        ${/^(l|pr|br):/.test(x.ref) ? `<button class="todaysnooze" data-action="snooze" data-id="${E(x.ref)}" title="Перенести на завтра" aria-label="Перенести «${E(x.title)}» на завтра">${icon('time', 16)}</button>` : ''}${staleLead(x.ref) ? `<button class="todaysnooze" data-action="leadstale" data-id="${E(staleLead(x.ref).id)}" title="Закрыть: не отвечает" aria-label="Закрыть «${E(x.title)}»: не отвечает">${icon('close', 16)}</button>` : ''}</li>`).join('')}</ul>
       ${list.length > shown.length ? `<p class="muted">И ещё ${list.length - shown.length} — откройте заявки и поиск клиентов.</p>` : ''}
       <p><button class="linkbtn" data-action="digest">${icon('telegram', 14)} Получать это в Telegram каждое утро</button></p>`
       : '<p class="muted todayempty">Срочного нет. Хорошее время написать новым компаниям из поиска клиентов.</p>'}
@@ -2798,6 +2799,36 @@ const QUICK = [
 ];
 
 // Перенести дело на завтра — у заявки, компании и брифа есть дата шага.
+// Заявка молчит две недели и дольше — её можно закрыть с главной одним нажатием
+// («Пропало», причина «Не отвечает»), а не держать вечным напоминанием. Отмена — в уведомлении.
+function staleLead(ref) {
+  if (!/^l:/.test(ref || '')) return null;
+  const l = db.leads.find(x => x.id === ref.slice(2));
+  const since = l && (l.next_on || l.came_on);
+  return l && !LOST.includes(l.status) && l.status !== 'Сделка' && since && since <= dayShift(-14) ? l : null;
+}
+let staleUndo = null;
+async function closeStale(id) {
+  const l = db.leads.find(x => x.id === id);
+  if (!l) return;
+  try {
+    staleUndo = { ...l };
+    const saved = await api.update('leads', { ...l, status: 'Пропало', lost_reason: 'Не отвечает', reached: reachedOf('Пропало', l.reached), next_on: null, next_step: '' });
+    upsertLocal('leads', saved);
+    noteLocal('update', 'leads', { ...saved, title: saved.name });
+    render();
+    toast(`«${l.name}» закрыта: не отвечает`, 8000, { label: 'Вернуть', act: 'leadstaleundo' });
+  } catch (err) { handleError(err); }
+}
+async function undoStale() {
+  if (!staleUndo) return;
+  try {
+    const cur = db.leads.find(x => x.id === staleUndo.id) || staleUndo, u = staleUndo;
+    const saved = await api.update('leads', { ...cur, status: u.status, lost_reason: u.lost_reason, reached: u.reached, next_on: u.next_on, next_step: u.next_step });
+    upsertLocal('leads', saved); staleUndo = null; render(); toast('Заявка возвращена');
+  } catch (err) { handleError(err); }
+}
+
 async function snooze(ref) {
   const [kind, id] = [ref.slice(0, ref.indexOf(':')), ref.slice(ref.indexOf(':') + 1)];
   const table = { l: 'leads', pr: 'prospects', br: 'briefs' }[kind];
@@ -3070,7 +3101,8 @@ function renderHome() {
           <h2 id="hmnowh">${E(focus.title)}</h2>
           <p class="hmfacts">${E(focus.detail)}${focus.at ? ` · ${E(ago(focus.at))}` : ''}</p>
           <div class="hmacts"><button class="primary" ${focus.act[0]}>${E(focus.act[1])}</button>
-            ${focus.snooze ? `<button class="hmghost" data-action="snooze" data-id="${E(focus.snooze)}">${icon('time', 15)} Перенести на завтра</button>` : ''}</div>`
+            ${focus.snooze ? `<button class="hmghost" data-action="snooze" data-id="${E(focus.snooze)}">${icon('time', 15)} Перенести на завтра</button>` : ''}
+            ${staleLead(focus.snooze) ? `<button class="hmghost" data-action="leadstale" data-id="${E(staleLead(focus.snooze).id)}">${icon('close', 15)} Закрыть: не отвечает</button>` : ''}</div>`
           : `<span class="hmkind">Сейчас</span><h2 id="hmnowh">Новых заявок, ответов и открытых КП нет</h2>
           <p class="hmfacts">Хорошее время написать новым клиентам или подготовить публикацию.</p>
           <div class="hmacts"><button class="primary" data-page="prospects">Поиск клиентов</button><button class="hmghost" data-page="content">Контент-план</button></div>`}
@@ -9851,6 +9883,8 @@ document.addEventListener('click', async e => {
     case 'newprospect': editProspect(); break;
     case 'todayopen': todayOpen(b.dataset.id); break;
     case 'snooze': await snooze(b.dataset.id); break;
+    case 'leadstale': await closeStale(b.dataset.id); break;
+    case 'leadstaleundo': $('#alerts').innerHTML = ''; await undoStale(); break;
     case 'newmagnet': editMagnet(); break;
     case 'delmagnet': delMagnet(b.dataset.id); break;
     case 'delprospect': delProspect(b.dataset.id); break;

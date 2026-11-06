@@ -2537,6 +2537,20 @@ check('неделя — семь дней колонками', (await page.$$('.
 await page.click('[data-action=snooze][data-id^="br:"]');
 await page.waitForFunction(d => window.__STATE__.briefs[0].next_on === d, localDay(1));
 check('«перенести на завтра» убирает дело из сегодняшних', !(await page.textContent('.todaycard')).includes('Видеодайджест'));
+// давняя заявка (молчит две недели) закрывается с главной и возвращается из уведомления
+await page.evaluate(d => { window.__STATE__.leads.push({ id: 'lead-stale', came_on: d, name: 'Старая студия', source: '2ГИС', direction: 'Студия', request: 'Спросили про сметы', amount: 0, status: 'Новое', note: '', reached: 0, next_step: '', next_on: null, lost_reason: '', _at: d + 'T10:00:00Z', _by: 'artem@adervis.ru' }); }, localDay(-40));
+await page.click('#refresh'); await page.waitForTimeout(400);
+const stale = await page.$('.todaycard [data-action=leadstale][data-id=lead-stale]');
+check('давняя заявка: в «На сегодня» кнопка «Закрыть: не отвечает»', !!stale);
+if (stale) {
+  const sid = await stale.getAttribute('data-id'), before = (await state()).leads.find(l => l.id === sid).status;
+  await stale.click();
+  await page.waitForFunction(i => window.__STATE__.leads.find(l => l.id === i).status === 'Пропало', sid);
+  check('закрытая заявка: «Пропало», причина «Не отвечает», без даты', (await state()).leads.find(l => l.id === sid).lost_reason === 'Не отвечает' && !(await state()).leads.find(l => l.id === sid).next_on);
+  await page.click('#alerts .toastact');
+  await page.waitForFunction(([i, s]) => window.__STATE__.leads.find(l => l.id === i).status === s, [sid, before]);
+  check('«Вернуть» в уведомлении возвращает заявку как была', (await state()).leads.find(l => l.id === sid).lost_reason !== 'Не отвечает');
+}
 await page.click('#create');
 await page.click('.createitem[data-action=bfnew]');
 check('«Создать» в верхней строке открывает форму брифа', await page.isVisible('#bff'));

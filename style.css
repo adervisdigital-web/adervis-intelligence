@@ -3123,3 +3123,5 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
   .bfstepper li:first-child.now button span{align-self:flex-start}
   .bfstepper li:last-child.now button span{align-self:flex-end}
 }
+/* кнопка действия в уведомлении («Вернуть») */
+.toastact{background:none;border:0;padding:4px 8px;margin-left:6px;font-weight:700;color:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
