@@ -9067,12 +9067,12 @@ function renderLeads() {
     `<button class="chip${leadView === id ? ' on' : ''}" data-action="leadview" data-id="${id}" aria-pressed="${leadView === id}">${t}</button>`).join('')}</div>`;
   const list = `<div class="head"><h2>Все обращения</h2>
       <small class="muted">${rows.length === db.leads.length ? 'свежие сверху' : `показано ${rows.length} из ${db.leads.length}`}</small>${views}</div>` + filters
-    + (leadView === 'board' ? leadBoard(rows) : `<div class="card tablewrap"><table class="table">
+    + (leadView === 'board' ? leadBoard(rows) : `<div class="card tablewrap"><table class="table leadtable">
       <thead><tr><th>Когда</th><th>Кто</th><th>Откуда</th><th>Направление</th><th>Чего хотел</th><th>Сумма</th><th>Статус</th><th class="rowacts"><span class="offscreen">Действия</span></th></tr></thead>
       <tbody>${rows.map(l => `<tr class="clickrow" tabindex="0" role="button" data-l="${E(l.id)}">
-        <td class="date" title="${E(l.came_on)}">${E(shortDate(l.came_on))}</td><td><b>${E(l.name)}</b></td><td>${E(l.source)}</td>
-        <td>${tag(l.direction)}</td><td>${E((l.request || '').slice(0, 60))}${(l.request || '').length > 60 ? '…' : ''}</td>
-        <td>${l.amount ? num(l.amount) : '—'}</td><td>${tag(l.status)}</td>${rowActs('dellead', l.id, l.name)}</tr>`).join('')}
+        <td class="date lt-date" title="${E(l.came_on)}">${E(shortDate(l.came_on))}</td><td class="lt-who"><b>${E(l.name)}</b></td><td class="lt-src">${E(l.source)}</td>
+        <td class="lt-dir">${tag(l.direction)}</td><td class="lt-req">${E((l.request || '').slice(0, 60))}${(l.request || '').length > 60 ? '…' : ''}</td>
+        <td class="lt-sum${l.amount ? '' : ' lt-none'}">${l.amount ? num(l.amount) : '—'}</td><td class="lt-st">${tag(l.status)}</td>${rowActs('dellead', l.id, l.name)}</tr>`).join('')}
       </tbody></table></div>`)
     + (rows.length ? '' : '<div class="card empty">Под отбор ничего не подошло. Снимите фильтр или измените запрос.</div>');
 
