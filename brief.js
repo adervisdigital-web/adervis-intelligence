@@ -13,8 +13,6 @@
   let svc = D.legacy[P.get('t')] || P.get('t');
   if (!D.services.some(s => s.id === svc)) svc = '';
   const root = document.getElementById('brief');
-  const CLIENTS = [['sibur', 'Сибур'], ['himprom', 'Химпром'], ['promobot', 'Промобот'], ['ujin', 'UJIN'], ['bitva-robotov', 'Битва роботов'], ['shabani', 'Shabani Energy'],
-    ['rokstar', 'Рок-Стар'], ['psp', 'PSP Sport Nutrition'], ['express-import', 'Экспресс-Импорт'], ['aratta', 'Аратта'], ['stikbot', 'Stickbot'], ['feliks', 'Феликс']];
   // цвета услуг и прогресс ставим из скрипта: строгая политика страницы не пускает style="" в разметке
   const paint = () => { root.querySelectorAll('[data-c]').forEach(el => el.style.setProperty('--c', el.dataset.c)); root.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }); };
   new MutationObserver(paint).observe(root, { childList: true, subtree: true });
@@ -41,7 +39,7 @@
   const voiceBtn = () => `<button class="vbtn${voiceOn ? ' on' : ''}" data-act="voice" aria-pressed="${voiceOn}" title="${voiceOn ? 'Выключить голос' : 'Включить голос'}">
     <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="vt">${voiceOn ? 'Голос включён' : 'Голос выключен'}</span></button>`;
   const top = (pct, back) => `<header class="qtop" data-c="${service()?.c || '#F6BD3A'}">
-    ${back ? `<button class="back" data-act="back" aria-label="Назад">${icon('back', 22)}</button>` : '<span class="qlabel">Бриф</span>'}
+    ${back ? `<button class="back" data-act="back" aria-label="Назад">${icon('back', 22)}</button>` : ''}
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i data-w="${pct}"></i></div>${voiceBtn()}</header>`;
 
   // ---- справа на компьютере: бриф собирается по ходу ответов
@@ -57,19 +55,18 @@
 
   // ---- экран 0: с чем помочь
   function start() {
-    root.innerHTML = top(4, false) + `<div class="stage"><main class="q ${dir}">
+    root.innerHTML = `<div class="stage start"><main class="q ${dir}">
       <p class="kick">Бриф · 2 минуты</p>
       <h1>С чем вам помочь?</h1>
-      <p class="lead">Выберите направление. Ответы помогут сразу назвать сроки и примерную стоимость.</p>
-      ${!heard ? `<button class="hear" data-act="hear"><span class="pulse">${icon('play', 16)}</span> Заполнять с голосовым помощником</button>` : ''}
+      <p class="lead">Ответы помогут сразу назвать сроки и цену.</p>
+      ${!heard ? `<button class="hear" data-act="hear"><span class="pulse">${icon('play', 16)}</span> Заполнять с голосовым помощником</button>` : voiceBtn()}
       <div class="svc">${D.services.map((s, i) => `<button class="tile" data-act="svc" data-id="${s.id}" data-c="${s.c}" data-i="${i}">
         <img src="brief-img/${s.id}.webp" alt="" loading="${i < 4 ? 'eager' : 'lazy'}"><span class="ti">${icon(s.icon, 28)}</span>
         <span class="tt"><b>${E(s.t)}</b><small>${E(s.sub)}</small></span><span class="go">${icon('next', 18)}</span></button>`).join('')}</div>
       <ol class="how" aria-label="Как это работает">
-        <li><span>1</span><b>Выберите направление</b><small>Видео, фото, дизайн, ИИ или сайт</small></li>
-        <li><span>2</span><b>Ответьте на вопросы</b><small>Кнопками, пара слов там, где нужно</small></li>
-        <li><span>3</span><b>Получите план и стоимость</b><small>Напишем вам с готовым предложением</small></li></ol>
-      <section class="clients" aria-label="Нам доверяют"><p>Нам доверяют</p><div>${CLIENTS.map(([f, n]) => `<img src="brief-img/clients/${f}.webp" alt="${E(n)}" width="240" height="120">`).join('')}</div></section></main></div>`;
+        <li><span>1</span><b>Выберите направление</b></li>
+        <li><span>2</span><b>Ответьте на вопросы</b></li>
+        <li><span>3</span><b>Получите план и цену</b></li></ol></main></div>`;
   }
 
   // ---- вопрос
@@ -137,7 +134,7 @@
   root.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, st = qs()[step];
-    if (act === 'hear') { heard = true; voiceOn = true; store('brief.voice', 'on'); b.remove(); say('intro'); return; }
+    if (act === 'hear') { heard = true; voiceOn = true; store('brief.voice', 'on'); b.outerHTML = voiceBtn(); say('intro'); return; }
     if (act === 'voice') { voiceOn = !voiceOn; heard = true; store('brief.voice', voiceOn ? 'on' : 'off'); b.outerHTML = voiceBtn(); if (voiceOn) say(review ? 'contact' : svc ? key(st) : 'intro'); else if (player) player.pause(); return; }
     heard = true;
     if (act === 'svc') { editing = false; svc = b.dataset.id; Object.keys(ans).forEach(k => delete ans[k]); go(0); return; }

@@ -19,7 +19,7 @@ img{display:block}
 .loading{text-align:center;color:var(--muted);margin:30vh 20px}
 
 /* верх: логотип или «назад», прогресс, голос */
-.qtop{position:sticky;top:64px;z-index:5;display:flex;align-items:center;gap:14px;max-width:1160px;margin:0 auto;padding:14px 20px;
+.qtop{position:sticky;top:76px;z-index:5;display:flex;align-items:center;gap:14px;max-width:1160px;margin:0 auto;padding:14px 20px;
   background:linear-gradient(var(--bg) 65%,transparent);backdrop-filter:blur(2px)}
 .qlabel{font:700 15px/1 var(--display);letter-spacing:.02em;color:var(--muted);padding:0 4px}
 .back{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;border:1px solid var(--line);background:var(--panel);transition:border-color .2s}
@@ -124,7 +124,7 @@ textarea:focus,.fields input:focus{outline:2px solid var(--c,var(--gold));outlin
 
 /* «Ваш бриф» справа, только на компьютере */
 .side{display:none}
-@media(min-width:980px){.side{display:block;position:sticky;top:150px;padding:18px;border-radius:22px;border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(10px)}}
+@media(min-width:980px){.side{display:block;position:sticky;top:162px;padding:18px;border-radius:22px;border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 88%,transparent);backdrop-filter:blur(10px)}}
 .sk{margin:0 0 12px;color:var(--muted);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
 .sv{position:relative;height:120px;border-radius:16px;overflow:hidden;margin-bottom:14px;border:1px solid color-mix(in srgb,var(--c) 40%,var(--line))}
 .sv img{width:100%;height:100%;object-fit:cover;filter:brightness(.7)}
@@ -145,40 +145,37 @@ textarea:focus,.fields input:focus{outline:2px solid var(--c,var(--gold));outlin
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 
 /* шапка сайта: стекло, как на adervis.ru */
-.site{position:sticky;top:0;z-index:10;height:64px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(12,13,16,.72);backdrop-filter:blur(18px) saturate(1.4)}
+.site{position:sticky;top:0;z-index:10;height:76px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(12,13,16,.72);backdrop-filter:blur(18px) saturate(1.4)}
 .sw{max-width:1160px;margin:0 auto;padding:0 20px}
 .site .sw{height:100%;display:flex;align-items:center;gap:26px}
-.slogo img{height:30px;width:auto}
+.slogo img{height:44px;width:auto;display:block}
+.slogo{margin-right:auto}
 .snav{display:flex;gap:22px;margin-left:12px}
 .snav a,.stel{color:#c9ccd3;text-decoration:none;font-size:15px;transition:color .2s}
 .snav a:hover,.stel:hover{color:#fff}
-.stel{margin-left:auto;font-weight:600}
+.stel{font-weight:600}
 .stg{display:inline-flex;align-items:center;padding:10px 16px;border-radius:12px;background:var(--gold);color:#141414;font-weight:700;font-size:14px;text-decoration:none;transition:filter .2s}
 .stg:hover{filter:brightness(1.07)}
 @media(max-width:900px){.snav{display:none}}
 @media(max-width:560px){.stel{display:none}.stg{margin-left:auto;padding:9px 13px}.site .sw{gap:12px}}
 
-/* как это работает */
-.how{list-style:none;margin:30px 0 0;padding:0;display:grid;gap:12px}
-@media(min-width:720px){.how{grid-template-columns:repeat(3,minmax(0,1fr))}}
-.how li{display:grid;grid-template-columns:auto 1fr;column-gap:14px;align-items:start;padding:16px 18px;border-radius:18px;border:1px solid var(--line);background:linear-gradient(160deg,var(--panel2),var(--panel))}
-.how span{grid-row:span 2;display:grid;place-items:center;width:38px;height:38px;border-radius:12px;font:700 16px/1 var(--display);color:#141414;background:var(--gold)}
-.how b{font-weight:600}
-.how small{color:var(--muted);font-size:14px}
-
-/* нам доверяют: логотипы клиентов, в покое серые, при наведении цветные */
-.clients{margin:34px 0 0}
-.clients p{margin:0 0 14px;color:var(--muted);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
-.clients div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-@media(min-width:720px){.clients div{grid-template-columns:repeat(6,minmax(0,1fr))}}
-.clients img{width:100%;height:64px;object-fit:contain;padding:12px;border-radius:14px;border:1px solid var(--line);background:var(--panel);filter:grayscale(1) brightness(1.5);opacity:.6;transition:filter .3s,opacity .3s}
-.clients img:hover{filter:none;opacity:1}
-
+/* как это работает: три коротких шага, оживают при наведении */
+.how{list-style:none;margin:28px 0 0;padding:0;display:grid;gap:10px;counter-reset:none}
+@media(min-width:720px){.how{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}
+.how li{position:relative;display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:18px;border:1px solid var(--line);
+  background:linear-gradient(160deg,var(--panel2),var(--panel));overflow:hidden;transition:transform .3s var(--ease),border-color .3s,box-shadow .3s}
+.how li::after{content:'';position:absolute;inset:auto -40% -60% auto;width:160px;height:160px;border-radius:50%;background:var(--gold);opacity:0;filter:blur(40px);transition:opacity .35s}
+.how span{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:13px;font:700 16px/1 var(--display);color:var(--gold);
+  background:color-mix(in srgb,var(--gold) 14%,transparent);transition:background .3s,color .3s,transform .35s cubic-bezier(.3,1.6,.5,1)}
+.how b{font-weight:600;font-size:16px;line-height:1.3;transition:color .3s}
+.how li:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--gold) 55%,var(--line));box-shadow:0 14px 30px -18px rgba(246,189,58,.6)}
+.how li:hover::after{opacity:.18}
+.how li:hover span{background:var(--gold);color:#141414;transform:scale(1.12) rotate(-6deg)}
 /* подвал */
 .sfoot{margin-top:40px;border-top:1px solid var(--line);background:linear-gradient(180deg,transparent,rgba(0,0,0,.35));color:var(--muted);font-size:15px}
 .fgrid{display:grid;gap:28px;padding:44px 20px 26px}
 @media(min-width:760px){.fgrid{grid-template-columns:1.6fr 1fr 1fr 1.2fr}}
-.fabout img{height:34px;width:auto}
+.fabout img{height:38px;width:auto}
 .fabout p{margin:14px 0 16px;max-width:36ch}
 .fsoc{display:flex;flex-wrap:wrap;gap:8px}
 .fsoc a{padding:7px 12px;border-radius:999px;border:1px solid var(--line);color:#c9ccd3;text-decoration:none;font-size:13px;transition:border-color .2s,color .2s}
@@ -191,3 +188,7 @@ textarea:focus,.fields input:focus{outline:2px solid var(--c,var(--gold));outlin
 .fbot a{color:var(--muted);text-decoration:none}
 .fbot a:hover{color:#fff}
 .fine a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+/* старт: без полосы прогресса, воздух сверху */
+.stage.start{padding-top:34px}
+.stage.start .vbtn{margin:0 0 24px}
+@media(max-width:560px){.slogo img{height:34px}.site{height:64px}.qtop{top:64px}}
