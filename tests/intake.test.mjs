@@ -160,14 +160,15 @@ check('ответ узнаётся по латинской подписи Telegr
     { q: 'Какие сроки?', a: 'Не горит' }, { q: 'Какой бюджет?', a: 'Посоветуйте' }, { q: 'Пустой', a: '' }] };
   const b = briefIntakeOf(body, '2026-11-06');
   check('бриф: заявка с источником и сутью, бюджет и сроки в заметке, бриф на разбор с вопросами и ответами', b && b.lead.source === 'Бриф Hub · Telegram'
-    && b.lead.request.startsWith('Рекламный ролик с нейросетями: Набор уходовой') && b.lead.note.includes('Бюджет: Посоветуйте') && b.lead.note.includes('Сроки: Не горит')
+    && b.lead.request.startsWith('ИИ: ролики и фото нейросетями: Набор уходовой') && b.lead.note.includes('Бюджет: Посоветуйте') && b.lead.note.includes('Сроки: Не горит')
     && b.brief.stage === 'Разбор' && b.brief.lead_id === b.lead.id && b.brief.source_text.includes('Какой длины?\n30 секунд') && !b.brief.source_text.includes('Пустой')
-    && b.notify.includes('Новый бриф: Рекламный ролик с нейросетями'), JSON.stringify(b?.lead));
+    && b.notify.includes('Новый бриф: ИИ: ролики и фото нейросетями'), JSON.stringify(b?.lead));
   check('бриф: тот же бриф — тот же номер, другой ответ — другой', briefIntakeOf(body, '2026-11-06').lead.id === b.lead.id
     && briefIntakeOf({ ...body, items: [...body.items, { q: 'Идея', a: 'Перцы вместо бигуди' }] }, '2026-11-06').lead.id !== b.lead.id);
   check('бриф: бот (заполнил ловушку), чужой тип, без контакта или без ответов — не принимаем', briefIntakeOf({ ...body, website: 'http://spam' }, '2026-11-06') === null
     && briefIntakeOf({ ...body, type: 'casino' }, '2026-11-06') === null && briefIntakeOf({ ...body, contact: '' }, '2026-11-06') === null
     && briefIntakeOf({ ...body, items: [{ q: 'Что?', a: '' }] }, '2026-11-06') === null && briefIntakeOf(null, '2026-11-06') === null);
+  check('бриф: новые услуги (видео, фото, дизайн) и старые ссылки принимаются', ['video', 'photo', 'design', 'motion', 'shoot'].every(t => briefIntakeOf({ ...body, type: t }, '2026-11-06')));
   check('бриф: без метки источника — просто «Бриф Hub», длинные ответы обрезаны', briefIntakeOf({ ...body, src: 'zzz' }, '2026-11-06').lead.source === 'Бриф Hub'
     && briefIntakeOf({ ...body, items: [{ q: 'Опишите задачу', a: 'x'.repeat(5000) }] }, '2026-11-06').brief.source_text.length < 3400);
 }

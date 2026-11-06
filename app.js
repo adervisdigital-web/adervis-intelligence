@@ -5918,8 +5918,7 @@ async function copyText(text, ok = 'Скопировано') {
 // ---- Бриф клиенту: ссылки на страницу brief.html. Клиент сам отвечает на
 // вопросы, ответы приходят в Hub заявкой и брифом (функция brief-intake), в CRM
 // клиент уходит позже, когда готов платить. Метка ?src — откуда пришёл человек.
-const BRIEF_FORMS = [['ai', 'Рекламный ролик с нейросетями'], ['3d', '3D-ролик о продукте'], ['motion', 'Моушн и графика'], ['site', 'Сайт или приложение'],
-  ['shoot', 'Съёмка и мероприятия'], ['content', 'Контент на месяц'], ['other', 'Другая задача']];
+const BRIEF_FORMS = [['video', 'Видео'], ['photo', 'Фото'], ['design', 'Дизайн: стиль, упаковка, моушн, 3D'], ['ai', 'ИИ: ролики и фото нейросетями'], ['site', 'Сайт или приложение'], ['other', 'Другое']];
 const BRIEF_SRC = [['tg', 'Telegram'], ['vk', 'ВКонтакте'], ['mail', 'Почта'], ['site', 'Сайт']];
 const briefUrl = (t, src) => `https://hub.adervis.ru/brief.html?${t ? `t=${t}&` : ''}src=${src}`;
 let briefSrc = 'tg';
@@ -5934,7 +5933,7 @@ function briefLinksModal() {
       `<button role="radio" aria-checked="${k === briefSrc}" class="chipbtn${k === briefSrc ? ' on' : ''}" data-action="bflsrc" data-src="${k}">${E(n)}</button>`).join('')}</div>
     <div class="bflgreet"><p>${E(briefGreeting(briefSrc))}</p>
       <button class="primary" data-action="bflgreet">${icon('copy', 15)} Скопировать приветствие</button></div>
-    <ul class="bfllist">${row('', 'Клиент выбирает задачу сам')}${BRIEF_FORMS.map(([t, n]) => row(t, n)).join('')}</ul>`, 'wide');
+    <ul class="bfllist">${row('', 'Клиент выбирает услугу сам')}${BRIEF_FORMS.map(([t, n]) => row(t, n)).join('')}</ul>`, 'wide');
 }
 
 // Текст — в поле ответа нужной переписки: отправит человек, прочитав.

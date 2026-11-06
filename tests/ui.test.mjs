@@ -1992,7 +1992,7 @@ check('без бота — предложение подключить Telegram'
 // «Бриф клиенту»: ссылки на брифы с меткой источника и готовое приветствие
 await page.click('.dlgempty [data-action=bflinks]');
 await page.waitForSelector('.bfllist');
-check('бриф клиенту: 8 ссылок, по умолчанию с меткой Telegram', (await page.$$('.bflrow')).length === 8 && (await page.textContent('.bfllist')).includes('brief.html?t=ai&src=tg'));
+check('бриф клиенту: 7 ссылок, по умолчанию с меткой Telegram', (await page.$$('.bflrow')).length === 7 && (await page.textContent('.bfllist')).includes('brief.html?t=ai&src=tg'));
 await page.click('[data-action=bflsrc][data-src=vk]');
 check('бриф клиенту: источник ВКонтакте меняет ссылки и приветствие', (await page.textContent('.bfllist')).includes('t=ai&src=vk') && (await page.textContent('.bflgreet')).includes('brief.html?src=vk'));
 await page.click('[data-action=bflsrc][data-src=tg]');

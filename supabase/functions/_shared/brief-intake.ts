@@ -7,8 +7,9 @@ import { fingerprint } from './site.ts';
 // Типы брифов: номер в ссылке → название. Вопросы живут на странице (brief.js),
 // сюда приходят готовые пары «вопрос — ответ».
 export const BRIEF_TYPES: Record<string, string> = {
-  ai: 'Рекламный ролик с нейросетями', '3d': '3D-ролик о продукте', motion: 'Моушн и графика', site: 'Сайт или приложение',
-  shoot: 'Съёмка и мероприятия', content: 'Контент на месяц', other: 'Другая задача'
+  video: 'Видео', photo: 'Фото', design: 'Дизайн', ai: 'ИИ: ролики и фото нейросетями', site: 'Сайт или приложение', other: 'Другая задача',
+  // старые ссылки (до 07.11.2026)
+  '3d': '3D-ролик о продукте', motion: 'Моушн и графика', shoot: 'Съёмка и мероприятия', content: 'Контент на месяц'
 };
 // откуда пришёл человек: метка в ссылке (?src=tg) → источник заявки
 const SOURCES: Record<string, string> = { tg: 'Telegram', vk: 'ВКонтакте', site: 'Сайт', mail: 'Почта', ig: 'Instagram' };
@@ -32,7 +33,7 @@ export function briefIntakeOf(body: any, today: string) {
   const src = SOURCES[clean(body.src, 10)] || '';
   const find = (re: RegExp) => items.find(x => re.test(x.q))?.a || '';
   const budget = find(/бюджет/i), deadline = find(/срок/i);
-  const main = items.find(x => x.a.length > 15 && !/бюджет|срок/i.test(x.q))?.a || items[0].a;
+  const main = items.find(x => x.a.length > 15 && !/бюджет|срок|с чем помочь/i.test(x.q))?.a || items.find(x => !/с чем помочь/i.test(x.q))?.a || items[0].a;
   const text = [
     `Бриф с hub.adervis.ru · ${label} · ${today}${src ? ` · пришёл из ${src}` : ''}`,
     `Клиент: ${name} · ${contact}`, '',
