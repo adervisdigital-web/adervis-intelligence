@@ -20,7 +20,7 @@
 - Тесты: `cd tests && npm test` (база в PGlite, промпты, боты, CRM, приём заявок, UI на Playwright с подменным API `window.__INTEL_API__` в `tests/ui.test.mjs`). Перед коммитом — все зелёные. Тестовые данные — `tests/fixtures/seed.json` (обезличенные).
 - UI-тест идёт одним сценарием: новые проверки вставлять в нужный раздел и возвращать состояние (тему, фильтры), которое меняли.
 - Миграция: `supabase db query --linked -f supabase/migrations/<файл>.sql`.
-- Функции: `supabase functions deploy <имя> --use-api`; `tg-bot`, `vk-bot`, `intel-bot`, `digest`, `crm`, `stock` — с `--no-verify-jwt` (сами проверяют доступ), `site-lead` — тоже (её зовёт сайт без входа, пускает только adervis.ru), `ads-sync` — тоже (её зовёт расписание с секретом).
+- Функции: `supabase functions deploy <имя> --use-api`; `tg-bot`, `vk-bot`, `intel-bot`, `digest`, `crm`, `stock` — с `--no-verify-jwt` (сами проверяют доступ), `site-lead` — тоже (её зовёт сайт без входа, пускает только adervis.ru), `brief-intake` — тоже (бриф со страницы `brief.html` без входа, пускает только hub.adervis.ru; заявка и бриф в Hub, в CRM не пишет), `ads-sync` — тоже (её зовёт расписание с секретом).
 - Выкладка сайта — `git push origin main`; GitHub Actions гоняет тесты.
 
 ## Правила
