@@ -3144,11 +3144,39 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 .toastact{background:none;border:0;padding:4px 8px;margin-left:6px;font-weight:700;color:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 
 /* Шапка раздела без дублей: на компьютере группа уже видна в верхней строке
-   («Продажи / Брифы и КП»), метку над заголовком прячем; описание — одной строкой,
-   полностью по наведению или фокусу. На телефоне верхней строки нет — метка остаётся. */
+   («Продажи / Брифы и КП»), метку над заголовком прячем; описание — до двух строк
+   (одна строка рвала фразу на полуслове: «а какие только…»), полностью по наведению.
+   На телефоне верхней строки нет — метка остаётся. */
 @media(min-width:721px){
   .pagehead .pagegroup{display:none}
   .pagehead h1{margin-top:4px}
-  .pagehead > div > p.muted{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;max-width:80ch;cursor:default}
+  .pagehead > div > p.muted{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:72ch;cursor:default;text-wrap:pretty}
   .pagehead > div > p.muted:hover,.pagehead > div > p.muted:focus{-webkit-line-clamp:unset}
 }
+/* Задачи: прогресс сверху, своя галочка ровно по строке текста (стандартная со своими
+   отступами сдвигала текст вниз), сделанные — ниже, приглушены */
+.taskhead{display:flex;align-items:center;gap:14px;padding:2px 0 12px;font-size:13px;color:var(--muted)}
+.taskhead b{color:var(--ink);font-weight:700;white-space:nowrap}
+.taskbar{flex:1;height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.taskbar i{display:block;height:100%;border-radius:inherit;background:var(--gold);transition:width .35s ease}
+.row:has(> .task){align-items:center;padding:0}
+.row:has(> .task) .del{opacity:.45;transition:opacity .15s;min-width:40px;min-height:40px}
+.row:has(> .task):hover .del,.row:has(> .task) .del:focus-visible{opacity:1}
+@media(hover:none){.row:has(> .task) .del{opacity:.8}}
+/* .row > label.task сильнее, чем «.card label» (подпись поля формы: блок, 12px, отступы) */
+.row > label.task{display:flex;flex:1;gap:14px;min-height:52px;margin:0;font-size:15px;line-height:1.4;padding:8px 0;align-items:center;color:var(--ink)}
+.task span{min-width:0;overflow-wrap:anywhere}
+.task input{appearance:none;-webkit-appearance:none;margin:0;width:22px;height:22px;flex:none;border-radius:7px;cursor:pointer;
+  border:2px solid color-mix(in srgb,var(--ink) 32%,transparent);background:transparent center/14px no-repeat;transition:background-color .15s,border-color .15s}
+.task:hover input{border-color:var(--gold)}
+.task input:checked{border-color:var(--gold);background-color:var(--gold);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23161208' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7'/%3E%3C/svg%3E")}
+.task input:focus-visible{outline:3px solid #9278ff;outline-offset:3px}
+.task.done span{text-decoration:line-through;text-decoration-thickness:1px}
+.row > label.task.done{color:var(--muted)}
+/* Метрики без данных: тихая подпись вместо огромного прочерка; «Задать цель» — тихая
+   ссылка, а не восемь одинаковых кнопок, спорящих с цифрами */
+.kpi .value .kpinone{display:inline-block;font:600 14px/1.3 Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:0;color:var(--muted);padding:10px 0 6px}
+.kpi.nodata small{opacity:.8}
+.kpi .chip.kpiset{align-self:flex-start;background:none;border:0;padding:4px 0;margin-top:4px;color:var(--muted);font-weight:600;font-size:12.5px;box-shadow:none}
+.kpi .chip.kpiset:hover,.kpi .chip.kpiset:focus-visible{color:var(--gold);background:none}

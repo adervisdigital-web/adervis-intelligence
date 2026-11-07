@@ -483,11 +483,16 @@ async function loadThumbs(recordId) {
   }
 }
 
+// Список задач: сверху «сделано X из Y», открытые первыми, сделанные ниже и приглушены
 function tasksList(manage) {
-  return db.tasks.map(t => `<div class="row"><label class="task ${t.done ? 'done' : ''}">
-    <input type="checkbox" data-task="${E(t.id)}" ${t.done ? 'checked' : ''}>${E(t.title)}</label>
-    ${manage ? `<button class="del" data-action="deltask" data-id="${E(t.id)}" aria-label="Удалить задачу «${E(t.title)}»">${icon('close', 15)}</button>` : ''}</div>`).join('')
-    || '<div class="empty">Задач нет.</div>';
+  if (!db.tasks.length) return '<div class="empty">Задач нет. Добавьте первую кнопкой «+ Задача».</div>';
+  const list = [...db.tasks].sort((a, b) => Number(!!a.done) - Number(!!b.done));
+  const done = list.filter(t => t.done).length;
+  return `<div class="taskhead"><b>Сделано ${done} из ${list.length}</b><span class="taskbar" role="progressbar" aria-label="Сделано задач"
+      aria-valuemin="0" aria-valuemax="${list.length}" aria-valuenow="${done}"><i style="width:${Math.round(done / list.length * 100)}%"></i></span></div>`
+    + list.map(t => `<div class="row"><label class="task ${t.done ? 'done' : ''}">
+    <input type="checkbox" data-task="${E(t.id)}" ${t.done ? 'checked' : ''}><span>${E(t.title)}</span></label>
+    ${manage ? `<button class="del" data-action="deltask" data-id="${E(t.id)}" aria-label="Удалить задачу «${E(t.title)}»">${icon('close', 15)}</button>` : ''}</div>`).join('');
 }
 
 function filters(categories) {
@@ -6236,9 +6241,10 @@ function kpiTile(k, v) {
       <i style="width:${Math.min(100, Math.round(100 * Math.max(0, pct)))}%"></i></div>`;
   }
   const fmt = x => x === null ? '—' : num(x) + k.unit;
-  return `<div class="card metric kpi${state}">
+  // нет данных за период — не огромный прочерк, а тихая подпись: цифры вокруг читаются лучше
+  return `<div class="card metric kpi${state}${v === null ? ' nodata' : ''}">
     <div class="eyebrow">${E(k.name)}</div>
-    <div class="value">${fmt(v)}</div>
+    <div class="value">${v === null ? '<span class="kpinone">Пока нет данных</span>' : fmt(v)}</div>
     ${bar}
     <small>${target !== null ? `цель: ${k.better === 'less' ? 'не больше' : 'не меньше'} ${fmt(target)}` : E(k.how)}</small>
     <button class="chip kpiset" data-action="kpitarget" data-id="${k.id}" aria-label="Цель: ${E(k.name)}">${target !== null ? 'Изменить цель' : 'Задать цель'}</button>
