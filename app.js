@@ -492,7 +492,7 @@ function tasksList(manage) {
 
 function filters(categories) {
   return `<div class="toolbar"><input class="input" id="filter" aria-label="Поиск" placeholder="Найти…" value="${E(query)}">
-    <select class="input" id="category" aria-label="Фильтр">${['Все', ...categories].map(c => `<option ${c === category ? 'selected' : ''}>${E(c)}</option>`).join('')}</select></div>`;
+    ${categories.length ? `<select class="input" id="category" aria-label="Фильтр">${['Все', ...categories].map(c => `<option ${c === category ? 'selected' : ''}>${E(c)}</option>`).join('')}</select>` : ''}</div>`;
 }
 
 const ENTITY_NAME = { knowledge: 'запись', content: 'публикацию', tasks: 'задачу', metrics: 'замер', files: 'файл', brand: 'брендбук',
@@ -7606,11 +7606,13 @@ function render() {
 
   if (page === 'knowledge' || page === 'cases') {
     const ks = db.knowledge.filter(k => page !== 'cases' || k.category === 'Кейсы');
+    // у «Кейсов» одна категория: фильтр по категориям там пустой, остаётся только поиск
     s = heading(page === 'cases' ? 'Кейсы' : 'База знаний',
-      'Источники, статусы и возможность дополнить каждую запись.',
+      page === 'cases' ? 'Работы, которые можно показывать клиентам: что сделали, для кого и откуда это известно.'
+        : 'Источники, статусы и возможность дополнить каждую запись.',
       `<button class="primary" data-action="newk">+ Запись</button>`)
-      + filters([...new Set(ks.map(k => k.category))])
-      + `<div class="grid three">${ks.filter(k => (category === 'Все' || category === k.category)
+      + filters(page === 'cases' ? [] : [...new Set(ks.map(k => k.category))])
+      + `<div class="grid three">${ks.filter(k => (page === 'cases' || category === 'Все' || category === k.category)
         && (k.title + ' ' + k.body).toLowerCase().includes(query.toLowerCase())).map(kc).join('')
       || '<div class="empty">Записи не найдены.</div>'}</div>`;
   }
@@ -7779,8 +7781,8 @@ function render() {
   if (page === 'competitors') {
     s = heading('Конкуренты', 'Карта позиционирования. Первичный обзор, не рейтинг и не полный функциональный аудит.')
       + `<div class="notice">Источники собраны 15 сентября 2026. Часть страниц не отдала полный текст. Глубина проверки указана в каждой строке.</div>
-      <div class="card tablewrap"><table class="table"><thead><tr><th>Сегмент</th><th>Компания</th><th>Контекст</th><th>Возможность для ADERVIS / проверка</th><th>Источник</th></tr></thead><tbody>
-      ${rivals.map(([g, n, c, a, u, st]) => `<tr><td>${tag(g)}</td><td><b>${n}</b></td><td>${c}</td><td>${a}</td><td>${source(u)}<p><small>${st}</small></p></td></tr>`).join('')}
+      <div class="card tablewrap"><table class="table rivaltable"><thead><tr><th>Сегмент</th><th>Компания</th><th>Контекст</th><th>Возможность для ADERVIS / проверка</th><th>Источник</th></tr></thead><tbody>
+      ${rivals.map(([g, n, c, a, u, st]) => `<tr><td class="rv-seg">${tag(g)}</td><td class="rv-name"><b>${n}</b></td><td class="rv-ctx">${c}</td><td class="rv-opp">${a}</td><td class="rv-src">${source(u)}<p><small>${st}</small></p></td></tr>`).join('')}
       </tbody></table></div>
       <div class="grid three" style="margin-top:20px">${[
         ['Studio', 'Доказывать единый результат кейсом с несколькими носителями.'],

@@ -3091,6 +3091,23 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 .dlgmgr p{margin:0;flex:1}
 @media(max-width:720px){.bflrow{flex-wrap:wrap}.bflcopy{width:100%;justify-content:center}.dlgmgr{flex-wrap:wrap}.dlgmgr .primary{width:100%}}
 
+/* Конкуренты на телефоне — карточки: пять колонок не влезали, правые обрезались */
+@media(max-width:720px){
+  .rivaltable{display:block}
+  .rivaltable thead{display:none}
+  .rivaltable tbody{display:block}
+  .rivaltable tr{display:grid;grid-template-columns:1fr auto;gap:6px 10px;padding:14px 4px;border-bottom:1px solid var(--line)}
+  .rivaltable tr:last-child{border-bottom:0}
+  .rivaltable td{display:block;padding:0;border:0;font-size:13px;line-height:1.45}
+  .rivaltable .rv-name{grid-column:1;grid-row:1;font-size:15px}
+  .rivaltable .rv-seg{grid-column:2;grid-row:1;justify-self:end}
+  .rivaltable .rv-ctx{grid-column:1/-1;color:var(--muted)}
+  .rivaltable .rv-opp{grid-column:1/-1}
+  .rivaltable .rv-opp::before{content:'Возможность для ADERVIS';display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+  .rivaltable .rv-src{grid-column:1/-1}
+  .rivaltable .rv-src p{margin:2px 0 0}
+}
+
 /* Заявки на телефоне — карточки, а не таблица с прокруткой вбок:
    кто и статус сверху, чего хотел, ниже дата, откуда и сумма */
 @media(max-width:720px){
