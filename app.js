@@ -4793,8 +4793,8 @@ function renderBrief(b) {
       ${chat ? `<button class="bfpill" data-action="bfchat">${icon('chat', 14)} Переписка</button>` : ''}
       <small id="bfsaved" class="muted" aria-live="polite"></small></p></div></div>
       <div class="headactions"><button data-action="bfvoice" ${briefVoice.busy ? 'disabled' : ''} title="Короткое голосовое: что за клиент и что дальше">${icon('sound', 15)} ${briefVoice.busy && briefVoice.id === b.id ? 'Записываю… до минуты' : 'Голосовая сводка'}</button>
-        <button class="${b.crm_deal_id ? '' : 'primary'}" data-action="bfcrmpush">${icon('upload', 15)} ${b.crm_deal_id ? 'Обновить в CRM' : 'В ADERVIS CRM'}</button>
-        <button data-action="bfedit">Изменить</button></div></div>
+        <button class="${!b.crm_deal_id && ['Переговоры', 'Сделка'].includes(b.stage) ? 'primary' : ''}" data-action="bfcrmpush" title="В CRM — только клиентов, готовых платить">${icon('upload', 15)} ${b.crm_deal_id ? 'Обновить в CRM' : 'В ADERVIS CRM'}</button>
+        <button data-action="bfedit" class="bfeditbtn">${icon('edit', 15)} <span>Изменить</span></button></div></div>
     ${briefVoice.id === b.id && (briefVoice.url || briefVoice.error) ? voiceCard() : ''}
     ${crmNote(b)}
     ${briefStepper(b)}
