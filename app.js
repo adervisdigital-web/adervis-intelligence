@@ -3118,11 +3118,12 @@ function renderHome() {
       </div>
       <aside class="hmside">
         <section class="card hmmoney" aria-labelledby="moneyh"><div class="head"><h2 id="moneyh">В работе</h2><button class="linkbtn" data-page="briefs">Брифы и КП</button></div>
-          <div class="hmsum">${total ? `<span data-count="${total}">${num(total)}</span> <small>₽</small>` : '—'}</div>
-          <p class="muted">${open.length ? `${open.length} ${plural(open.length, 'проект', 'проекта', 'проектов')} до сделки` : 'проектов в работе нет'}</p>
+          ${total || wonSum || open.length ? `<div class="hmsum">${total ? `<span data-count="${total}">${num(total)}</span> <small>₽</small>` : '<span class="hmsumnone">Сумм пока нет</span>'}</div>
+          <p class="muted">${open.length ? `${open.length} ${plural(open.length, 'проект', 'проекта', 'проектов')} до сделки${total ? '' : ', сметы ещё не посчитаны'}` : 'проектов до сделки нет'}</p>
           ${total ? `<div class="hmpipe" role="img" aria-label="${E(bySt.filter(x => x.sum).map(x => `${x.label}: ${num(x.sum)} ₽`).join(', '))}">${bySt.map((x, i) => x.sum ? `<i class="seg${i}" style="flex:${x.sum}"></i>` : '').join('')}</div>` : ''}
-          <ul class="hmstages">${bySt.map((x, i) => `<li><i class="seg${i}"></i><span>${x.label}</span><b>${x.sum ? `${num(x.sum)} ₽` : '—'}</b><em>${x.n || ''}</em></li>`).join('')}
-            <li><i class="segwon"></i><span>Сделки за 30 дней</span><b>${wonSum ? `${num(wonSum)} ₽` : '—'}</b><em>${won.length || ''}</em></li></ul>
+          <ul class="hmstages">${bySt.map((x, i) => `<li${x.n || x.sum ? '' : ' class="nil"'}><i class="seg${i}"></i><span>${x.label}</span><b>${x.sum ? `${num(x.sum)} ₽` : x.n ? 'без суммы' : 'нет'}</b><em>${x.n || ''}</em></li>`).join('')}
+            <li${wonSum ? '' : ' class="nil"'}><i class="segwon"></i><span>Сделки за 30 дней</span><b>${wonSum ? `${num(wonSum)} ₽` : 'нет'}</b><em>${won.length || ''}</em></li></ul>`
+          : `<div class="hmmoneyempty"><p>Проектов в работе пока нет. Здесь будет сумма всех смет до сделки и сделки за 30 дней.</p><button class="primary" data-action="bfnew">${icon('plus', 15)} Бриф из ТЗ</button></div>`}
           ${sd ? `<button class="hmstock" data-page="stock"><span>${icon('download', 15)} Stock за месяц</span><b>${num(Math.round(sd.money?.revenueMonth || 0))} ₽</b><small>${sd.sales?.day ?? 0} за сутки</small></button>` : ''}
         </section>
         ${gaps.length ? `<section class="card hmgaps"><div class="head"><h2>Что мешает</h2><button class="linkbtn" data-page="chain">Вся цепочка</button></div>
@@ -3283,7 +3284,7 @@ function renderMagnets() {
     ['Заявок с магнитов', fromMagnets.length, db.leads.length ? `${Math.round(100 * fromMagnets.length / db.leads.length)}% всех заявок` : 'заявок пока нет'],
     ['Сделок с магнитов', fromMagnets.filter(l => l.status === 'Сделка').length, 'из привязанных заявок'],
     ['Лучший', (() => { const best = db.lead_magnets.map(m => [m, magnetStats(m)]).filter(([, s]) => s.deals)
-        .sort((a, b) => b[1].deals - a[1].deals)[0]; return best ? E(best[0].name) : '—'; })(), 'по числу сделок']
+        .sort((a, b) => b[1].deals - a[1].deals)[0]; return best ? E(best[0].name) : '<span class="vnone">Пока нет</span>'; })(), 'по числу сделок, появится после первой сделки с магнита']
   ].map(([a, b, c]) => `<div class="card metric"><div class="eyebrow">${a}</div><div class="value${String(b).length > 12 ? ' small' : ''}">${b}</div><small>${c}</small></div>`).join('')}</div>`;
 
   const card = m => {
@@ -7559,7 +7560,7 @@ function renderChain() {
       `${s.content.dated} публикаций с датой`,
       'автопубликация не подключена'
     ], s.content.dated ? 'warn' : 'empty'),
-    chainLink(5, 'analytics', 'Результат', s.result.leads || '—', 'лидов', [
+    chainLink(5, 'analytics', 'Результат', s.result.leads || 0, 'лидов', [
       `${s.result.measured} публикаций с замерами`,
       s.result.views ? `${s.result.views.toLocaleString('ru')} просмотров` : 'просмотры не внесены',
       s.result.posts ? 'по последним замерам' : 'замеров нет'

@@ -3188,3 +3188,10 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
   .bfhead .headactions>.bfeditbtn{flex:0 0 44px;padding:0}
   .bfhead .headactions>.bfeditbtn span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 }
+/* 12.11 главная: «В работе» без огромного прочерка (DESIGN.md: пусто — подсказка и первый шаг) */
+.hmsumnone{font:600 22px/1.2 var(--font-display);color:var(--muted)}
+.hmstages li.nil span,.hmstages li.nil b{color:var(--muted);font-weight:500}
+.hmstages li.nil i{opacity:.4}
+.hmmoneyempty{display:flex;flex-direction:column;align-items:flex-start;gap:12px;margin-top:6px}
+.hmmoneyempty p{color:var(--muted);font-size:14px;line-height:1.45;margin:0}
+.metric .value .vnone{font:600 20px/1.2 var(--font-display);color:var(--muted)}

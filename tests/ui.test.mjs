@@ -1046,7 +1046,7 @@ check('порядок звеньев верный',
 check('знания считают записи из базы', nodes[0].value === '24', nodes[0].value);
 check('звено ИИ пустое, пока им не пользовались', nodes[1].state === 'empty' && nodes[1].value === '0');
 check('контент считает материалы', nodes[2].value === '3', nodes[2].value);
-check('звено результата пустое без замеров', nodes[4].state === 'empty' && nodes[4].value === '—');
+check('звено результата пустое без замеров', nodes[4].state === 'empty' && nodes[4].value === '0');   // 12.11: без больших прочерков (DESIGN.md)
 const gaps = await page.$$eval('.gapcard b', g => g.map(x => x.textContent));
 check('разрывы найдены и названы', gaps.length >= 3, gaps.join(' | '));
 check('непроверенные записи названы разрывом', gaps.some(g => /Требует проверки/.test(g)));
