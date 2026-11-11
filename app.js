@@ -3017,12 +3017,14 @@ function weekHtml() {
   ];
   // просроченное не теряется: оно стоит в сегодняшнем дне
   const dayOf = x => x.d < days[0] ? days[0] : x.d;
+  const busy = items.some(x => dayOf(x) <= days[6]);
   return `<section class="card hmweek" aria-labelledby="weekh"><div class="head"><h2 id="weekh">Неделя</h2>
       <span class="muted">${E(shortDate(days[0]))} – ${E(shortDate(days[6]))}</span><button class="linkbtn" data-page="content">Контент-план</button></div>
+    ${busy ? '' : '<p class="hmweekempty">На неделе ни встреч по заявкам, ни публикаций. Запланируйте пост в «Контент-плане» или следующий шаг по клиенту.</p>'}
     <ol class="hmdays">${days.map((d, i) => { const list = items.filter(x => dayOf(x) === d);
       return `<li class="${i === 0 ? 'isnow' : ''}"><span class="hmday">${i === 0 ? 'Сегодня' : E(weekday(d))}<b>${Number(d.slice(8, 10))}</b></span>
         ${list.length ? `<ul>${list.slice(0, 5).map(x => `<li class="tone-${x.tone}"><button ${x.open} title="${E(x.hint || x.t)}"><i></i><span>${E(x.t)}</span></button></li>`).join('')}
-          ${list.length > 5 ? `<li class="hmmore">и ещё ${list.length - 5}</li>` : ''}</ul>` : '<p class="hmfree">Свободно</p>'}</li>`; }).join('')}</ol></section>`;
+          ${list.length > 5 ? `<li class="hmmore">и ещё ${list.length - 5}</li>` : ''}</ul>` : '<p class="hmfree" aria-label="Свободно"></p>'}</li>`; }).join('')}</ol></section>`;
 }
 
 // Главная: одно дело крупно («Сейчас»), за ним короткая очередь; справа деньги
@@ -3083,11 +3085,11 @@ function renderHome() {
   const wonSum = won.reduce((n, b) => n + kpPrice(b), 0);
   const a = adStats(), ls = leadStats(), reach = totals(), sd = stockView.res?.data;
   const minis = [
-    ['Идут кампании', db.campaigns.length ? a.running.length : '—',
+    ['Идут кампании', db.campaigns.length ? a.running.length : '<span class="vnone">нет данных</span>',
       !db.campaigns.length ? 'Заведите кампанию в «Рекламе»' : a.running.length ? `потрачено ${num(a.runningSpent)} из ${num(a.runningBudget)}` : 'ни одна не запущена', 'ads'],
-    ['Цена заявки', a.cpl === null ? '—' : num(a.cpl), a.leads ? `заявок из кампаний: ${a.leads}` : 'заявок из кампаний пока нет', 'ads'],
-    ['Заявки за 30 дней', db.leads.length ? ls.recent : '—', db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads'],
-    ['Охват публикаций', reach.posts ? num(reach.views) : '—', reach.posts ? `по последним замерам · публикаций: ${reach.posts}` : 'замеров пока нет', 'analytics']
+    ['Цена заявки', a.cpl === null ? '<span class="vnone">нет данных</span>' : num(a.cpl), a.leads ? `заявок из кампаний: ${a.leads}` : 'заявок из кампаний пока нет', 'ads'],
+    ['Заявки за 30 дней', db.leads.length ? ls.recent : '<span class="vnone">нет данных</span>', db.leads.length ? `${ls.inWork} в работе · сделок ${ls.won.length}` : 'ни одного обращения не записано', 'leads'],
+    ['Охват публикаций', reach.posts ? num(reach.views) : '<span class="vnone">нет данных</span>', reach.posts ? `по последним замерам · публикаций: ${reach.posts}` : 'замеров пока нет', 'analytics']
   ];
   const gaps = [...businessGaps(), ...chainGaps(chainStats())].slice(0, 3);
 

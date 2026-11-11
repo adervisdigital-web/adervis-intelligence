@@ -3195,3 +3195,7 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 .hmmoneyempty{display:flex;flex-direction:column;align-items:flex-start;gap:12px;margin-top:6px}
 .hmmoneyempty p{color:var(--muted);font-size:14px;line-height:1.45;margin:0}
 .metric .value .vnone{font:600 20px/1.2 var(--font-display);color:var(--muted)}
+/* 12.11 неделя: пустой день без слова «Свободно» х6, тонкая черта; пустая неделя — одна подсказка */
+.hmfree{height:2px;width:22px;margin-top:10px;border-radius:2px;background:var(--line)}
+.hmweekempty{margin:2px 0 12px;color:var(--muted);font-size:14px}
+.metric.mini .value .vnone{font:600 15px/1.6 var(--font-ui);color:var(--muted);letter-spacing:0}
