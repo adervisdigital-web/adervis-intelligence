@@ -2909,9 +2909,9 @@ function renderSite() {
     + (siteView.error ? `<div class="notice error">${E(siteView.error)}</div>` : '')
     + `<div class="sitestats">
       ${card('Заявки с сайта', `${month}`, 'за 30 дней, сами попадают в «Заявки»')}
-      ${r ? card('Страницы', `${r.total - bad.length} из ${r.total}`, bad.length ? `без замечаний, у ${bad.length} есть что поправить` : 'без замечаний', bad.length ? 'tone-gold' : 'tone-green') : card('Страницы', '—', 'нажмите «Проверить сайт»')}
-      ${r ? card('HTTPS', r.https.redirects ? 'включён' : 'не обязателен', r.https.redirects ? 'http сам переходит на https' : 'сайт открывается и без замка', r.https.redirects ? 'tone-green' : 'tone-red') : card('HTTPS', '—', 'покажет проверка')}
-      ${r ? card('Кейсы', `${cases.length - missing.length} из ${cases.length}`, missing.length ? `${missing.length} нет в базе знаний Hub` : 'все есть в базе знаний', missing.length ? 'tone-gold' : 'tone-green') : card('Кейсы', '—', 'сверю с базой знаний после проверки')}
+      ${r ? card('Страницы', `${r.total - bad.length} из ${r.total}`, bad.length ? `без замечаний, у ${bad.length} есть что поправить` : 'без замечаний', bad.length ? 'tone-gold' : 'tone-green') : card('Страницы', '<span class="vnone">не проверено</span>', 'нажмите «Проверить сайт»')}
+      ${r ? card('HTTPS', r.https.redirects ? 'включён' : 'не обязателен', r.https.redirects ? 'http сам переходит на https' : 'сайт открывается и без замка', r.https.redirects ? 'tone-green' : 'tone-red') : card('HTTPS', '<span class="vnone">не проверено</span>', 'покажет проверка')}
+      ${r ? card('Кейсы', `${cases.length - missing.length} из ${cases.length}`, missing.length ? `${missing.length} нет в базе знаний Hub` : 'все есть в базе знаний', missing.length ? 'tone-gold' : 'tone-green') : card('Кейсы', '<span class="vnone">не проверено</span>', 'сверю с базой знаний после проверки')}
     </div>`
     + `<div class="grid sitecols">
       <div class="card"><h2>Заявки с сайта</h2>${leads.length ? `<ul class="sitelist">${leads.slice(0, 8).map(l => `<li><button class="linkbtn" data-action="openlead" data-id="${E(l.id)}">${E(l.name)}</button>
@@ -4695,7 +4695,7 @@ function renderBriefs() {
   const lateN = open.filter(x => x.next_on && x.next_on < today()).length;
   const pulse = list.length ? `<section class="leadstats bfpulse" aria-label="Брифы в цифрах">
     ${[['В работе', open.length, 'брифов на шагах до сделки', 'gold'],
-       ['Сумма КП в работе', kpSum ? num(kpSum) + ' ₽' : '—', 'по ценам из КП или середине сметы', 'violet'],
+       ['Сумма КП в работе', kpSum ? num(kpSum) + ' ₽' : '<span class="vnone">нет сумм</span>', 'по ценам из КП или середине сметы', 'violet'],
        ['Просрочено шагов', lateN, lateN ? 'начните с них' : 'всё в срок', lateN ? 'red' : 'green'],
        ['Сделок', list.filter(x => x.stage === 'Сделка').length, `отказов: ${list.filter(x => x.stage === 'Отказ').length}`, 'green']]
       .map(([a, b, c, tone]) => `<div class="metric tone-${tone}"><small>${a}</small><b class="value">${b}</b><span>${c}</span></div>`).join('')}

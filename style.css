@@ -3199,3 +3199,6 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 .hmfree{height:2px;width:22px;margin-top:10px;border-radius:2px;background:var(--line)}
 .hmweekempty{margin:2px 0 12px;color:var(--muted);font-size:14px}
 .metric.mini .value .vnone{font:600 15px/1.6 var(--font-ui);color:var(--muted);letter-spacing:0}
+
+/* Пустые цифры в карточках сайта: тихая подпись вместо прочерка */
+.sitestat b .vnone{font:600 15px/1.6 var(--font-ui);color:var(--muted);letter-spacing:0}
