@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ADERVIS</title>
+<style>html,body{margin:0;background:#f3f4f6;font:15px/1.5 Arial,sans-serif;color:#5d6470}.wait{padding:40px 16px;text-align:center}</style>
+</head>
+<body>
+<div class="wait">Загружаем документ…</div>
+<script>
+// Просмотр документа для клиента (смета, отчёт): готовая HTML-страница лежит в хранилище kp-media.
+// Хранилище отдаёт HTML как text/plain, поэтому страница подгружается здесь и показывается как есть.
+// В коде нет данных клиентов: адрес документа приходит в параметре ?f=<папка>/<файл>.html
+(async () => {
+  const fail = () => { document.querySelector('.wait').textContent = 'Документ не найден или ссылка устарела.'; };
+  const f = new URLSearchParams(location.search).get('f') || '';
+  if (!/^[a-z0-9-]+\/[A-Za-z0-9_.-]+\.html$/.test(f) || f.includes('..')) return fail();
+  try {
+    const r = await fetch('https://mlsmybtspqqpsvbukbcj.supabase.co/storage/v1/object/public/kp-media/' + f, { cache: 'no-cache' });
+    if (!r.ok) return fail();
+    const html = await r.text();
+    document.open(); document.write(html); document.close();
+  } catch (e) { fail(); }
+})();
+</script>
+</body>
+</html>
