@@ -3202,3 +3202,46 @@ body:has(dialog[open]) .adadock,body.rowada-on .adadock{opacity:0;pointer-events
 
 /* Пустые цифры в карточках сайта: тихая подпись вместо прочерка */
 .sitestat b .vnone{font:600 15px/1.6 var(--font-ui);color:var(--muted);letter-spacing:0}
+
+/* ===== Сценарии (до контент-плана) и тип поста: видео, с картинкой, текст ===== */
+.pkind{display:inline-flex;align-items:center;gap:4px;padding:1px 8px 1px 6px;border-radius:99px;font-size:11px;font-weight:600;white-space:nowrap;
+  background:color-mix(in srgb,var(--kt) 16%,transparent);color:color-mix(in srgb,var(--kt) 60%,var(--ink))}
+.pkind .ic{flex:none}
+.ptmeta{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.pcard .ptmeta{margin:6px 0 2px}
+.scgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.sccard{display:flex;flex-direction:column;gap:8px;cursor:pointer;position:relative;border-top:3px solid var(--rt);margin:0}
+.sccard:hover{border-color:color-mix(in srgb,var(--rt) 60%,var(--line));border-top-color:var(--rt)}
+.sccard.on{box-shadow:0 0 0 2px var(--gold) inset}
+.schead{display:flex;align-items:center;gap:8px;min-width:0}
+.schead small{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.scno{font:700 20px/1 var(--font-display,inherit);color:var(--muted);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.scpick{width:36px;height:36px;min-height:36px;padding:0;border-radius:10px;display:grid;place-items:center;border:1.5px solid var(--line);background:var(--panel);color:var(--ink-on-gold,#14161a);flex:none}
+.scpick[aria-pressed=true]{background:var(--gold);border-color:var(--gold)}
+.sccard h3{margin:0;font-size:16px;line-height:1.3;overflow-wrap:anywhere}
+.schook{margin:0;font-size:13.5px;line-height:1.45;color:var(--muted);font-style:italic;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.scfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:8px;border-top:1px solid var(--line)}
+.scfoot small{display:inline-flex;align-items:center;gap:5px;min-width:0}
+.scacts{display:flex;gap:6px;align-items:center}
+.scgo{display:inline-flex;align-items:center;gap:4px}
+.scempty{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;max-width:520px;margin:20px auto;color:var(--muted)}
+textarea.sctext{min-height:340px;font-family:var(--font-ui);line-height:1.5}
+@media(max-width:720px){.scgrid{grid-template-columns:1fr}}
+
+/* PDF сценариев: белый лист, каждый ролик с новой страницы */
+.scdoc{font:14px/1.55 var(--font-ui);color:#14161a;background:#fff}
+.scdochead{display:flex;gap:18px;align-items:center;padding-bottom:14px;border-bottom:2px solid #f6bd3a;margin-bottom:18px}
+.scdochead h1{margin:0;font-family:var(--font-display);font-size:22px;line-height:1.15}
+.scdochead p{margin:4px 0 0;color:#5c5c5c;font-size:13px}
+.scdoctips{background:#fbf6e8;border-radius:10px;padding:12px 18px;margin-bottom:8px}
+.scdoctips h2{margin:0 0 6px;font-size:16px}
+.scdoctips ul{margin:0;padding-left:18px}
+.scdoctips li{margin:3px 0}
+.scdocitem{break-before:page;padding-top:4px}
+.scdocitem:first-of-type{break-before:auto;margin-top:18px}
+.scdocno{font-size:12px;font-weight:600;color:#8a6a10;text-transform:uppercase;letter-spacing:.06em}
+.scdocitem h2{margin:4px 0 10px;font-size:22px;line-height:1.2}
+.scdocitem h4{margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#5c5c5c}
+.scdocitem p{margin:0 0 6px}
+.scdocitem p.say{font-size:17px;line-height:1.45;padding-left:12px;border-left:3px solid #f6bd3a;margin:0 0 8px}
+@media print{ body.printkp #kpprint .scdoc{-webkit-print-color-adjust:exact;print-color-adjust:exact} }

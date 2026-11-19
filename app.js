@@ -29,7 +29,7 @@ function toast(text, ms = 3500, action = null) {
 // каждый на своей сетке и со своей толщиной линии.
 const ICON_SET = Object.fromEntries((window.ADERVIS_ICONS || []).map(i => [i.key, i]));
 // Старые имена из кода приложения, чтобы не переписывать все вызовы.
-const ICON_ALIAS = { site: 'website', stock: 'download', mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat', briefs: 'proposal' };
+const ICON_ALIAS = { scenarios: 'script', site: 'website', stock: 'download', mic: 'sound', client: 'clients', lead: 'leads', prospects: 'clients', magnets: 'gift', keywords: 'key', survey: 'check', dialogs: 'chat', briefs: 'proposal' };
 const ICON_RU = Object.fromEntries(Object.values(ICON_SET).map(i => [i.key, i.ru]));
 const ICONS = new Proxy({}, { get: (_, k) => ICON_SET[ICON_ALIAS[k] || k] });
 
@@ -312,7 +312,7 @@ const emptyDb = () => ({
   knowledge: [], content: [], tasks: [], metrics: [], files: [], brand: [], campaigns: [],
   decisions: [], leads: [], publications: [], ai: [], members: [], activity: [], accounts: [],
   prospects: [], kpi_targets: [], lead_magnets: [], keyword_sets: [], ad_texts: [], channel_stats: [], survey_answers: [],
-  sales_scripts: [], outreach: {}, briefs: [], studio_rates: [], client_log: []
+  sales_scripts: [], outreach: {}, briefs: [], studio_rates: [], client_log: [], scenarios: []
 });
 let db = emptyDb();
 let page = 'home', query = '', category = 'Все';
@@ -336,7 +336,7 @@ const SECTION_TITLE = {
   home: 'Обзор', survey: 'Анкета', ads: 'Реклама', keywords: 'Ключевые фразы', leads: 'Заявки', briefs: 'Брифы и КП', dialogs: 'Диалоги', prospects: 'Поиск клиентов', magnets: 'Лид-магниты', decisions: 'Решения',
   knowledge: 'База знаний', brand: 'Брендбук', products: 'Услуги и продукты',
   cases: 'Кейсы', site: 'Сайт', stock: 'Adervis Stock', competitors: 'Конкуренты',
-  content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
+  scenarios: 'Сценарии', content: 'Контент-план', assistant: 'AI-рабочая зона', analytics: 'Метрики',
   chain: 'Нейроцепочка', tasks: 'Задачи и рост', roadmap: 'Развитие системы', settings: 'Настройки'
 };
 
@@ -344,7 +344,7 @@ const NAV = [
   ['', ['home', 'survey']],
   ['Продажи', ['leads', 'briefs', 'dialogs', 'prospects', 'magnets']],
   ['Реклама', ['ads', 'keywords']],
-  ['Контент', ['content', 'assistant']],
+  ['Контент', ['scenarios', 'content', 'assistant']],
   ['Аналитика', ['analytics', 'decisions']],
   ['Компания', ['knowledge', 'cases', 'site', 'stock', 'products', 'competitors', 'brand']],
   ['Система', ['chain', 'tasks', 'roadmap', 'settings']]
@@ -392,6 +392,7 @@ function handleError(e) {
 // иначе раздел, которого сервер ещё не отдал, роняет отрисовку целой страницы.
 async function reload() {
   db = { ...emptyDb(), ...await api.load() };
+  splitScenarios();
   loadedAt = Date.now();
 }
 
@@ -1916,10 +1917,230 @@ function contentCard(p) {
   return `<article class="card click pcard" tabindex="0" role="button" data-p="${E(p.id)}" data-dir="${E(PRODUCT_DIR[p.product] || '')}">
     <div class="pcardhead"><span class="netmark">${icon(n?.icon || 'social', 14)}${E(p.channel)}</span>
       <small class="${late ? 'minus' : 'muted'}">${p.date ? E(shortDate(p.date)) + (late ? ' · прошла' : '') : 'без даты'}</small></div>
-    <h3>${E(p.title)}</h3>
+    <span class="ptmeta">${kindBadge(p)}</span><h3>${E(p.title)}</h3>
     <div class="pcardfoot"><small class="muted">${E(p.author)}${views !== null ? ` · ${num(views)} просм.` : ''}${p.url ? ' · есть ссылка' : ''}</small>
       <span class="movebtns">${i > 0 ? step(-1, `Вернуть в «${P_STATUS[i - 1]}»`, '←') : ''}${i >= 0 && i < P_STATUS.length - 1 ? step(1, `Дальше: «${P_STATUS[i + 1]}»`, '→') : ''}</span></div>
   </article>`;
+}
+
+// ---- сценарии: ступень перед контент-планом
+// Ролик сначала пишется сценарием: его согласуют и отправляют тому, кто
+// снимает (амбассадору — PDF-файлом), а в план он встаёт уже с датой. В базе
+// это та же публикация со статусом «Сценарий»; при загрузке такие записи
+// уходят в db.scenarios, поэтому план, календарь и метрики их не видят.
+const SCRIPT = 'Сценарий';
+function splitScenarios() {
+  db.scenarios = db.content.filter(p => p.status === SCRIPT);
+  db.content = db.content.filter(p => p.status !== SCRIPT);
+}
+
+// Тип поста по формату и ТЗ на визуал: видео, текст с картинкой или только
+// текст. Значок со словом — в плане, на доске, в календаре и в сценариях.
+const POST_KIND = {
+  video: { icon: 'video', label: 'Видео', tone: 'red' },
+  photo: { icon: 'photo', label: 'С картинкой', tone: 'sky' },
+  text: { icon: 'file', label: 'Текст', tone: 'gray' }
+};
+function postKind(p) {
+  const f = String(p.format || '').toLowerCase(), v = String(p.visual || '').toLowerCase();
+  if (/фото или видео/.test(f)) return /видео|ролик|клип/.test(v) ? 'video' : 'photo';
+  if (/клип|видео|ролик|shorts|сторис/.test(f)) return 'video';
+  if (/карусель/.test(f)) return 'photo';
+  if (/опрос|ветка/.test(f)) return 'text';
+  if (/клип|видео|ролик/.test(v) && !/статья/.test(f)) return 'video';
+  return v.trim() ? 'photo' : 'text';
+}
+const kindBadge = (p, withLabel = true) => {
+  const k = POST_KIND[postKind(p)];
+  return `<span class="pkind" style="--kt:var(--tone-${k.tone})" title="${E(k.label)}">${icon(k.icon, 13)}${withLabel ? `<span>${E(k.label)}</span>` : `<span class="crumb">${E(k.label)}</span>`}</span>`;
+};
+
+// Сколько секунд займёт текст в кадре: реплики в кавычках, ~2,4 слова в секунду.
+const spokenLines = body => String(body || '').split('\n').map(l => l.trim()).filter(l => /^«.*»$/.test(l));
+const scriptSeconds = body => Math.round(spokenLines(body).join(' ').split(/\s+/).filter(Boolean).length / 2.4);
+const scriptHook = s => (spokenLines(s.body)[0] || '').replace(/^«|»$/g, '');
+const isHeadLine = l => l.length > 3 && /[А-ЯЁA-Z]{3}/.test(l) && l === l.toUpperCase() && !/^«/.test(l);
+
+let scenSel = new Set(), scenWho = 'Все';
+
+function renderScenarios() {
+  const list = db.scenarios.slice().sort((a, b) => a.id.localeCompare(b.id, 'ru', { numeric: true }));
+  scenSel = new Set([...scenSel].filter(id => list.some(s => s.id === id)));
+  const who = [...new Set(list.map(s => s.author))];
+  if (scenWho !== 'Все' && !who.includes(scenWho)) scenWho = 'Все';
+  const q = query.toLowerCase();
+  const shown = list.filter(s => (scenWho === 'Все' || s.author === scenWho) && (!q || `${s.title} ${s.body}`.toLowerCase().includes(q)));
+  const pick = scenSel.size ? [...scenSel] : shown.map(s => s.id);
+  const head = heading('Сценарии', 'Сначала сценарий: пишем, согласуем и отправляем тому, кто снимает. В контент-план ролик встаёт уже с датой.',
+    `<div class="headactions">${shown.length ? `<button data-action="scpdf" ${pick.length ? '' : 'disabled'}>${icon('pdf', 15)} Скачать PDF · ${pick.length}</button>
+      <button data-action="scplan">${icon('calendar', 15)} В контент-план · ${pick.length}</button>` : ''}
+      <button class="primary" data-action="scnew">+ Сценарий</button></div>`);
+  if (!list.length) {
+    return head + `<div class="empty scempty">${icon('script', 28)}<p>Здесь будут сценарии роликов и постов до того, как они встанут в план. Их можно скачать PDF-файлом и отправить тому, кто снимает.</p>
+      <button class="primary" data-action="scnew">+ Первый сценарий</button></div>`;
+  }
+  const tabs = who.length > 1 ? `<div class="nettabs" role="group" aria-label="Кто в кадре">${['Все', ...who].map(w =>
+    `<button class="nettab${scenWho === w ? ' on' : ''}" data-action="scwho" data-id="${E(w)}" aria-pressed="${scenWho === w}">${icon(w === 'Все' ? 'script' : 'portrait', 16)}<span>${E(w)}</span>
+      <b>${w === 'Все' ? list.length : list.filter(s => s.author === w).length}</b></button>`).join('')}</div>` : '';
+  const toolbar = `<div class="toolbar plantools"><input class="input" id="filter" aria-label="Поиск по сценариям" placeholder="Найти в сценариях…" value="${E(query)}">
+    <div class="seg" role="group" aria-label="Выбор"><button class="chip" data-action="scselall">${scenSel.size && shown.every(s => scenSel.has(s.id)) ? 'Снять выбор' : 'Выбрать все'}</button></div>
+    <small class="muted">${scenSel.size ? `Выбрано: ${scenSel.size}. PDF и перенос в план — только для них.` : 'Ничего не выбрано: кнопки сверху берут все сценарии на экране.'}</small></div>`;
+  const card = (s, i) => {
+    const sec = scriptSeconds(s.body), on = scenSel.has(s.id), r = rubricOf(s.rubric);
+    return `<article class="card sccard${on ? ' on' : ''}" data-sc="${E(s.id)}" tabindex="0" role="button" aria-label="Открыть сценарий «${E(s.title)}»" style="--rt:var(--tone-${r?.tone || 'violet'})">
+      <div class="schead"><span class="scno">${String(i + 1).padStart(2, '0')}</span>${kindBadge(s)}
+        <small class="muted">${E(s.format || 'формат не выбран')}${sec ? ` · ≈ ${sec} с` : ''}</small>
+        <button class="scpick" data-action="scpick" data-id="${E(s.id)}" aria-pressed="${on}" aria-label="${on ? 'Убрать из выбора' : 'Выбрать'} «${E(s.title)}»" title="${on ? 'Выбран' : 'Выбрать'}">${on ? icon('check', 15) : ''}</button></div>
+      <h3>${E(s.title)}</h3>
+      ${scriptHook(s) ? `<p class="schook">«${E(scriptHook(s))}»</p>` : ''}
+      <div class="scfoot"><small class="muted">${icon('portrait', 13)} ${E(s.author)} · ${E(s.channel)}</small>
+        <span class="scacts"><button class="rowact" data-action="scpdf1" data-id="${E(s.id)}" aria-label="PDF «${E(s.title)}»" title="Скачать PDF">${icon('pdf', 16)}</button>
+        <button class="chip scgo" data-action="scplan1" data-id="${E(s.id)}" title="Поставить в контент-план с датой">В план ${icon('next', 14)}</button></span></div>
+    </article>`;
+  };
+  return head + tabs + toolbar + `<div class="scgrid">${shown.map(card).join('') || '<div class="empty">Ничего не найдено.</div>'}</div>`;
+}
+
+function editScenario(id) {
+  const exists = db.scenarios.some(s => s.id === id);
+  const s = db.scenarios.find(x => x.id === id) || {
+    id: uid(), title: '', body: 'ХУК · ПЕРВЫЕ 3 СЕКУНДЫ\n«»\n\nЧТО ГОВОРИТЬ\n«»\n«»\n\nФИНАЛ\n«»\n\nПОДПИСЬ К ПОСТУ\n',
+    author: scenWho !== 'Все' ? scenWho : '', channel: 'ВКонтакте', product: 'Studio', status: SCRIPT, date: '', url: '',
+    format: 'Клип', rubric: '', post_time: '', goal: '', visual: '', cta: ''
+  };
+  const fmts = n => { const l = network(n)?.formats || []; return s.format && !l.includes(s.format) ? [...l, s.format] : l; };
+  modal(`<h2>Сценарий</h2><form id="scf">
+    <div class="formgrid">
+      <div><label for="scwho">Кто в кадре или пишет</label><input id="scwho" name="author" required maxlength="60" value="${E(s.author)}" placeholder="Например: Паша"></div>
+      <div><label>Площадка</label><select name="channel">${opts(NETWORK_NAMES.includes(s.channel) ? NETWORK_NAMES : [...NETWORK_NAMES, s.channel], s.channel)}</select></div>
+      <div><label>Формат</label><select name="format"><option value="">Не выбран</option>${opts(fmts(s.channel), s.format)}</select></div>
+      <div><label>Направление</label><select name="product">${opts(['Studio', 'CRM', 'Stock', 'Медиаэксперименты'], s.product)}</select></div>
+      <div><label>Рубрика</label><select name="rubric"><option value="">Без рубрики</option>${opts(RUBRICS.map(r => r.id), s.rubric)}</select></div>
+      <div><label>Цель</label><select name="goal"><option value="">Не задана</option>${opts(GOALS, s.goal)}</select></div>
+    </div>
+    <label>Название</label><input name="title" required maxlength="300" value="${E(s.title)}">
+    <label>Сценарий</label>
+    <textarea name="body" required maxlength="20000" class="sctext">${E(s.body)}</textarea>
+    <small class="muted" id="scsec" aria-live="polite"></small>
+    <p class="muted">Строки ЗАГЛАВНЫМИ — заголовки, реплики в «кавычках» — то, что говорят в кадре: по ним считается длина ролика.</p>
+    <label>Как снимать</label><textarea name="visual" class="short" maxlength="2000" placeholder="Где, в каком плане, что в руках, сколько дублей">${E(s.visual)}</textarea>
+    <label>Призыв к действию</label><input name="cta" maxlength="300" value="${E(s.cta)}">
+    <div class="formactions"><button class="primary">Сохранить</button>
+      ${exists ? `<button type="button" data-action="scpdf1" data-id="${E(s.id)}">${icon('pdf', 15)} PDF</button>
+      <button type="button" data-action="scplan1" data-id="${E(s.id)}">В контент-план</button>
+      <button type="button" class="danger" data-action="scdel" data-id="${E(s.id)}">Удалить</button>` : ''}</div></form>`, 'wide');
+  const f = $('#scf');
+  const sec = () => { const n = scriptSeconds(f.elements.body.value); $('#scsec').textContent = n ? `В кадре ≈ ${n} с текста` : ''; };
+  f.elements.body.addEventListener('input', sec); sec();
+  f.elements.channel.onchange = () => { const cur = f.elements.format.value; f.elements.format.innerHTML = `<option value="">Не выбран</option>${opts(network(f.elements.channel.value)?.formats || [], cur)}`; };
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const btn = f.querySelector('button.primary'); btn.disabled = true;
+    const o = { ...s, ...Object.fromEntries(new FormData(f)), status: SCRIPT, date: null };
+    try {
+      const saved = exists ? await api.update('content', o) : await api.insert('content', o);
+      const i = db.scenarios.findIndex(x => x.id === saved.id);
+      if (i < 0) db.scenarios.push(saved); else db.scenarios[i] = saved;
+      noteLocal(exists ? 'update' : 'insert', 'content', saved);
+      $('#modal').close(); render(); toast('Сценарий сохранён');
+    } catch (err) { handleError(err); btn.disabled = false; }
+  };
+}
+
+function delScenario(id) {
+  const s = db.scenarios.find(x => x.id === id);
+  if (!s) return;
+  askDelete('Удалить сценарий?', `«${E(s.title)}» исчезнет из сценариев.`, async () => {
+    await api.remove('content', id);
+    db.scenarios = db.scenarios.filter(x => x.id !== id);
+    scenSel.delete(id);
+    noteLocal('delete', 'content', s);
+  });
+}
+
+// В план: первый ролик — в выбранный день, следующие — по выбранному ритму.
+function scenToPlan(ids) {
+  const list = ids.map(id => db.scenarios.find(s => s.id === id)).filter(Boolean)
+    .sort((a, b) => a.id.localeCompare(b.id, 'ru', { numeric: true }));
+  if (!list.length) return;
+  const many = list.length > 1;
+  modal(`<h2>В контент-план${many ? ` · ${list.length}` : ''}</h2>
+    <p class="muted">${many ? 'Ролики встанут в план черновиками по порядку номеров.' : `«${E(list[0].title)}» встанет в план черновиком.`} Сценарий из этого раздела уйдёт: дальше он живёт в плане.</p>
+    <form id="scpf"><div class="formgrid">
+      <div><label for="scd">${many ? 'Первый выход' : 'Дата выхода'}</label><input id="scd" type="date" name="date" required value="${E(addDays(today(), 1))}"></div>
+      <div><label for="sct">Время</label><input id="sct" type="time" name="time" value="${E(list[0].post_time || NET_TIME[list[0].channel] || '12:00')}"></div>
+      ${many ? `<div><label for="scr">Ритм</label><select id="scr" name="rhythm">${opts(['Пн, Ср, Пт', 'Каждый день', 'Через день', 'Раз в неделю'], 'Пн, Ср, Пт')}</select></div>` : ''}
+    </div><div class="formactions"><button class="primary">Поставить в план</button><button type="button" data-action="close">Отмена</button></div></form>`);
+  const f = $('#scpf');
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const btn = f.querySelector('button.primary'); btn.disabled = true;
+    const rhythm = f.elements.rhythm?.value || '';
+    let d = f.elements.date.value;
+    const nextDay = cur => {
+      if (rhythm === 'Каждый день') return addDays(cur, 1);
+      if (rhythm === 'Через день') return addDays(cur, 2);
+      if (rhythm === 'Раз в неделю') return addDays(cur, 7);
+      let x = addDays(cur, 1);
+      while (![1, 3, 5].includes(new Date(x + 'T00:00:00').getDay())) x = addDays(x, 1);
+      return x;
+    };
+    try {
+      for (const s of list) {
+        btn.textContent = `Ставлю ${list.indexOf(s) + 1} из ${list.length}…`;
+        const saved = await api.update('content', { ...s, status: 'Черновик', date: d, post_time: f.elements.time.value || s.post_time });
+        db.scenarios = db.scenarios.filter(x => x.id !== s.id);
+        scenSel.delete(s.id);
+        upsertLocal('content', saved);
+        noteLocal('update', 'content', saved);
+        d = nextDay(d);
+      }
+      $('#modal').close(); render();
+      toast(many ? `В плане: ${list.length}. Смотрите «Контент-план»` : 'В плане. Смотрите «Контент-план»');
+    } catch (err) { handleError(err); btn.disabled = false; btn.textContent = 'Поставить в план'; render(); }
+  };
+}
+
+// PDF: печать страницы через диалог браузера («Сохранить как PDF»). Каждый
+// сценарий — с новой страницы, общая памятка «как снимать» — первой.
+function scriptBodyHtml(body) {
+  return String(body || '').split('\n').map(l => l.trim()).map(l => !l ? ''
+    : isHeadLine(l) ? `<h4>${E(l.charAt(0) + l.slice(1).toLowerCase())}</h4>`
+    : /^«.*»$/.test(l) ? `<p class="say">${E(l)}</p>` : `<p>${E(l)}</p>`).join('');
+}
+function scenPrint(ids) {
+  const list = ids.map(id => db.scenarios.find(s => s.id === id)).filter(Boolean)
+    .sort((a, b) => a.id.localeCompare(b.id, 'ru', { numeric: true }));
+  if (!list.length) return;
+  const who = [...new Set(list.map(s => s.author))];
+  const video = list.some(s => postKind(s) === 'video');
+  const day = new Date().toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' });
+  const total = list.reduce((n, s) => n + scriptSeconds(s.body), 0);
+  const html = `<div class="scdoc">
+    <header class="scdochead"><img src="brand/logoB.svg" alt="ADERVIS" width="120" height="28">
+      <div><h1>${list.length > 1 ? 'Сценарии роликов' : E(list[0].title)}</h1>
+      <p>${who.length === 1 ? 'Для: ' + E(who[0]) + ' · ' : ''}${list.length > 1 ? `${list.length} шт. · ` : ''}${total ? `≈ ${(Math.round(total / 6) / 10).toLocaleString('ru')} мин в кадре · ` : ''}${E(day)}</p></div></header>
+    ${video ? `<section class="scdoctips"><h2>Как снимать</h2><ul>
+      <li>Телефон вертикально, на уровне глаз, основная камера, 1080p.</li>
+      <li>Свет спереди: лицом к окну или к лампе. Фон спокойный, без лишних вещей.</li>
+      <li>Тихая комната, микрофон-петличка, если есть. Музыку и титры добавим в монтаже.</li>
+      <li>Начинайте сразу с первой фразы, без «привет, меня зовут».</li>
+      <li>Текст — опора, а не диктант: говорите своими словами. 2–3 дубля, присылайте все.</li></ul></section>` : ''}
+    ${list.map((s, i) => `<article class="scdocitem">
+      <div class="scdocno">${list.length > 1 ? `Ролик ${i + 1} из ${list.length}` : 'Сценарий'} · ${E(POST_KIND[postKind(s)].label)}${s.format ? ' · ' + E(s.format) : ''}${scriptSeconds(s.body) ? ` · ≈ ${scriptSeconds(s.body)} с` : ''}</div>
+      ${list.length > 1 ? `<h2>${E(s.title)}</h2>` : ''}
+      ${scriptBodyHtml(s.body)}
+      ${s.visual ? `<h4>Как снять</h4><p>${E(s.visual)}</p>` : ''}
+    </article>`).join('')}</div>`;
+  let box = $('#kpprint');
+  if (!box) { box = document.createElement('div'); box.id = 'kpprint'; document.body.append(box); }
+  box.innerHTML = html;
+  const was = document.title;
+  document.title = list.length > 1 ? `Сценарии ADERVIS${who.length === 1 ? ' · ' + who[0] : ''}` : list[0].title;
+  document.body.classList.add('printkp');
+  const done = () => { document.body.classList.remove('printkp'); document.title = was; window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
 }
 
 function renderContentPlan() {
@@ -1981,7 +2202,7 @@ function renderContentPlan() {
         const d = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(i + 1).padStart(2, '0');
         return `<div class="day${d === today() ? ' today' : ''}"><strong>${i + 1}</strong>${items.filter(p => p.date === d)
           .map(p => `<button class="event${p.status === 'Опубликовано' ? ' done' : ''}" data-p="${E(p.id)}"
-            title="${E(p.channel)} · ${E(p.status)}">${icon(network(p.channel)?.icon || 'social', 12)}${E(p.title)}</button>`).join('')}</div>`;
+            title="${E(p.channel)} · ${E(POST_KIND[postKind(p)].label)} · ${E(p.status)}">${icon(POST_KIND[postKind(p)].icon, 12)}${E(p.title)}</button>`).join('')}</div>`;
       }).join('')}</div>
       ${undated.length ? `<p class="muted">Без даты: ${undated.length} — назначьте дату в карточке, и публикация встанет в календарь.</p>` : ''}`;
   } else {
@@ -2170,7 +2391,7 @@ function planRow(p) {
     ${p.status !== 'Опубликовано' ? `<button class="ptgrip" data-grip aria-label="Перетащить «${E(p.title)}»: бросьте на другую публикацию, и они поменяются датами. С клавиатуры: стрелки вверх и вниз" title="Перетащите на другую публикацию: поменяются датами"></button>` : ''}
     <div class="ptwhen" role="cell">${p.date ? `<span class="wd">${E(weekday(p.date))}</span><b>${Number(p.date.slice(8))}</b><small>${E(shortDate(p.date).replace(/^\d+\s/, ''))}${p.post_time ? ' · ' + E(p.post_time) : ''}</small>` : '<small class="muted">без даты</small>'}</div>
     <div class="ptnet" role="cell"><span class="neticon">${icon(n?.icon || 'social', 16)}</span><span><b>${E(p.channel)}</b><small>${E(p.format || 'формат не выбран')}</small></span></div>
-    <div class="ptmain" role="cell">${r ? `<span class="rub">${E(r.id)}</span>` : ''}<h3>${E(p.title)}</h3>
+    <div class="ptmain" role="cell"><span class="ptmeta">${kindBadge(p)}${r ? `<span class="rub">${E(r.id)}</span>` : ''}</span><h3>${E(p.title)}</h3>
       <p class="${noText ? 'notext' : ''}">${noText ? `${icon('ai', 13)} Текста ещё нет — его напишет Claude` : E(first.slice(0, 170))}</p></div>
     <div class="ptvis" role="cell">${p.visual ? `${icon('photo', 14)}<span>${E(p.visual.slice(0, 150))}</span>` : '<small class="muted">ТЗ на визуал не задано</small>'}</div>
     <div class="ptgoal" role="cell">${p.goal ? `<span class="goal g${GOALS.indexOf(p.goal)}">${E(p.goal)}</span>` : '<small class="muted">—</small>'}${views !== null ? `<small>${num(views)} просм.</small>` : ''}</div>
@@ -7680,6 +7901,7 @@ function render() {
       <div class="grid three">${db.knowledge.filter(k => k.category === 'Услуги').map(kc).join('')}</div>`;
   }
 
+  if (page === 'scenarios') s = renderScenarios();
   if (page === 'content') s = renderContentPlan();
 
   if (page === 'assistant') {
@@ -8873,7 +9095,7 @@ function editP(id, preset = {}) {
   const fmts = n => { const list = network(n)?.formats || []; return p.format && !list.includes(p.format) ? [...list, p.format] : list; };
   const channels = NETWORK_NAMES.includes(p.channel) ? NETWORK_NAMES : [...NETWORK_NAMES, p.channel];
   const selects = [
-    ['author', 'Автор', ['Артём', 'Александр', 'ADERVIS']],
+    ['author', 'Автор', ['Артём', 'Александр', 'ADERVIS'].includes(p.author) ? ['Артём', 'Александр', 'ADERVIS'] : ['Артём', 'Александр', 'ADERVIS', p.author]],
     ['channel', 'Площадка', channels],
     ['product', 'Направление', ['Studio', 'CRM', 'Stock', 'Медиаэксперименты']],
     ['status', 'Статус', P_STATUS]
@@ -9727,7 +9949,7 @@ function exportJson() {
   // ниже: без них «резервная копия» теряла брендбук и журнал решений.
   download(JSON.stringify({
     version: 2,
-    knowledge: strip(db.knowledge), content: strip(db.content),
+    knowledge: strip(db.knowledge), content: strip([...db.content, ...db.scenarios]),
     tasks: strip(db.tasks), metrics: strip(db.metrics),
     brand: strip(db.brand), decisions: strip(db.decisions),
     campaigns: strip(db.campaigns), leads: strip(db.leads),
@@ -9767,7 +9989,7 @@ function validate(x) {
     if (!k.title || !k.body) throw Error('Пустая запись: ' + k.id);
   }
   for (const p of x.content) {
-    if (!P_STATUS.includes(p.status)) throw Error('Неизвестный статус публикации: ' + p.status);
+    if (!P_STATUS.includes(p.status) && p.status !== SCRIPT) throw Error('Неизвестный статус публикации: ' + p.status);
     if (p.date && !/^\d{4}-\d{2}-\d{2}$/.test(p.date)) throw Error('Неверная дата публикации: ' + p.date);
     if (!p.title || !p.body) throw Error('Пустая публикация: ' + p.id);
   }
@@ -9831,12 +10053,13 @@ document.addEventListener('click', async e => {
     document.body.classList.remove('menu');
     return;
   }
-  const b = e.target.closest('button,article[data-brief],article[data-ks],article[data-mg],article[data-k],article[data-p],article[data-d],article[data-cp],article[data-l],tr[data-l],tr[data-pr],g[data-node]');
+  const b = e.target.closest('button,article[data-brief],article[data-ks],article[data-mg],article[data-k],article[data-p],article[data-sc],article[data-d],article[data-cp],article[data-l],tr[data-l],tr[data-pr],g[data-node]');
   if (!b) return;
   if (b.dataset.node) { graphOpen(b.dataset.node); return; }
   if (b.dataset.page) { go(b.dataset.page); return; }
   if (b.dataset.k) { editK(b.dataset.k); return; }
   if (b.dataset.p) { editP(b.dataset.p); return; }
+  if (b.dataset.sc) { editScenario(b.dataset.sc); return; }
   if (b.dataset.d) { editDecision(b.dataset.d); return; }
   if (b.dataset.l) { editLead(b.dataset.l); return; }
   if (b.dataset.cp) { editCampaign(b.dataset.cp); return; }
@@ -9867,6 +10090,16 @@ document.addEventListener('click', async e => {
     case 'close': $('#modal').close(); break;
     case 'newk': editK(); break;
     case 'newp': editP(); break;
+    case 'scnew': editScenario(); break;
+    case 'scdel': delScenario(b.dataset.id); break;
+    case 'scwho': scenWho = b.dataset.id; render(); break;
+    case 'scpick': { const id = b.dataset.id; if (scenSel.has(id)) scenSel.delete(id); else scenSel.add(id); render(); break; }
+    case 'scselall': { const ids = [...document.querySelectorAll('.sccard[data-sc]')].map(x => x.dataset.sc);
+      if (ids.length && ids.every(id => scenSel.has(id))) scenSel.clear(); else ids.forEach(id => scenSel.add(id)); render(); break; }
+    case 'scpdf': scenPrint(scenSel.size ? [...scenSel] : [...document.querySelectorAll('.sccard[data-sc]')].map(x => x.dataset.sc)); break;
+    case 'scpdf1': scenPrint([b.dataset.id]); break;
+    case 'scplan': scenToPlan(scenSel.size ? [...scenSel] : [...document.querySelectorAll('.sccard[data-sc]')].map(x => x.dataset.sc)); break;
+    case 'scplan1': scenToPlan([b.dataset.id]); break;
     case 'newtask': taskNew(); break;
     case 'newmetric': metricNew(); break;
     case 'newcampaign': editCampaign(); break;

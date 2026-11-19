@@ -563,12 +563,12 @@ check('с плитки можно уйти в её раздел',
 // меню сгруппировано, иначе семнадцать пунктов не читаются
 const groups = await page.$$eval('#nav .navgroup span', g => g.map(x => x.textContent));
 check('меню разбито на группы по работе', groups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', groups.join(','));
-check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 24,
+check('все разделы остались в меню', (await page.$$('#nav button[data-page]')).length === 25,
   String((await page.$$('#nav button')).length));
 // Компьютер: всё меню слева, группы раскрываются; сверху — где я, быстрые переходы, поиск и «Создать».
 const railGroups = await page.$$eval('#grouprail .grhead span', g => g.map(x => x.textContent));
 check('слева группы по работе', railGroups.join(',') === 'Продажи,Реклама,Контент,Аналитика,Компания,Система', railGroups.join(','));
-check('в боковом меню все разделы', (await page.$$('#grouprail .gritem[data-page]')).length === 24, String((await page.$$('#grouprail .gritem')).length));
+check('в боковом меню все разделы', (await page.$$('#grouprail .gritem[data-page]')).length === 25, String((await page.$$('#grouprail .gritem')).length));
 check('панели «Все разделы» на компьютере нет', !(await page.isVisible('#menu')) && !(await page.isVisible('#nav button[data-page=knowledge]')));
 check('внизу меню видно, кто вошёл, и есть «Выйти»', await page.isVisible('#grfoot #myname') && await page.isVisible('#grfoot [data-action=signout]'));
 check('открытая группа раскрыта, чужие свёрнуты', !(await page.isVisible('#grouprail .gritem[data-page=knowledge]')));
@@ -1893,6 +1893,35 @@ await page.click('#modal [data-action=close]');
 check('после написания кнопка исчезла, в строке — начало текста', !(await page.$('[data-action=aiwriteall]'))
   && (await page.textContent(`.ptrow[data-p="${planItem.id}"] .ptmain p`)).startsWith('Готовый текст'));
 await page.screenshot({ path: path.join(OUT, 'intel-content-table.png'), fullPage: true });
+check('у поста виден тип: видео, с картинкой или текст', (await page.$$eval('.ptrow .pkind', x => x.map(k => k.textContent.trim()))).every(t => ['Видео', 'С картинкой', 'Текст'].includes(t))
+  && (await page.$$('.ptrow .pkind')).length === (await page.$$('.ptrow[data-p]')).length);
+// сценарии: ступень перед планом — пишем, скачиваем PDF, ставим в план с датой
+await nav('scenarios');
+check('сценариев нет — подсказка и кнопка первого', !!(await page.$('.scempty [data-action=scnew]')));
+await page.click('.scempty [data-action=scnew]');
+await page.fill('#scf input[name=author]', 'Амбассадор');
+await page.fill('#scf input[name=title]', 'Ролик про смету');
+await page.fill('#scf textarea[name=body]', 'ХУК · ПЕРВЫЕ 3 СЕКУНДЫ\n«Смета за две минуты, смотрите.»\n\nЧТО ГОВОРИТЬ\n«Раньше считал вечером, теперь выбираю пакет и отправляю ссылку клиенту.»');
+check('длина ролика считается по репликам', /≈ \d+ с/.test(await page.textContent('#scsec')));
+await page.click('#scf button.primary');
+await page.waitForSelector('.sccard[data-sc]');
+const scen = (await state()).content.find(p => p.title === 'Ролик про смету');
+check('сценарий сохранён статусом «Сценарий», без даты, в плане его нет', scen?.status === 'Сценарий' && !scen.date
+  && !(await page.evaluate(id => window.__STATE__ && document.querySelector(`.ptrow[data-p="${id}"]`), scen.id)), JSON.stringify(scen));
+check('карточка: тип «Видео» и первая реплика', (await page.textContent('.sccard')).includes('Видео') && (await page.textContent('.sccard .schook')).includes('Смета за две минуты'));
+await page.evaluate(() => { window.print = () => { window.__printed = document.querySelector('#kpprint')?.textContent || ''; }; });
+await page.click('[data-action=scpdf]');
+const scPrinted = await page.evaluate(() => window.__printed);
+check('PDF: памятка «как снимать» и текст сценария', scPrinted.includes('Как снимать') && scPrinted.includes('Смета за две минуты'), scPrinted.slice(0, 200));
+await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+await page.screenshot({ path: path.join(OUT, 'intel-scenarios.png') });
+await page.click('.sccard [data-action=scplan1]');
+await page.fill('#scpf input[name=date]', localDay(3));
+await page.click('#scpf button.primary');
+await page.waitForSelector('.scempty');
+const scPlanned = (await state()).content.find(p => p.id === scen.id);
+check('«В план»: сценарий стал черновиком с датой и ушёл из сценариев', scPlanned.status === 'Черновик' && scPlanned.date === localDay(3), JSON.stringify(scPlanned));
+await nav('content');
 // пост о готовой работе: по одному на площадку, клиента без разрешения не называем
 await page.click('[data-action=aicase]');
 await page.fill('#caseclient', 'Раздолье');
